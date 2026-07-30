@@ -9,6 +9,25 @@ import type { ModState } from '@/renderers/control-schema';
  * Location: lib/persist/client.ts
  */
 
+/**
+ * Every persistence path in this file used to fail silently — an empty
+ * catch swallowed network errors, and none of them checked `res.ok`, so a
+ * server error response (fetch only rejects on network failure, never on a
+ * 4xx/5xx) vanished too. A save could fail completely and the only symptom
+ * was reopening the asset later to find the change gone, with nothing in
+ * between to explain why. This makes every failure visible in the console
+ * at minimum, which is the fastest path to finding what is actually wrong
+ * versus continuing to guess.
+ */
+function logPersistFailure(what: string, res: Response | null, err?: unknown): void {
+  if (err) {
+    console.error(`[persist] ${what} failed (network):`, err);
+  } else if (res) {
+    console.error(`[persist] ${what} failed: HTTP ${res.status} ${res.statusText}`);
+  }
+}
+
+
 /* ------------------------------------------------------------------ *
  * Poster capture
  * ------------------------------------------------------------------ */
@@ -87,14 +106,16 @@ export function persistParams(assetId: string, params: ParamState, delay = 500):
       pending.delete(assetId);
       if (!payload) return;
 
-      void fetch(`/api/assets/${assetId}`, {
+      fetch(`/api/assets/${assetId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ params: payload }),
         keepalive: true,
-      }).catch(() => {
-        /* Losing a parameter save is recoverable; the value is still live. */
-      });
+      })
+        .then((res) => {
+          if (!res.ok) logPersistFailure(`params (${assetId})`, res);
+        })
+        .catch((err) => logPersistFailure(`params (${assetId})`, null, err));
     }, delay),
   );
 }
@@ -112,12 +133,16 @@ export function flushParams(assetId: string): void {
   timers.delete(assetId);
   pending.delete(assetId);
 
-  void fetch(`/api/assets/${assetId}`, {
+  fetch(`/api/assets/${assetId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ params: payload }),
     keepalive: true,
-  }).catch(() => {});
+  })
+    .then((res) => {
+      if (!res.ok) logPersistFailure(`params flush (${assetId})`, res);
+    })
+    .catch((err) => logPersistFailure(`params flush (${assetId})`, null, err));
 }
 
 
@@ -138,10 +163,14 @@ export async function createSnapshot(assetId: string, params: ParamState): Promi
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ assetId, params }),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      logPersistFailure(`snapshot create (${assetId})`, res);
+      return null;
+    }
     const data = (await res.json()) as { item?: Asset };
     return data.item ?? null;
-  } catch {
+  } catch (err) {
+    logPersistFailure(`snapshot create (${assetId})`, null, err);
     return null;
   }
 }
@@ -165,10 +194,14 @@ export async function storeSnapshotCapture(
       body: blob,
     });
 
-    if (!res.ok) return { posterUrl: null, blob };
+    if (!res.ok) {
+      logPersistFailure(`snapshot capture (${itemId})`, res);
+      return { posterUrl: null, blob };
+    }
     const data = (await res.json()) as { posterUrl?: string };
     return { posterUrl: data.posterUrl ?? null, blob };
-  } catch {
+  } catch (err) {
+    logPersistFailure(`snapshot capture (${itemId})`, null, err);
     return { posterUrl: null, blob: null };
   }
 }
@@ -186,8 +219,10 @@ export function downloadBlob(blob: Blob, filename: string): void {
 export async function deleteSnapshot(itemId: string): Promise<boolean> {
   try {
     const res = await fetch(`/api/boards/default/items/${itemId}`, { method: 'DELETE' });
+    if (!res.ok) logPersistFailure(`snapshot delete (${itemId})`, res);
     return res.ok;
-  } catch {
+  } catch (err) {
+    logPersistFailure(`snapshot delete (${itemId})`, null, err);
     return false;
   }
 }
@@ -209,12 +244,16 @@ export function persistSnapshotParams(itemId: string, params: ParamState, delay 
       pending.delete(key);
       if (!payload) return;
 
-      void fetch(`/api/boards/default/items/${itemId}`, {
+      fetch(`/api/boards/default/items/${itemId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ params: payload }),
         keepalive: true,
-      }).catch(() => {});
+      })
+        .then((res) => {
+          if (!res.ok) logPersistFailure(`snapshot params (${itemId})`, res);
+        })
+        .catch((err) => logPersistFailure(`snapshot params (${itemId})`, null, err));
     }, delay),
   );
 }
@@ -229,12 +268,16 @@ export function flushSnapshotParams(itemId: string): void {
   timers.delete(key);
   pending.delete(key);
 
-  void fetch(`/api/boards/default/items/${itemId}`, {
+  fetch(`/api/boards/default/items/${itemId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ params: payload }),
     keepalive: true,
-  }).catch(() => {});
+  })
+    .then((res) => {
+      if (!res.ok) logPersistFailure(`snapshot params flush (${itemId})`, res);
+    })
+    .catch((err) => logPersistFailure(`snapshot params flush (${itemId})`, null, err));
 }
 
 
@@ -262,12 +305,16 @@ export function persistMod(itemId: string, mod: ModState, isSnapshot: boolean, d
       pending.delete(key);
       if (!payload) return;
 
-      void fetch(url, {
+      fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mod: payload }),
         keepalive: true,
-      }).catch(() => {});
+      })
+        .then((res) => {
+          if (!res.ok) logPersistFailure(`modulation (${itemId})`, res);
+        })
+        .catch((err) => logPersistFailure(`modulation (${itemId})`, null, err));
     }, delay),
   );
 }
