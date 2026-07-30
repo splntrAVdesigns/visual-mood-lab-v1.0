@@ -1,7 +1,7 @@
 import type { Asset } from '@/types/asset';
 import type { ControlSchema, ParamState, ParamValue, RGBA } from './control-schema';
 import { defaultsOf } from './control-schema';
-import { getGLStage, glUnavailableReason, type CompiledProgram, type UniformSetter } from '@/lib/gl/context-pool';
+import { getGLStage, glUnavailableReason, MAX_DIM, type CompiledProgram, type UniformSetter } from '@/lib/gl/context-pool';
 import type { AssetRenderer, CaptureOpts, Quality, RenderContext } from './types';
 
 /**
@@ -80,8 +80,18 @@ export class ShaderRenderer implements AssetRenderer {
     if (!stage || stage.isLost) return;
 
     const scale = this.quality === 'full' ? Math.min(ctx.pixelRatio, 2) : 1;
-    const w = Math.max(1, Math.round(ctx.width * scale));
-    const h = Math.max(1, Math.round(ctx.height * scale));
+
+    /*
+     * Clamp to the shared canvas BEFORE these values become u_resolution.
+     *
+     * They previously did not agree: stage.draw() clamped the viewport to
+     * MAX_DIM internally while u_resolution kept the unclamped size, so on a
+     * retina display the enlarged view told shaders the screen was 1800px
+     * wide while only 900px were actually drawn. Every centred shader
+     * shifted into a corner — which is exactly what SDF Sphere was doing.
+     */
+    const w = Math.max(1, Math.min(Math.round(ctx.width * scale), MAX_DIM));
+    const h = Math.max(1, Math.min(Math.round(ctx.height * scale), MAX_DIM));
 
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;
@@ -129,6 +139,11 @@ export class ShaderRenderer implements AssetRenderer {
     set('u_pixelRatio', ctx.pixelRatio);
     set('u_aspect', w / Math.max(h, 1));
     set('u_seed', this.seed);
+
+    // Lets a sampler-driven shader generate its own pattern when nothing is
+    // linked. Without this, ASCII Mosaic and friends sampled a 1x1 grey
+    // fallback, quantised it to a single flat level, and rendered pure black.
+    set('u_hasSource', this.hasLinkedSource());
 
     if (ctx.audio) {
       set('u_bass', avg(ctx.audio, 0, 8));
@@ -182,6 +197,14 @@ export class ShaderRenderer implements AssetRenderer {
           }
       }
     }
+  }
+
+  /** True once a texture control actually points at an asset. */
+  private hasLinkedSource(): boolean {
+    if (!this.schema) return false;
+    return this.schema.controls.some(
+      (c) => c.kind === 'texture' && typeof this.params[c.id] === 'string',
+    );
   }
 
   private captureBackbuffer(): void {

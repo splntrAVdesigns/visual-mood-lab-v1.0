@@ -39,15 +39,16 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     const owned = await loadOwned(id);
     if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-    const body = (await req.json()) as { params?: ParamState };
-    if (!body.params || typeof body.params !== 'object') {
-      return NextResponse.json({ error: 'Expected { params }' }, { status: 400 });
+    const body = (await req.json()) as { params?: ParamState; mod?: Record<string, unknown> };
+    if (!body.params && !body.mod) {
+      return NextResponse.json({ error: 'Expected { params } or { mod }' }, { status: 400 });
     }
 
-    await owned.db
-      .update(schema.assets)
-      .set({ params: body.params, updatedAt: new Date() })
-      .where(eq(schema.assets.id, id));
+    const patch: Record<string, unknown> = { updatedAt: new Date() };
+    if (body.params) patch.params = body.params;
+    if (body.mod) patch.mod = body.mod;
+
+    await owned.db.update(schema.assets).set(patch).where(eq(schema.assets.id, id));
 
     return NextResponse.json({ ok: true });
   } catch (err) {

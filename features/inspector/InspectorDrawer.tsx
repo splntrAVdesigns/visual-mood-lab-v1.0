@@ -56,11 +56,9 @@ export function InspectorDrawer() {
       onClose={onClose}
       modal={false}
       actions={
-        dirty.size > 0 ? (
-          <Tooltip content="Reset all">
-            <IconButton label="Reset all parameters" icon={<ResetIcon />} onClick={resetAll} />
-          </Tooltip>
-        ) : null
+        <Tooltip content="Restore this asset's library defaults">
+          <IconButton label="Restore defaults" icon={<ResetIcon />} onClick={resetAll} />
+        </Tooltip>
       }
       footer={
         hasAdvanced ? (
@@ -121,9 +119,9 @@ export function InspectorDrawer() {
           })}
 
           <p className={s.notice}>
-            <span className={s.noticeStrong}>Not saved yet.</span> Changes apply to the live
-            preview immediately but reset when you close this asset. Persistence lands in
-            Phase 3.
+            <span className={s.noticeStrong}>Autosaved.</span> Every change here writes to this
+            asset's library entry and survives reloads. Use the restore icon above to return this
+            asset to its original library defaults at any time.
           </p>
         </>
       )}

@@ -144,6 +144,7 @@ async function main(): Promise<void> {
         tags: entry.tags,
         source,
         seedSlug: entry.slug,
+        boardOrder: manifest.assets.indexOf(entry),
       });
 
       allWarnings.push(...res.warnings);

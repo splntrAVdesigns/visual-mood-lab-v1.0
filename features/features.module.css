@@ -424,6 +424,7 @@
 }
 
 .swatchChip {
+  position: relative;
   width: 18px;
   height: 18px;
   flex: none;
@@ -563,6 +564,15 @@
   border: 1px solid var(--border-hi);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  transition: width var(--dur-drawer) var(--ease);
+}
+
+/* :fullscreen sizing is entirely the browser's own reflow, not this
+   transition — fighting it with a competing width animation would make the
+   native jump look worse, not better, so it's switched off specifically
+   for the fullscreen state. */
+.focusPanel:fullscreen {
+  transition: none;
 }
 
 .focusHeader {
@@ -616,6 +626,110 @@
 
 .focusScrim[data-code='true'] .focusPanel {
   width: min(48vw, 70vh, 620px);
+}
+
+/*
+ * Modulation deliberately does NOT shrink the focused panel the way Code
+ * does. The graphic is the reason the panel is open in the first place —
+ * shrinking it to make room for routing controls fights the point. Instead
+ * the scrim allows horizontal scroll when the combined width of the
+ * full-size panel plus the sidecar doesn't fit; on anything wide enough
+ * (most laptops and up) it simply fits, with the graphic visually shifted
+ * right of centre by the sidecar's flex order rather than being squeezed.
+ */
+.focusScrim[data-mod='true'] {
+  gap: var(--space-4);
+  justify-content: flex-start;
+  overflow-x: auto;
+  padding-inline: max(var(--space-5), calc((100vw - 900px - 40vw - var(--space-4)) / 2));
+}
+
+.modPanel {
+  display: flex;
+  flex-direction: column;
+  width: min(40vw, 560px);
+  max-height: 100%;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  order: -1;
+}
+
+.modPanelList {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-4);
+}
+
+.modPanelRow {
+  border-bottom: 1px solid var(--border);
+}
+
+.modPanelRow:last-child {
+  border-bottom: none;
+}
+
+.modPanelRowHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  height: 44px;
+  text-align: left;
+}
+
+.modPanelDot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--border-hi);
+}
+
+.modPanelDot[data-on='true'] {
+  background: var(--accent);
+}
+
+.modPanelLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--step-0);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modPanelSourceTag {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--accent);
+}
+
+.modPanelBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: 0 0 var(--space-4) var(--space-4);
+}
+
+.modPanelRowFoot {
+  padding-top: var(--space-1);
+}
+
+@media (max-width: 600px) {
+  /* Below this, even with scrolling, a full-size graphic beside a routing
+     panel is worse than just showing the panel — genuinely small screens
+     only, not the "laptops" the horizontal-scroll behavior above already
+     covers. */
+  .focusScrim[data-mod='true'] .focusPanel {
+    display: none;
+  }
+  .modPanel {
+    width: 100%;
+    max-width: 640px;
+  }
 }
 
 .codePanel {
@@ -719,5 +833,694 @@
   .codePanel {
     width: 100%;
     max-width: 640px;
+  }
+}
+
+/* ---- hover affordance ------------------------------------------- */
+
+/* Hovering a tile lifts its border and label to the accent colour, and a
+   short intent delay (see HOVER_INTENT_MS) starts its animation — so a
+   cursor flying across the board does not ignite every tile it crosses. */
+.card:hover {
+  border-color: var(--accent);
+}
+
+.card:hover .cardTitle {
+  color: var(--accent);
+}
+
+.card:hover .cardFoot {
+  background: var(--accent-faint);
+}
+
+/* ------------------------------------------------------------------ *
+ * Hero
+ * ------------------------------------------------------------------ */
+
+.hero {
+  position: relative;
+  height: 320px;
+  margin: var(--space-4) var(--space-5) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-canvas);
+}
+
+.heroCanvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.heroFade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.15) 0%, var(--bg-canvas) 92%);
+  pointer-events: none;
+}
+
+.heroContent {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-6);
+  max-width: 640px;
+}
+
+.heroTitle {
+  /*
+   * Was clamp(1.75rem, 4vw, var(--step-3)) — var(--step-3) is 1.5rem, which
+   * is SMALLER than the 1.75rem minimum. An invalid clamp(min, val, max)
+   * where min > max resolves to min, so this had been silently rendering as
+   * a flat 1.75rem this whole time, completely ignoring the viewport term.
+   * Fixed with a real min < max range, sized roughly 2x the old effective
+   * size at typical widths.
+   */
+  font-size: clamp(2.5rem, 5.5vw, 3.75rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  line-height: 1.1;
+}
+
+.heroVersion {
+  font-family: var(--font-mono);
+  font-size: 0.5em;
+  color: var(--text-mute);
+  vertical-align: super;
+}
+
+.heroSub {
+  font-size: var(--step-0);
+  line-height: var(--leading-normal);
+  color: var(--text-dim);
+  max-width: 52ch;
+}
+
+@media (max-width: 600px) {
+  .hero {
+    height: 200px;
+    margin-inline: var(--space-3);
+  }
+  .heroContent {
+    padding: 0 var(--space-4);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Board bar / sort
+ * ------------------------------------------------------------------ */
+
+.boardBarSpacer {
+  flex: 1;
+}
+
+.sortRow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sortLabel {
+  font-size: var(--step--2);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin-right: var(--space-2);
+}
+
+.sortButton {
+  height: 24px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius);
+  font-size: var(--step--1);
+  color: var(--text-dim);
+}
+
+.sortButton:hover {
+  color: var(--text);
+}
+
+.sortButton[data-active='true'] {
+  color: var(--accent);
+  background: var(--accent-faint);
+}
+
+/* ------------------------------------------------------------------ *
+ * Recently viewed
+ * ------------------------------------------------------------------ */
+
+.recentSection {
+  padding: 0 var(--space-5) var(--space-2);
+}
+
+.recentLabel {
+  display: block;
+  font-size: var(--step--2);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-mute);
+  padding: var(--space-3) 0 var(--space-2);
+}
+
+.recentStrip {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
+}
+
+.recentCard {
+  flex: none;
+  width: 96px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-raised);
+  text-align: left;
+}
+
+.recentCard:hover {
+  border-color: var(--accent);
+}
+
+.recentPoster {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+}
+
+.recentPlaceholder {
+  width: 100%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  background: var(--bg-canvas);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-mute);
+}
+
+.recentTitle {
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--step--2);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ------------------------------------------------------------------ *
+ * Live indicator / seed button
+ * ------------------------------------------------------------------ */
+
+.liveIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: var(--control-h);
+  padding: 0 var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.liveDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: liveDotPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes liveDotPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.seedButton {
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ *
+ * Command palette
+ * ------------------------------------------------------------------ */
+
+.paletteScrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 14vh;
+  background: var(--scrim);
+}
+
+.palette {
+  width: min(560px, 92vw);
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.paletteInput {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-mute);
+}
+
+.paletteInput input {
+  flex: 1;
+  font-size: var(--step-1);
+  color: var(--text);
+}
+
+.paletteInput input::placeholder {
+  color: var(--text-mute);
+}
+
+.paletteHint {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-mute);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1px 6px;
+}
+
+.paletteList {
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.paletteEmpty {
+  padding: var(--space-4);
+  text-align: center;
+  color: var(--text-mute);
+  font-size: var(--step--1);
+}
+
+.paletteItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius);
+  text-align: left;
+  color: var(--text-dim);
+}
+
+.paletteItem[data-active='true'] {
+  background: var(--accent-faint);
+  color: var(--text);
+}
+
+.paletteItemTitle {
+  font-size: var(--step-0);
+}
+
+.paletteItemBadge {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-mute);
+}
+
+/* ------------------------------------------------------------------ *
+ * Snapshot swatch input overlay (native colour picker sits over the chip)
+ * ------------------------------------------------------------------ */
+
+.swatchInput {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * Snapshots section
+ * ------------------------------------------------------------------ */
+
+.snapshotSection {
+  padding: 0 var(--space-5) var(--space-3);
+}
+
+.snapshotBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0 var(--space-2);
+}
+
+.snapshotLabel {
+  font-size: var(--step--2);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+
+.snapshotStrip {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
+}
+
+.snapshotCard {
+  position: relative;
+  flex: none;
+  width: 132px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-raised);
+}
+
+.snapshotCard:hover {
+  border-color: var(--accent);
+}
+
+.snapshotOpen {
+  display: block;
+  width: 100%;
+  text-align: left;
+}
+
+.snapshotPoster {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+  background: var(--bg-canvas);
+}
+
+.snapshotPending {
+  width: 100%;
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  background: var(--bg-canvas);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-mute);
+}
+
+.snapshotTitle {
+  display: block;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--step--2);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Delete lives on the card itself so removing a snapshot never requires
+   opening it first. */
+.snapshotDelete {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius);
+  background: rgba(0, 0, 0, 0.7);
+  color: var(--text-dim);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.snapshotCard:hover .snapshotDelete {
+  opacity: 1;
+}
+
+.snapshotDelete:hover {
+  color: var(--danger);
+  background: var(--danger-dim);
+}
+
+.snapshotDelete:focus-visible {
+  opacity: 1;
+}
+
+.savedNote {
+  font-size: var(--step--2);
+  color: var(--accent);
+  white-space: nowrap;
+  animation: savedNoteIn var(--dur-base) var(--ease);
+}
+
+@keyframes savedNoteIn {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ------------------------------------------------------------------ *
+ * Modulation
+ * ------------------------------------------------------------------ */
+
+.controlRow {
+  position: relative;
+}
+
+/* A modulated control gets a hairline accent rule on its left edge — enough
+   to scan a panel and see what is moving, without competing with the value
+   readout itself. */
+.controlRow[data-modulated='true'] {
+  padding-left: var(--space-3);
+  margin-left: calc(var(--space-3) * -1);
+  border-left: 1px solid var(--accent);
+}
+
+.modulatedValue {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  letter-spacing: var(--tracking-mono);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.modMenu {
+  position: fixed;
+  z-index: var(--z-dialog);
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-lg);
+}
+
+.modMenuHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.modMenuTitle {
+  font-size: var(--step--2);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-mute);
+}
+
+.modMenuTarget {
+  font-size: var(--step--1);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.modRowLabel {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: var(--step--1);
+  color: var(--text-dim);
+}
+
+.modValue {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.modMenuFoot {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+/* ------------------------------------------------------------------ *
+ * Upload
+ * ------------------------------------------------------------------ */
+
+.dropZone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-4);
+  border: 1px dashed var(--border-hi);
+  border-radius: var(--radius-lg);
+  color: var(--text-mute);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+
+.dropZone:hover,
+.dropZone[data-dragging='true'] {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+  color: var(--text-dim);
+}
+
+.dropTitle {
+  font-size: var(--step-0);
+  color: var(--text);
+}
+
+.dropHint {
+  font-size: var(--step--2);
+  color: var(--text-mute);
+  text-align: center;
+}
+
+.dropInput {
+  display: none;
+}
+
+.jobList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: var(--space-4);
+}
+
+.jobRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  font-size: var(--step--1);
+}
+
+.jobName {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jobStatus {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+}
+
+.jobRow[data-status='done'] .jobStatus {
+  color: var(--accent);
+}
+
+.jobRow[data-status='error'] .jobStatus {
+  color: var(--danger);
+}
+
+/* ---- keyboard reference ----------------------------------------- */
+
+.shortcutList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.shortcutRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) 0;
+  font-size: var(--step--1);
+  color: var(--text-dim);
+}
+
+.shortcutKey {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1px 6px;
+}
+
+/* Library uploads reuse the recent-strip visual language — same rationale:
+   a fast horizontal scan of a handful of items, not a full grid. */
+
+/* ------------------------------------------------------------------ *
+ * Footer credit
+ * ------------------------------------------------------------------ */
+
+.footerCredit {
+  position: fixed;
+  left: var(--space-4);
+  bottom: var(--space-3);
+  z-index: 5;
+  font-size: var(--step--2);
+  color: var(--text-mute);
+  letter-spacing: 0.01em;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.footerCredit:hover {
+  color: var(--text-dim);
+}
+
+@media (max-width: 600px) {
+  .footerCredit {
+    display: none;
   }
 }

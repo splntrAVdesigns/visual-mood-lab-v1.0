@@ -112,7 +112,7 @@ export interface ParseOptions {
  */
 export const DEFAULT_RESERVED = new Set([
   'u_time', 'u_delta', 'u_frame', 'u_resolution', 'u_mouse', 'u_pointer',
-  'u_seed', 'u_pixelRatio', 'u_aspect', 'u_prevFrame', 'u_backbuffer',
+  'u_seed', 'u_pixelRatio', 'u_aspect', 'u_hasSource', 'u_prevFrame', 'u_backbuffer',
   'u_audio', 'u_audioTexture', 'u_bass', 'u_mid', 'u_high', 'u_rms', 'u_fft',
   'iTime', 'iTimeDelta', 'iFrame', 'iResolution', 'iMouse', 'iDate',
   'iChannel0', 'iChannel1', 'iChannel2', 'iChannel3', 'iChannelTime',
@@ -164,7 +164,24 @@ export function parseUniforms(source: string, opts: ParseOptions = {}): ParseRes
     }
     seen.add(u.name);
 
-    if (u.reserved || u.annotations.hidden) continue;
+    if (u.reserved) {
+      // A uniform carrying control annotations (@label, @range, @color, ...)
+      // is unambiguously meant to be a user control. If its name also
+      // happens to collide with a reserved host name (u_time, u_mid, u_high,
+      // ...) it is silently swallowed here and never assigned a value by the
+      // renderer — which reads as the shader being broken, with no error
+      // anywhere. This is exactly how Noise Field went solid black: its
+      // "mid colour" and "high colour" uniforms collided with the audio-band
+      // reserved names. Surface it loudly instead of losing it quietly.
+      if (hasControlAnnotations(u.annotations)) {
+        warnings.push({
+          level: 'warn', name: u.name, line: u.line,
+          message: `"${u.name}" has control annotations but collides with a reserved host uniform of the same name — it will never receive a value. Rename it.`,
+        });
+      }
+      continue;
+    }
+    if (u.annotations.hidden) continue;
 
     const control = controlFor(u, { defaultGroup, modDefault }, warnings);
     if (control) controls.push(control);
@@ -444,6 +461,12 @@ export function parseAnnotations(text: string): Annotations {
 interface MapContext {
   defaultGroup: string;
   modDefault: boolean;
+}
+
+function hasControlAnnotations(a: Annotations): boolean {
+  return Boolean(
+    a.label || a.range || a.select || a.color || a.default !== undefined || a.step,
+  );
 }
 
 function controlFor(

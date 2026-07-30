@@ -64,6 +64,26 @@ async function openDatabase(): Promise<Database> {
     return drizzlePg(client, { schema });
   }
 
+  /*
+   * PGlite needs a real, persistent, writable filesystem — exactly what
+   * `./.pglite` is on a normal machine, and exactly what Vercel's serverless
+   * functions do not provide. Falling through to it there doesn't fail
+   * cleanly: it either throws deep inside PGlite's own startup, or briefly
+   * "succeeds" against Vercel's ephemeral /tmp and loses every write the
+   * moment that instance recycles. Either way, the person deploying sees a
+   * generic Next.js error screen with the real cause buried underneath it.
+   * Refusing this combination explicitly turns "forgot to set DATABASE_URL"
+   * into an obvious message instead of a mystery.
+   */
+  if (process.env.VERCEL) {
+    throw new Error(
+      'DATABASE_URL is not set. This app is running on Vercel, where the local ' +
+        'PGlite fallback cannot persist data. Add DATABASE_URL (from Neon or ' +
+        'another Postgres provider) in Vercel → Settings → Environment Variables, ' +
+        'then redeploy. See .env.example.',
+    );
+  }
+
   const { PGlite } = await import('@electric-sql/pglite');
   const client = new PGlite(process.env.PGLITE_DIR ?? './.pglite');
   await client.waitReady;

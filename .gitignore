@@ -1,7 +1,16 @@
 node_modules
 .next
 out
+.env
 .env*.local
 *.tsbuildinfo
 next-env.d.ts
 .DS_Store
+
+# Runtime data — never belongs in the repo. .pglite is the local database
+# file (your seeded library, your saved parameters, everything you've
+# tuned); public/uploads holds captured posters, snapshot exports, and
+# anything uploaded through the app. Both are generated at runtime and
+# regenerate from a fresh `npm run seed` / `/api/seed`.
+.pglite
+public/uploads

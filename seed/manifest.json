@@ -1,26 +1,328 @@
 {
   "version": 1,
   "assets": [
-    { "slug": "gradient-grid",     "type": "shader", "file": "shaders/gradient-grid.frag",     "title": "Gradient Grid",     "tags": ["gradient", "grid", "geometric", "reference"] },
-    { "slug": "ascii-mosaic",      "type": "shader", "file": "shaders/ascii-mosaic.frag",      "title": "ASCII Mosaic",      "tags": ["ascii", "text", "raster"] },
-    { "slug": "ordered-dither",    "type": "shader", "file": "shaders/ordered-dither.frag",    "title": "Ordered Dither",    "tags": ["dither", "raster", "monochrome"] },
-    { "slug": "halftone-screen",   "type": "shader", "file": "shaders/halftone-screen.frag",   "title": "Halftone Screen",   "tags": ["halftone", "print", "raster"] },
-    { "slug": "kaleidoscope",      "type": "shader", "file": "shaders/kaleidoscope.frag",      "title": "Kaleidoscope",      "tags": ["symmetry", "geometric"] },
-    { "slug": "noise-field",       "type": "shader", "file": "shaders/noise-field.frag",       "title": "Noise Field",       "tags": ["noise", "organic"] },
-    { "slug": "feedback-trails",   "type": "shader", "file": "shaders/feedback-trails.frag",   "title": "Feedback Trails",   "tags": ["feedback", "motion"] },
-    { "slug": "truchet-weave",     "type": "shader", "file": "shaders/truchet-weave.frag",     "title": "Truchet Weave",     "tags": ["tiles", "geometric"] },
-    { "slug": "sdf-sphere",        "type": "shader", "file": "shaders/sdf-sphere.frag",        "title": "SDF Sphere",        "tags": ["3d", "raymarch"] },
-    { "slug": "chromatic-glitch",  "type": "shader", "file": "shaders/chromatic-glitch.frag",  "title": "Chromatic Glitch",  "tags": ["glitch", "post"] },
-
-    { "slug": "particle-burst",    "type": "p5", "file": "sketches/particle-burst.js",    "title": "Particle Burst",    "tags": ["particles", "physics", "motion", "reference"] },
-    { "slug": "flow-field",        "type": "p5", "file": "sketches/flow-field.js",        "title": "Flow Field",        "tags": ["noise", "particles"] },
-    { "slug": "recursive-tree",    "type": "p5", "file": "sketches/recursive-tree.js",    "title": "Recursive Tree",    "tags": ["recursion", "organic"] },
-    { "slug": "koch-snowflake",    "type": "p5", "file": "sketches/koch-snowflake.js",    "title": "Koch Snowflake",    "tags": ["fractal", "recursion"] },
-    { "slug": "bezier-lab",        "type": "p5", "file": "sketches/bezier-lab.js",        "title": "Bezier Lab",        "tags": ["curves", "interactive"] },
-    { "slug": "orbit-sphere",      "type": "p5", "file": "sketches/orbit-sphere.js",      "title": "Orbit Sphere",      "tags": ["3d", "interactive"] },
-    { "slug": "terrain-wireframe", "type": "p5", "file": "sketches/terrain-wireframe.js", "title": "Terrain Wireframe", "tags": ["3d", "noise", "wireframe"] },
-    { "slug": "shader-texture",    "type": "p5", "file": "sketches/shader-texture.js",    "title": "Shader Texture",    "tags": ["3d", "shader"] },
-    { "slug": "harmonograph",      "type": "p5", "file": "sketches/harmonograph.js",      "title": "Harmonograph",      "tags": ["curves", "math"] },
-    { "slug": "type-grid",         "type": "p5", "file": "sketches/type-grid.js",         "title": "Type Grid",         "tags": ["typography", "grid"] }
+    {
+      "slug": "gradient-grid",
+      "type": "shader",
+      "file": "shaders/gradient-grid.frag",
+      "title": "Gradient Grid",
+      "tags": [
+        "gradient",
+        "grid",
+        "geometric",
+        "reference"
+      ]
+    },
+    {
+      "slug": "ascii-mosaic",
+      "type": "shader",
+      "file": "shaders/ascii-mosaic.frag",
+      "title": "ASCII Mosaic",
+      "tags": [
+        "ascii",
+        "text",
+        "raster"
+      ]
+    },
+    {
+      "slug": "ordered-dither",
+      "type": "shader",
+      "file": "shaders/ordered-dither.frag",
+      "title": "Ordered Dither",
+      "tags": [
+        "dither",
+        "raster",
+        "monochrome"
+      ]
+    },
+    {
+      "slug": "halftone-screen",
+      "type": "shader",
+      "file": "shaders/halftone-screen.frag",
+      "title": "Halftone Screen",
+      "tags": [
+        "halftone",
+        "print",
+        "raster"
+      ]
+    },
+    {
+      "slug": "kaleidoscope",
+      "type": "shader",
+      "file": "shaders/kaleidoscope.frag",
+      "title": "Kaleidoscope",
+      "tags": [
+        "symmetry",
+        "geometric"
+      ]
+    },
+    {
+      "slug": "noise-field",
+      "type": "shader",
+      "file": "shaders/noise-field.frag",
+      "title": "Noise Field",
+      "tags": [
+        "noise",
+        "organic"
+      ]
+    },
+    {
+      "slug": "feedback-trails",
+      "type": "shader",
+      "file": "shaders/feedback-trails.frag",
+      "title": "Feedback Trails",
+      "tags": [
+        "feedback",
+        "motion"
+      ]
+    },
+    {
+      "slug": "truchet-weave",
+      "type": "shader",
+      "file": "shaders/truchet-weave.frag",
+      "title": "Truchet Weave",
+      "tags": [
+        "tiles",
+        "geometric"
+      ]
+    },
+    {
+      "slug": "sdf-sphere",
+      "type": "shader",
+      "file": "shaders/sdf-sphere.frag",
+      "title": "SDF Sphere",
+      "tags": [
+        "3d",
+        "raymarch"
+      ]
+    },
+    {
+      "slug": "particle-burst",
+      "type": "p5",
+      "file": "sketches/particle-burst.js",
+      "title": "Particle Burst",
+      "tags": [
+        "particles",
+        "physics",
+        "motion",
+        "reference"
+      ]
+    },
+    {
+      "slug": "flow-field",
+      "type": "p5",
+      "file": "sketches/flow-field.js",
+      "title": "Flow Field",
+      "tags": [
+        "noise",
+        "particles"
+      ]
+    },
+    {
+      "slug": "recursive-tree",
+      "type": "p5",
+      "file": "sketches/recursive-tree.js",
+      "title": "Recursive Tree",
+      "tags": [
+        "recursion",
+        "organic"
+      ]
+    },
+    {
+      "slug": "koch-snowflake",
+      "type": "p5",
+      "file": "sketches/koch-snowflake.js",
+      "title": "Koch Snowflake",
+      "tags": [
+        "fractal",
+        "recursion"
+      ]
+    },
+    {
+      "slug": "bezier-lab",
+      "type": "p5",
+      "file": "sketches/bezier-lab.js",
+      "title": "Bezier Lab",
+      "tags": [
+        "curves",
+        "interactive"
+      ]
+    },
+    {
+      "slug": "orbit-sphere",
+      "type": "p5",
+      "file": "sketches/orbit-sphere.js",
+      "title": "Orbit Sphere",
+      "tags": [
+        "3d",
+        "interactive"
+      ]
+    },
+    {
+      "slug": "terrain-wireframe",
+      "type": "p5",
+      "file": "sketches/terrain-wireframe.js",
+      "title": "Terrain Wireframe",
+      "tags": [
+        "3d",
+        "noise",
+        "wireframe"
+      ]
+    },
+    {
+      "slug": "shader-texture",
+      "type": "p5",
+      "file": "sketches/shader-texture.js",
+      "title": "Shader Texture",
+      "tags": [
+        "3d",
+        "shader"
+      ]
+    },
+    {
+      "slug": "harmonograph",
+      "type": "p5",
+      "file": "sketches/harmonograph.js",
+      "title": "Harmonograph",
+      "tags": [
+        "curves",
+        "math"
+      ]
+    },
+    {
+      "slug": "type-grid",
+      "type": "p5",
+      "file": "sketches/type-grid.js",
+      "title": "Type Grid",
+      "tags": [
+        "typography",
+        "grid"
+      ]
+    },
+    {
+      "slug": "liquid-gradient",
+      "type": "shader",
+      "file": "shaders/liquid-gradient.frag",
+      "title": "Liquid Gradient",
+      "tags": [
+        "gradient",
+        "liquid",
+        "organic",
+        "metaball"
+      ]
+    },
+    {
+      "slug": "julia-orbit",
+      "type": "shader",
+      "file": "shaders/julia-orbit.frag",
+      "title": "Julia Orbit",
+      "tags": [
+        "fractal",
+        "math",
+        "filigree"
+      ]
+    },
+    {
+      "slug": "moire-interference",
+      "type": "shader",
+      "file": "shaders/moire-interference.frag",
+      "title": "Moire Interference",
+      "tags": [
+        "moire",
+        "geometric",
+        "minimal",
+        "optical"
+      ]
+    },
+    {
+      "slug": "cube-transform",
+      "type": "p5",
+      "file": "sketches/cube-transform.js",
+      "title": "Cube Transform",
+      "tags": [
+        "3d",
+        "interactive",
+        "geometric"
+      ]
+    },
+    {
+      "slug": "repetition-grid",
+      "type": "p5",
+      "file": "sketches/repetition-grid.js",
+      "title": "Repetition Grid",
+      "tags": [
+        "repetition",
+        "grid",
+        "wave"
+      ]
+    },
+    {
+      "slug": "repetition-radial",
+      "type": "p5",
+      "file": "sketches/repetition-radial.js",
+      "title": "Repetition Radial",
+      "tags": [
+        "repetition",
+        "radial",
+        "geometric"
+      ]
+    },
+    {
+      "slug": "follow-tracks",
+      "type": "p5",
+      "file": "sketches/follow-tracks.js",
+      "title": "Follow Tracks",
+      "tags": [
+        "particles",
+        "motion",
+        "trails"
+      ]
+    },
+    {
+      "slug": "follow-cursor",
+      "type": "p5",
+      "file": "sketches/follow-cursor.js",
+      "title": "Follow Cursor",
+      "tags": [
+        "particles",
+        "interactive",
+        "swarm"
+      ]
+    },
+    {
+      "slug": "data-glyphs",
+      "type": "p5",
+      "file": "sketches/data-glyphs.js",
+      "title": "Data Glyphs",
+      "tags": [
+        "typography",
+        "data",
+        "ascii"
+      ]
+    },
+    {
+      "slug": "strange-attractor",
+      "type": "p5",
+      "file": "sketches/strange-attractor.js",
+      "title": "Strange Attractor",
+      "tags": [
+        "3d",
+        "math",
+        "chaos",
+        "particles"
+      ]
+    },
+    {
+      "slug": "particle-cube",
+      "type": "p5",
+      "file": "sketches/particle-cube.js",
+      "title": "Particle Cube",
+      "tags": [
+        "3d",
+        "particles",
+        "interactive",
+        "glow"
+      ]
+    }
   ]
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "board_items" ADD COLUMN "mod_override" jsonb;

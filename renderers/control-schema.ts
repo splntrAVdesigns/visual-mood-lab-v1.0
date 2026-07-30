@@ -10,6 +10,10 @@
  * Location: renderers/control-schema.ts
  */
 
+// Type-only: erased at compile time, so this does not create a runtime
+// circular dependency even though types/asset.ts imports back from here.
+import type { AssetType } from '@/types/asset';
+
 /* ------------------------------------------------------------------ *
  * Primitives
  * ------------------------------------------------------------------ */
@@ -359,6 +363,30 @@ export function withBaseControls(
   const omit = new Set(opts.omit ?? []);
   const base = createSchema(id, BASE_CONTROLS.filter((c) => !omit.has(c.id)), opts);
   return mergeSchemas(base, createSchema(id, controls, opts));
+}
+
+/**
+ * The fallback schema for an asset that has none cached (image, svg, video —
+ * shader and p5 assets always have a real one from ingest).
+ *
+ * Exists so there is exactly one place that decides "images don't get
+ * Speed/Loop/Paused." It used to be decided twice — once correctly inside
+ * MediaRenderer, and once, forgotten, inside the code path that actually
+ * builds what the inspector panel shows — and the two disagreed. A shared
+ * function can't drift from itself.
+ */
+export function defaultSchemaFor(id: string, type: AssetType): ControlSchema {
+  const isMedia = type === 'image' || type === 'svg' || type === 'video';
+
+  return withBaseControls(id, [], {
+    omit: type === 'video' ? [] : ['speed', 'loop', 'paused'],
+    // Transform (scale, rotation, offset) is usually the first thing worth
+    // touching on a static image or video — unlike a shader's Composition
+    // group, which is more of a power-user corner. Media types get it open.
+    groups: isMedia
+      ? BASE_GROUPS.map((g) => (g.id === 'transform' ? { ...g, collapsed: false } : g))
+      : undefined,
+  });
 }
 
 /** Initial ParamState for a schema. Triggers are excluded — they hold no value. */

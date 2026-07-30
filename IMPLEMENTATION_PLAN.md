@@ -1,7 +1,7 @@
 # Visual Mood Lab — Implementation Plan
 
-**Status:** Phase 0 complete → Phase 1
-**Last updated:** 2026-07-27 (rev 3 — Phase 0 shipped; §9 budget corrected against measurement)
+**Status:** Phase 4 complete (LFO half) → Phase 5, deployment-ready
+**Last updated:** 2026-07-29 (rev 6 — snapshots simplified to flat captured images, modulation moved from right-click to a persistent sidecar panel, Restore Defaults fixed to be always reachable, deploy prep landed)
 
 ---
 
@@ -176,7 +176,7 @@ type BoardItem = {
 };
 ```
 
-**`paramsOverride` is the highest-leverage field in the schema.** It turns twelve shaders into sixty distinct board items at zero storage cost.
+**`paramsOverride` is what makes a snapshot exist independently of its source.** A snapshot shares its underlying shader or sketch but carries its own saved parameters, its own captured image, and — as of the post-ship revision below — renders as that flat captured image rather than a second live instance of the shader. "Twelve shaders, sixty saved looks" still holds; what changed is that a saved look is now a picture of a moment, not a still-tunable parallel instance.
 
 Store code assets as **text in Postgres**, not blobs. They become searchable, diffable, and versionable for free.
 
@@ -227,28 +227,45 @@ Each phase has a shippable outcome and an explicit exit criterion. Do not start 
 
 **Exit:** a board containing the full 20-asset seed library plus 20 uploaded media assets scrolls at 60fps on a mid-range laptop, holds under 400MB, and shows no context-loss warnings. Real shaders, not placeholders — this is the first phase where the seed set earns its keep.
 
-### Phase 3 — The inspector (est. 1 week) ← *this is where it becomes the product*
+### Phase 3 — The inspector ✅ COMPLETE
 
-- [ ] `parseUniforms()` wired into shader ingest; schema cached on the asset row
-- [ ] One component per `ControlKind` in `features/inspector/controls/`
-- [ ] Grouped, ordered rendering with the Advanced disclosure
-- [ ] `showIf` conditional visibility
-- [ ] Debounced param persistence (250ms) with optimistic local state
-- [ ] `hydrate()` on load so schema changes never break saved params
-- [ ] Param snapshots → `BoardItem.paramsOverride`
-- [ ] Deep-linkable focused view at `/asset/[id]`
-- [ ] Seed set verified as inspector fixtures — every control kind rendered and persisted
+- [x] `parseUniforms()` wired into shader ingest; schema cached on the asset row
+- [x] One component per `ControlKind` in `features/inspector/controls/`
+- [x] Grouped, ordered rendering with the Advanced disclosure
+- [x] `showIf` conditional visibility
+- [x] Debounced param persistence (500ms, not 250ms — cosmetic deviation) with optimistic local state
+- [x] `hydrate()` on load so schema changes never break saved params
+- [x] Param snapshots → `BoardItem.paramsOverride`
+- [x] Deep-linkable focused view at `/asset/[id]`
+- [x] Seed set verified as inspector fixtures — every control kind rendered and persisted
 
-**Exit:** open any of the 20 seed assets, adjust every control, reload the page, and get the identical frame back. All ten `ControlKind` values are exercised by the seed set, so this doubles as full inspector coverage.
+**Verified:** 30-asset seed set (grew from 20 during Phase 2/3 sprints) exercises all ten `ControlKind` values · deep link round-trip tested end to end (create snapshot → visit its URL → 200; delete it → same URL → 404) · param persistence confirmed via direct API round-trip, not just inspected in the browser.
 
-### Phase 4 — Modulation bus (est. 4–5 days)
+**Shipped beyond the original scope, pulled forward from later phases:**
+- Command palette (`⌘K`) — originally Phase 6
+- PNG capture — originally Phase 6, landed as part of the snapshot flow (`renderer.capture()`, used for posters and snapshot exports)
+- Hero section, recently-viewed strip, sort control, live-renderer indicator — not in the original plan; added in response to direct feedback
 
-- [ ] `lib/modulation/` — shared clock, Web Audio analyser, LFO bank
-- [ ] Right-click a modulatable control → assign a source, set amount and rate
-- [ ] Visual indicator on modulated controls
-- [ ] One audio input shared across all live renderers
+**Exit:** open any of the 30 seed assets, adjust every control, reload the page, and get the identical frame back. Confirmed via API-level round-trip; full click-through in a real browser has not been done by Claude, only by the person building this.
 
-**Exit:** three different assets on one board react to the same audio source simultaneously with no added frame cost.
+**Post-ship revision — snapshots simplified to flat images.** A snapshot originally mounted a second live shader/sketch instance with its saved parameters — same rendering pipeline as the source asset, just with different values. In practice this meant every bug class the live renderer was exposed to (a card/host ownership conflict, in particular) also hit snapshots, and it kept surfacing there first. A snapshot now renders its own captured frame through the same path an uploaded image uses — no live renderer, no shader compile, nothing left to fail. It keeps Transform and opacity controls (still genuinely useful — cropping or repositioning a saved look), loses live shader/sketch parameters (a snapshot is a settled look now, not a still-tunable parallel instance). "Save snapshot" and "Modulate" are hidden on a snapshot's own focused view for the same reason.
+
+**Post-ship revision — Restore Defaults was unreachable in the exact situation it's needed.** The reset action only appeared once you'd touched a control *in the current session* (`dirty.size > 0`), which meant reopening an asset tuned in a past session — the whole point of persistence — hid the one control that undoes it. It's now always present. The inspector's footer notice was also stale, still claiming nothing persisted; replaced with copy that matches what the app has done since this phase shipped: every change autosaves, and Restore Defaults is the explicit way back to the library original.
+
+### Phase 4 — Modulation bus ✅ COMPLETE (LFO), audio deferred
+
+- [x] `lib/modulation/` — shared clock and LFO bank
+- [x] ~~Right-click a modulatable control~~ → **superseded, see below**
+- [x] Visual indicator on modulated controls
+- [ ] Web Audio analyser / one audio input shared across all live renderers — **deferred by decision**
+
+**Why audio is deferred:** LFOs need no permissions, no device negotiation and no fallback path, so the routing, persistence and per-frame application got proven without a microphone prompt in the mix. Audio sources are already declared in `ModSource` and appear in the assignment menu marked "soon"; `bus.sample()` returns a neutral 0.5 for them, which reads as no modulation rather than pinning a parameter to an extreme. Wiring the analyser is now additive — one function in `bus.ts`.
+
+**Post-ship revision — right-click retired for a persistent panel.** The right-click popover checked out correctly at every layer inspectable in code — schema data, event wiring, z-index — and still didn't reliably reach people in practice. Rather than keep chasing an input-handling gap that couldn't be reproduced from code alone, modulation moved to a **Modulate sidecar panel**, opened from an explicit header button in the focused view (structurally the twin of the Code panel — same slide-in mechanism, no new layout system). It lists every modulatable control on the open asset with inline routing, and — a free consequence of the two panels being DOM siblings outside the fullscreened element — both it and Code auto-hide the moment fullscreen is entered via the `F` shortcut, with no extra visibility logic required.
+
+**Shipped alongside:** upload UI (closing the Phase 1 API/UI gap), keyboard shortcut reference in Settings, default-parameter tuning across six shaders.
+
+**Exit (LFO half):** several assets on one board driven by the same shared clock, sampled once per frame, with modulation layered on top of stored values rather than overwriting them — closing and reopening an asset returns it to where you set it, not where the LFO left it. Verified via API round-trip on both canonical assets and snapshots.
 
 ### Phase 5 — Playground (est. 1.5 weeks)
 
@@ -271,6 +288,17 @@ Each phase has a shippable outcome and an explicit exit criterion. Do not start 
 - [ ] Lighthouse pass; bundle audit
 
 **Exit:** export a 10-second 1080p WebM of a modulated shader without dropping frames.
+
+---
+
+## 7a. Deployment readiness
+
+Not part of the original phase numbering — added once the app was solid enough to be worth putting somewhere other than a local machine.
+
+- [x] `.gitignore` covers `.pglite/` and `public/uploads/` — runtime data (the local database, captured posters, uploads) was never meant to be committed and previously wasn't excluded
+- [x] `.env.example` documents every variable the app reads: `DATABASE_URL` (Neon), `BLOB_READ_WRITE_TOKEN` (Vercel Blob), `ALLOW_SEED_ROUTE` (one-time production seed gate)
+- [x] README deploy section: push to GitHub → Neon → Vercel Blob → import on Vercel → seed once via the `ALLOW_SEED_ROUTE` flag → done
+- [ ] Real authentication — deliberately not built yet. Current posture: single hardcoded user, no login, meant for private testing behind Vercel's built-in Deployment Protection (password or account gating, zero code). A landing page with real sign-in is future work, worth building once this is meant to be shared rather than tested by one person.
 
 ---
 

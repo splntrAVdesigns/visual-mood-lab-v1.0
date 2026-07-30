@@ -95,6 +95,20 @@ export const boardItems = pgTable(
     h: real('h'),
 
     paramsOverride: jsonb('params_override').$type<ParamState>(),
+
+    /**
+     * A snapshot's own captured frame. Distinct from the asset's poster:
+     * the whole point of a snapshot is that it looks different from its
+     * source, so showing the source's poster would defeat it.
+     */
+    posterOverride: text('poster_override'),
+
+    /**
+     * Modulation routing for a snapshot. Mirrors paramsOverride: a snapshot
+     * can breathe differently from the card it was saved from, which is
+     * half the reason to save one.
+     */
+    modOverride: jsonb('mod_override').$type<ModState>(),
   },
   (t) => [
     index('board_items_board_idx').on(t.boardId, t.order),

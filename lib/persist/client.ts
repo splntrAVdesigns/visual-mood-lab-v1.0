@@ -1,5 +1,7 @@
 import type { AssetRenderer } from '@/renderers/types';
 import type { ParamState } from '@/renderers/control-schema';
+import type { Asset } from '@/types/asset';
+import type { ModState } from '@/renderers/control-schema';
 
 /**
  * Client-side persistence helpers.
@@ -116,4 +118,156 @@ export function flushParams(assetId: string): void {
     body: JSON.stringify({ params: payload }),
     keepalive: true,
   }).catch(() => {});
+}
+
+
+/* ------------------------------------------------------------------ *
+ * Snapshots — parameter variations that become their own board card
+ * ------------------------------------------------------------------ */
+
+/**
+ * Creates a new board card sharing `assetId`'s shader/sketch but with its
+ * own saved parameters. Returns the new card, or null on failure — callers
+ * decide how to surface that; a failed save is not worth blocking the UI
+ * over.
+ */
+export async function createSnapshot(assetId: string, params: ParamState): Promise<Asset | null> {
+  try {
+    const res = await fetch('/api/boards/default/items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assetId, params }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { item?: Asset };
+    return data.item ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Uploads a captured frame as the snapshot's own poster, and hands back a
+ * blob the caller can also offer as a download — the "bounce" side of
+ * saving a snapshot.
+ */
+export async function storeSnapshotCapture(
+  itemId: string,
+  renderer: AssetRenderer,
+): Promise<{ posterUrl: string | null; blob: Blob | null }> {
+  try {
+    const blob = await renderer.capture({ type: 'image/png' });
+    if (!blob || blob.size < 2048) return { posterUrl: null, blob };
+
+    const res = await fetch(`/api/boards/default/items/${itemId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'image/png' },
+      body: blob,
+    });
+
+    if (!res.ok) return { posterUrl: null, blob };
+    const data = (await res.json()) as { posterUrl?: string };
+    return { posterUrl: data.posterUrl ?? null, blob };
+  } catch {
+    return { posterUrl: null, blob: null };
+  }
+}
+
+/** Triggers a browser download for a captured frame. */
+export function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function deleteSnapshot(itemId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/boards/default/items/${itemId}`, { method: 'DELETE' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Persists a snapshot's params. Distinct from persistParams: snapshots
+    write to the board item's paramsOverride, not the asset row. */
+export function persistSnapshotParams(itemId: string, params: ParamState, delay = 500): void {
+  const key = `snapshot:${itemId}`;
+  pending.set(key, params);
+
+  const existing = timers.get(key);
+  if (existing) clearTimeout(existing);
+
+  timers.set(
+    key,
+    setTimeout(() => {
+      const payload = pending.get(key);
+      timers.delete(key);
+      pending.delete(key);
+      if (!payload) return;
+
+      void fetch(`/api/boards/default/items/${itemId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ params: payload }),
+        keepalive: true,
+      }).catch(() => {});
+    }, delay),
+  );
+}
+
+export function flushSnapshotParams(itemId: string): void {
+  const key = `snapshot:${itemId}`;
+  const timer = timers.get(key);
+  const payload = pending.get(key);
+  if (!timer || !payload) return;
+
+  clearTimeout(timer);
+  timers.delete(key);
+  pending.delete(key);
+
+  void fetch(`/api/boards/default/items/${itemId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ params: payload }),
+    keepalive: true,
+  }).catch(() => {});
+}
+
+
+/**
+ * Persist modulation routing. Debounced like params — dragging a rate slider
+ * shouldn't write a row per frame — and routed to the snapshot's own column
+ * when the open card is a snapshot.
+ */
+export function persistMod(itemId: string, mod: ModState, isSnapshot: boolean, delay = 500): void {
+  const key = `mod:${itemId}`;
+  pending.set(key, mod as never);
+
+  const existing = timers.get(key);
+  if (existing) clearTimeout(existing);
+
+  const url = isSnapshot
+    ? `/api/boards/default/items/${itemId}`
+    : `/api/assets/${itemId}`;
+
+  timers.set(
+    key,
+    setTimeout(() => {
+      const payload = pending.get(key);
+      timers.delete(key);
+      pending.delete(key);
+      if (!payload) return;
+
+      void fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mod: payload }),
+        keepalive: true,
+      }).catch(() => {});
+    }, delay),
+  );
 }

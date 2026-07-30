@@ -3,15 +3,26 @@
 import { useEffect, useState } from 'react';
 import { Button, Dialog, Field, Select, Toggle } from '@/components/ui';
 import { BoardGrid } from '@/features/board/BoardGrid';
+import { Hero } from '@/features/board/Hero';
 import { InspectorDrawer } from '@/features/inspector/InspectorDrawer';
 import { FocusedAssetOverlay } from '@/features/board/FocusedAssetOverlay';
+import { openAssetById, closeAsset } from '@/features/board/openAsset';
+import { CommandPalette } from './CommandPalette';
 import { useBoardStore, useInspectorStore, usePlaybackStore, MAX_LIVE_RENDERERS } from '@/stores';
 import type { Asset } from '@/types/asset';
 import { AppHeader } from './AppHeader';
 import { NavDrawer } from './NavDrawer';
 import s from '../features.module.css';
 
-export function AppShell({ assets }: { assets: Asset[] }) {
+interface AppShellProps {
+  assets: Asset[];
+  /** True when the database has no tables yet — a fresh, unseeded install. */
+  needsSeed?: boolean;
+  /** Set by /asset/[id]: open this card as soon as the shell mounts. */
+  focusItemId?: string;
+}
+
+export function AppShell({ assets, needsSeed = false, focusItemId }: AppShellProps) {
   /* Hydrate synchronously on first render so SSR and the client agree —
      doing this in an effect would paint the empty state first and flash. */
   const [hydrated] = useState(() => {
@@ -27,7 +38,27 @@ export function AppShell({ assets }: { assets: Asset[] }) {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  /* Respect the OS motion preference, and keep respecting it if it changes. */
+  /* Open the deep-linked card once, on mount. Not pushUrl — the URL that got
+     us here is already correct. */
+  useEffect(() => {
+    if (focusItemId) openAssetById(focusItemId, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusItemId]);
+
+  /* Keep the URL and the open card in sync with browser back/forward. This
+     is what makes the deep link a real link rather than a one-way door —
+     without it, pressing Back after opening a card leaves the overlay open
+     with a stale URL underneath it. */
+  useEffect(() => {
+    const onPopState = () => {
+      const match = /^\/asset\/([^/]+)/.exec(window.location.pathname);
+      if (match) openAssetById(match[1], false);
+      else closeAsset(false);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
     setReducedMotion(mq.matches);
@@ -36,11 +67,11 @@ export function AppShell({ assets }: { assets: Asset[] }) {
     return () => mq.removeEventListener('change', onChange);
   }, [setReducedMotion]);
 
-  /* Global shortcuts. Ignored while typing. */
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') return; // command palette owns this
 
       if (e.key === ' ') {
         e.preventDefault();
@@ -56,24 +87,44 @@ export function AppShell({ assets }: { assets: Asset[] }) {
 
   return (
     <>
-      <AppHeader onOpenSettings={() => setSettingsOpen(true)} />
+      <AppHeader onOpenSettings={() => setSettingsOpen(true)} needsSeed={needsSeed} />
       <NavDrawer />
+      <CommandPalette />
 
       <main className={s.main} data-inspector-open={inspectorOpen ? 'true' : 'false'}>
+        <Hero />
         <BoardGrid />
       </main>
 
       <InspectorDrawer />
       <FocusedAssetOverlay />
+      <FooterCredit />
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </>
   );
 }
 
-/* ------------------------------------------------------------------ *
- * Settings
- * ------------------------------------------------------------------ */
+/**
+ * Small credit line, fixed to the bottom-left corner.
+ *
+ * Deliberately NOT positioned relative to the round "N" badge that sits in
+ * this same corner during `next dev` — that badge is Next.js's own dev-mode
+ * build indicator and does not exist in a production build. Anchoring to it
+ * would put this in the wrong place the moment it's deployed.
+ */
+function FooterCredit() {
+  return (
+    <a
+      href="https://splntr-microtools.com"
+      target="_blank"
+      rel="noopener noreferrer"
+      className={s.footerCredit}
+    >
+      Made by SPLNTR Micro Tools — splntr-microtools.com
+    </a>
+  );
+}
 
 function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const quality = usePlaybackStore((st) => st.quality);
@@ -124,6 +175,26 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
       >
         <Toggle label="Reduced motion" checked={reducedMotion} disabled onChange={() => {}} />
       </Field>
+
+      <div style={{ marginTop: 'var(--space-4)' }}>
+        <span className={s.snapshotLabel}>Keyboard</span>
+        <div className={s.shortcutList}>
+          {[
+            ['Space', 'Pause / play all'],
+            ['⌘K / Ctrl+K', 'Jump to an asset'],
+            ['[', 'Toggle the menu'],
+            ['F', 'Fullscreen (while an asset is open)'],
+            ['Esc', 'Close the open panel'],
+            ['← →', 'Nudge a focused slider (⇧ for coarse)'],
+            ['Right-click', 'Modulate a control'],
+          ].map(([key, what]) => (
+            <div key={key} className={s.shortcutRow}>
+              <span>{what}</span>
+              <span className={s.shortcutKey}>{key}</span>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <p className={s.notice} style={{ marginTop: 'var(--space-3)' }}>
         <span className={s.noticeStrong}>Live renderer budget:</span> {MAX_LIVE_RENDERERS}.

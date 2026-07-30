@@ -9,6 +9,9 @@ interface FieldProps {
   label: string;
   /** Mono readout on the right of the label row. */
   value?: string;
+  /** Replaces `value` when supplied — used for live modulated readouts that
+      update outside React's render cycle. */
+  valueNode?: ReactNode;
   hint?: string;
   /** Shows the accent dot and enables the reset affordance. */
   dirty?: boolean;
@@ -21,7 +24,7 @@ interface FieldProps {
  * this, which is what makes a shader panel and a video panel look like the
  * same product.
  */
-export function Field({ label, value, hint, dirty, onReset, children }: FieldProps) {
+export function Field({ label, value, valueNode, hint, dirty, onReset, children }: FieldProps) {
   return (
     <div className={s.field}>
       <div className={s.fieldHead}>
@@ -29,7 +32,7 @@ export function Field({ label, value, hint, dirty, onReset, children }: FieldPro
           {label}
         </span>
         <span className={s.fieldRow}>
-          {value !== undefined && <span className={s.fieldValue}>{value}</span>}
+          {valueNode ?? (value !== undefined && <span className={s.fieldValue}>{value}</span>)}
           {dirty && onReset && (
             <IconButton
               label={`Reset ${label}`}

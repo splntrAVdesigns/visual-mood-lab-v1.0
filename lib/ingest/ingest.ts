@@ -1,5 +1,6 @@
 import { eq, and } from 'drizzle-orm';
 import { getDb, schema } from '@/lib/db/client';
+import { ensureCanonicalBoardItem, getOrCreateDefaultBoard } from '@/lib/data/assets';
 import { getStorage } from '@/lib/storage';
 import { parseUniforms } from '@/lib/gl/parse-uniforms';
 import { paramsToSchema } from '@/lib/sketch/params-to-schema';
@@ -29,10 +30,14 @@ export interface IngestInput {
   durationMs?: number;
   /** Set for seed assets so re-runs upsert instead of duplicating. */
   seedSlug?: string;
+  /** Position on the board. Seed script passes the manifest index. */
+  boardOrder?: number;
 }
 
 export interface IngestResult {
   id: string;
+  /** Position this asset's canonical card should occupy on the board. */
+  boardOrder?: number;
   created: boolean;
   /** True when content was unchanged and the existing row was reused. */
   unchanged: boolean;
@@ -134,12 +139,16 @@ export async function ingestAsset(input: IngestInput): Promise<IngestResult> {
     updatedAt: now,
   };
 
+  const boardId = await getOrCreateDefaultBoard(input.ownerId);
+
   if (prior) {
     await db.update(schema.assets).set(row).where(eq(schema.assets.id, prior.id));
+    await ensureCanonicalBoardItem(boardId, prior.id, input.boardOrder ?? 0);
     return { id: prior.id, created: false, unchanged: false, schema: controlSchema, warnings };
   }
 
   await db.insert(schema.assets).values({ ...row, createdAt: now });
+  await ensureCanonicalBoardItem(boardId, row.id, input.boardOrder ?? 0);
   return { id: row.id, created: true, unchanged: false, schema: controlSchema, warnings };
 }
 
@@ -159,6 +168,13 @@ function extractParamsLiteral(source: string): unknown {
     // Not eval: the literal is JSON-ish, so we normalise keys and quotes.
     const literal = match[1]
       .replace(/;\s*$/, '')
+      // Strip comments FIRST. Authors group long params objects with
+      // /* ---- motion ---- */ section headers, and leaving those in place
+      // made JSON.parse fail — which silently produced an asset with zero
+      // controls rather than any visible error. Particle Cube shipped with
+      // 25 controls and ingested with none because of exactly this.
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
       .replace(/([{,]\s*)([A-Za-z_]\w*)\s*:/g, '$1"$2":')
       .replace(/'/g, '"')
       .replace(/,(\s*[}\]])/g, '$1');

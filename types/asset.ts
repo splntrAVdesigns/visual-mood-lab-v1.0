@@ -20,7 +20,16 @@ export const ASSET_TYPE_BADGE: Record<AssetType, string> = {
 };
 
 export interface Asset {
+  /** The underlying source asset — schema, GLSL/JS source, poster all live here. */
   id: string;
+  /**
+   * Unique per CARD on the board. Equal to `id` for an asset's canonical
+   * card. A parameter snapshot gets its own itemId while sharing the same
+   * underlying `id` — same shader, different saved look, distinct card.
+   */
+  itemId: string;
+  /** True for a saved parameter variation of another card's asset. */
+  isSnapshot?: boolean;
   type: AssetType;
   title: string;
   tags: string[];

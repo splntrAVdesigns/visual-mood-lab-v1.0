@@ -11,11 +11,13 @@ interface BoardState {
   typeFilter: Set<AssetType>;
   tagFilter: Set<string>;
   sort: SortKey;
+  /** itemIds, most recent first. Capped — see pushRecentlyViewed. */
+  recentlyViewed: string[];
 
   /* actions */
   setAssets: (assets: Asset[]) => void;
   addAsset: (asset: Asset) => void;
-  removeAsset: (id: string) => void;
+  removeAsset: (itemId: string) => void;
   select: (id: string | null) => void;
   setLayout: (layout: BoardLayout) => void;
   setQuery: (query: string) => void;
@@ -23,6 +25,7 @@ interface BoardState {
   toggleTag: (tag: string) => void;
   clearFilters: () => void;
   setSort: (sort: SortKey) => void;
+  pushRecentlyViewed: (itemId: string) => void;
 }
 
 export const useBoardStore = create<BoardState>()((set) => ({
@@ -33,13 +36,22 @@ export const useBoardStore = create<BoardState>()((set) => ({
   typeFilter: new Set(),
   tagFilter: new Set(),
   sort: 'recent',
+  recentlyViewed: [],
 
   setAssets: (assets) => set({ assets }),
   addAsset: (asset) => set((s) => ({ assets: [asset, ...s.assets] })),
-  removeAsset: (id) =>
+  /**
+   * Keyed by itemId, not id. A snapshot shares its underlying asset's `id`
+   * with the original card, so filtering on `id` either removed nothing
+   * (the itemId never matched an id) or, worse, would have removed every
+   * card derived from that asset at once. Deleting a snapshot silently
+   * doing nothing was this exact mismatch.
+   */
+  removeAsset: (itemId) =>
     set((s) => ({
-      assets: s.assets.filter((a) => a.id !== id),
-      selectedId: s.selectedId === id ? null : s.selectedId,
+      assets: s.assets.filter((a) => a.itemId !== itemId),
+      recentlyViewed: s.recentlyViewed.filter((r) => r !== itemId),
+      selectedId: s.selectedId === itemId ? null : s.selectedId,
     })),
 
   select: (selectedId) => set({ selectedId }),
@@ -62,6 +74,11 @@ export const useBoardStore = create<BoardState>()((set) => ({
 
   clearFilters: () => set({ query: '', typeFilter: new Set(), tagFilter: new Set() }),
   setSort: (sort) => set({ sort }),
+
+  pushRecentlyViewed: (itemId) =>
+    set((s) => ({
+      recentlyViewed: [itemId, ...s.recentlyViewed.filter((id) => id !== itemId)].slice(0, 8),
+    })),
 }));
 
 /* ------------------------------------------------------------------ *
@@ -72,6 +89,9 @@ export function selectVisibleAssets(s: BoardState): Asset[] {
   const q = s.query.trim().toLowerCase();
 
   const filtered = s.assets.filter((a) => {
+    // Snapshots are surfaced in their own section — keeping them out of the
+    // main grid stops a saved variation from shoving the library around.
+    if (a.isSnapshot) return false;
     if (s.typeFilter.size && !s.typeFilter.has(a.type)) return false;
     if (s.tagFilter.size && !a.tags.some((t) => s.tagFilter.has(t))) return false;
     if (q && !a.title.toLowerCase().includes(q) && !a.tags.some((t) => t.includes(q))) {
@@ -99,5 +119,24 @@ export function selectAllTags(s: BoardState): string[] {
 }
 
 export function selectSelectedAsset(s: BoardState): Asset | null {
-  return s.assets.find((a) => a.id === s.selectedId) ?? null;
+  // itemId, not id — with snapshots in play, several cards share one id and
+  // matching on it would resolve to whichever happened to come first.
+  return s.assets.find((a) => a.itemId === s.selectedId) ?? null;
+}
+
+/** Snapshots live in their own section, not mixed into the main grid. */
+export function selectSnapshots(s: BoardState): Asset[] {
+  return s.assets.filter((a) => a.isSnapshot);
+}
+
+/**
+ * Uploaded media, surfaced separately from the shader/sketch library.
+ *
+ * The `upload` tag has been attached at ingest since Phase 1 and was never
+ * read anywhere — an upload landed in "All assets" indistinguishable from
+ * the 30 library tiles, findable only by the type filter. Same tag, now
+ * actually used for the thing it was named for.
+ */
+export function selectUploads(s: BoardState): Asset[] {
+  return s.assets.filter((a) => !a.isSnapshot && a.tags.includes('upload'));
 }

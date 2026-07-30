@@ -1,6 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+
+/** Pause required before hovering counts as intent to preview. */
+const HOVER_INTENT_MS = 350;
 import { getPool } from '@/lib/render/pool';
 import { captureAndStorePoster, isPlaceholderPoster } from '@/lib/persist/client';
 import { usePlaybackStore } from '@/stores';
@@ -24,6 +27,7 @@ interface RendererStageProps {
  */
 export function RendererStage({ asset, focused = false }: RendererStageProps) {
   const hostRef = useRef<HTMLSpanElement>(null);
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [state, setState] = useState<CardState>('poster');
   const [error, setError] = useState<string | null>(null);
   const [poster, setPoster] = useState<string | undefined>(asset.posterUrl);
@@ -32,6 +36,8 @@ export function RendererStage({ asset, focused = false }: RendererStageProps) {
   const reducedMotion = usePlaybackStore((st) => st.reducedMotion);
   const quality = usePlaybackStore((st) => st.quality);
   const epoch = usePlaybackStore((st) => st.epoch);
+  const boardFrozen = usePlaybackStore((st) => st.boardFrozen);
+  const [hovered, setHovered] = useState(false);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -39,13 +45,17 @@ export function RendererStage({ asset, focused = false }: RendererStageProps) {
 
     const pool = getPool();
     const unsubscribe = pool.subscribe((id, next, err) => {
-      if (id !== asset.id) return;
+      if (id !== asset.itemId) return;
       setState(next);
       setError(err);
     });
 
     // Never start a renderer when motion is unwanted or everything is parked.
-    if (reducedMotion || quality === 'preview' && false) {
+    // Frozen board (an asset is enlarged) or reduced motion: no grid card
+    // animates. All budget goes to the focused asset.
+    if (reducedMotion || (boardFrozen && !focused)) {
+      pool.demote(asset.itemId, host);
+      setState('poster');
       return () => unsubscribe();
     }
 
@@ -57,7 +67,7 @@ export function RendererStage({ asset, focused = false }: RendererStageProps) {
         for (const entry of entries) {
           if (cancelled) return;
 
-          if (entry.isIntersecting) {
+          if (entry.isIntersecting && (focused || hovered)) {
             setState(focused ? 'focused' : 'preview');
             void pool.promote(asset, host, focused ? 'focused' : 'preview').then(() => {
               if (cancelled) return;
@@ -66,15 +76,18 @@ export function RendererStage({ asset, focused = false }: RendererStageProps) {
               // first, often blank, frame.
               if (!isPlaceholderPoster(asset.posterUrl)) return;
               captureTimer = setTimeout(() => {
-                const renderer = pool.get(asset.id);
+                const renderer = pool.get(asset.itemId);
                 if (!renderer || cancelled) return;
+                // Poster storage stays keyed by the real asset id — the
+                // poster belongs to the shader/sketch source and is shared
+                // across every snapshot of it, not per-card.
                 void captureAndStorePoster(asset.id, renderer).then((url) => {
                   if (url && !cancelled) setPoster(url);
                 });
               }, 2500);
             });
           } else if (!focused) {
-            pool.demote(asset.id);
+            pool.demote(asset.itemId, host);
             setState('poster');
           }
         }
@@ -91,9 +104,11 @@ export function RendererStage({ asset, focused = false }: RendererStageProps) {
       if (captureTimer) clearTimeout(captureTimer);
       observer.disconnect();
       unsubscribe();
-      pool.demote(asset.id);
+      pool.demote(asset.itemId, host);
     };
-  }, [asset, focused, reducedMotion, quality, epoch]);
+  }, [asset, focused, reducedMotion, quality, epoch, hovered, boardFrozen]);
+  // Deps intentionally include the whole `asset` object — asset.itemId
+  // changing (opening a different card) must always re-run this effect.
   // epoch changes force this effect to re-run, which recreates the
   // IntersectionObserver and re-checks current visibility. That is what lets
   // a grid card reclaim its live renderer after a focused overlay — which
@@ -106,7 +121,20 @@ export function RendererStage({ asset, focused = false }: RendererStageProps) {
   const live = state !== 'poster' && !error;
 
   return (
-    <span className={s.cardStage}>
+    <span
+      className={s.cardStage}
+      onPointerEnter={(e) => {
+        if (focused || e.pointerType !== 'mouse') return;
+        // Intent delay: flying the cursor across the board should not light
+        // up every tile it crosses. Only a deliberate pause starts a render.
+        hoverTimer.current = setTimeout(() => setHovered(true), HOVER_INTENT_MS);
+      }}
+      onPointerLeave={() => {
+        if (focused) return;
+        if (hoverTimer.current) clearTimeout(hoverTimer.current);
+        setHovered(false);
+      }}
+    >
       {poster ? (
         <img
           className={s.cardPoster}

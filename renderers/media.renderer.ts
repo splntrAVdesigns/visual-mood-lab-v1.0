@@ -1,6 +1,6 @@
 import type { Asset, AssetType } from '@/types/asset';
 import type { ControlSchema, ParamState, ParamValue, RGBA } from './control-schema';
-import { defaultsOf, withBaseControls } from './control-schema';
+import { defaultSchemaFor, defaultsOf } from './control-schema';
 import type { AssetRenderer, CaptureOpts, Quality, RenderContext } from './types';
 
 /**
@@ -35,9 +35,7 @@ export class MediaRenderer implements AssetRenderer {
       return;
     }
 
-    this.schema = asset.schema ?? withBaseControls(asset.id, [], {
-      omit: this.type === 'video' ? [] : ['speed', 'loop', 'paused'],
-    });
+    this.schema = asset.schema ?? defaultSchemaFor(asset.id, this.type);
     this.params = { ...defaultsOf(this.schema), ...(asset.params ?? {}) };
 
     const el =

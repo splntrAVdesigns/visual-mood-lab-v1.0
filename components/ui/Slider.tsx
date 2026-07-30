@@ -57,6 +57,12 @@ export function Slider({
 
   const handlePointerDown = (e: PointerEvent<HTMLDivElement>) => {
     if (disabled) return;
+    // Only the primary (left) button drags the slider. Without this check,
+    // a right-click meant to open the modulation context menu also jumped
+    // the value to the click position and captured the pointer — which in
+    // turn could suppress the browser's own contextmenu dispatch. Right and
+    // middle clicks now pass through untouched.
+    if (e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
     e.currentTarget.focus();
     onChange(valueFromPointer(e.clientX));

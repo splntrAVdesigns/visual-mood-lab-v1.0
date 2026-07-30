@@ -146,3 +146,64 @@ npm run backfill:posters
 ```
 
 Overwrites the Phase 1 placeholder posters with real renders. Playwright stays optional — the script exits with instructions rather than being a hard dependency.
+
+---
+
+## Deploying to Vercel
+
+### 1. Push to GitHub
+
+```bash
+git init
+git add .
+git commit -m "Visual Mood Lab"
+git remote add origin <your-repo-url>
+git push -u origin main
+```
+
+`.pglite/` and `public/uploads/` are gitignored — your local database and
+captured media never get pushed. That's correct: production gets its own
+database and its own storage, set up below.
+
+### 2. Set up a database
+
+Create a free [Neon](https://neon.tech) Postgres project and copy its
+connection string.
+
+### 3. Set up blob storage
+
+In your Vercel project, open the **Storage** tab and create a Blob store.
+Vercel wires `BLOB_READ_WRITE_TOKEN` into your project automatically — you
+don't need to copy it by hand.
+
+This step matters more than it looks: Vercel's filesystem is read-only in
+production. Without Blob storage configured, poster generation and uploads
+will fail once deployed, even though they work fine locally against
+`public/uploads/`.
+
+### 4. Import the project on Vercel
+
+Import the GitHub repo, add `DATABASE_URL` in **Settings → Environment
+Variables** (Blob's token is already there from step 3), and deploy.
+
+### 5. Seed the deployed database
+
+The seed route is disabled in production by default. To run it once:
+
+1. Add `ALLOW_SEED_ROUTE=1` in Vercel's environment variables, redeploy
+2. Visit `https://your-app.vercel.app/api/seed` — you should see JSON
+   reporting `"created": 30`
+3. Remove `ALLOW_SEED_ROUTE` and redeploy (or just leave it — there's rarely
+   a reason to reseed a live deployment, but there's no harm in leaving the
+   route reachable either if you'd rather not redeploy twice)
+
+### 6. Access
+
+This is currently a single-user app with no login — every visitor sees and
+can edit the same board. For private testing, turn on **Deployment
+Protection** in your Vercel project settings (password or Vercel-account
+gating, no code required). A real sign-in flow is future work, worth
+building only once this is meant to be shared with other people rather than
+tested by one.
+
+See `.env.example` for every environment variable the app reads.

@@ -1,6 +1,8 @@
 import type { Asset, CardState } from '@/types/asset';
 import type { AssetRenderer, RenderContext } from '@/renderers/types';
 import { createRenderer } from '@/renderers/registry';
+import { getModBus } from '@/lib/modulation/bus';
+import { applyModulation, type ModState, type ParamState } from '@/renderers/control-schema';
 import { MAX_LIVE_RENDERERS } from '@/stores/playbackStore';
 
 /**
@@ -18,7 +20,10 @@ import { MAX_LIVE_RENDERERS } from '@/stores/playbackStore';
  */
 
 interface Entry {
-  assetId: string;
+  /** Pool key. This is the board card's itemId, NOT the shader/sketch id —
+      two snapshots of the same shader are two entries, each with its own
+      live renderer, because they are two different cards. */
+  cardId: string;
   asset: Asset;
   renderer: AssetRenderer;
   host: HTMLElement;
@@ -32,6 +37,11 @@ interface Entry {
   /** Mount/render failure recorded by the pool. The renderer's own `error`
       covers compile and load failures; this covers everything thrown at us. */
   failure: string | null;
+  /** Unmodulated values. Modulation is applied on top each frame, never
+      written back — otherwise an LFO would permanently drag the saved
+      parameter along with it. */
+  baseParams: ParamState;
+  modState: ModState;
 }
 
 export interface PoolFrameInfo {
@@ -39,7 +49,7 @@ export interface PoolFrameInfo {
   live: number;
 }
 
-type Listener = (assetId: string, state: CardState, error: string | null) => void;
+type Listener = (cardId: string, state: CardState, error: string | null) => void;
 
 class RendererPool {
   private entries = new Map<string, Entry>();
@@ -74,6 +84,8 @@ class RendererPool {
 
   setPointer(x: number, y: number, down: boolean): void {
     this.pointer = { x, y, down };
+    // Pointer is also a modulation source, so the bus needs it too.
+    getModBus().setPointer(x, y);
   }
 
   setAudio(data: Float32Array | null): void {
@@ -94,13 +106,14 @@ class RendererPool {
    * ---------------------------------------------------------------- */
 
   async promote(asset: Asset, host: HTMLElement, state: Exclude<CardState, 'poster'>): Promise<void> {
-    const existing = this.entries.get(asset.id);
+    const cardId = asset.itemId;
+    const existing = this.entries.get(cardId);
 
     if (existing && existing.host === host) {
       existing.state = state;
       existing.promotedAt = performance.now();
       existing.renderer.setQuality(state === 'focused' ? 'full' : 'preview');
-      this.enforceBudget(asset.id);
+      this.enforceBudget(cardId);
       return;
     }
 
@@ -112,18 +125,28 @@ class RendererPool {
       // moved. Tear down and remount into the new host instead.
       existing.controller.abort();
       existing.renderer.dispose();
-      this.entries.delete(asset.id);
-      this.notify(asset.id, 'poster', null);
+      this.entries.delete(cardId);
+      this.notify(cardId, 'poster', null);
     }
 
-    this.enforceBudget(asset.id);
+    this.enforceBudget(cardId);
 
     const controller = new AbortController();
-    const renderer = createRenderer(asset.type, asset.id);
+    // The renderer is created from the real shader/sketch id — that decides
+    // what compiles and what its internal caches key off. The pool tracks it
+    // under cardId; the renderer never needs to know the difference.
+    // A snapshot renders its own captured frame, exactly like an uploaded
+    // image — never the live shader or sketch. It used to mount the real
+    // ShaderRenderer/P5Renderer with the saved params, which meant a whole
+    // second live-rendering pipeline (and everything that can go wrong in
+    // it) sat behind something meant to be a settled, permanent look. This
+    // is what "just a regular snapshot image" should have been from the
+    // start.
+    const renderer = createRenderer(asset.isSnapshot ? 'image' : asset.type, asset.id);
     const now = performance.now();
 
     const entry: Entry = {
-      assetId: asset.id,
+      cardId,
       asset,
       renderer,
       host,
@@ -135,6 +158,8 @@ class RendererPool {
       promotedAt: now,
       mounted: false,
       failure: null,
+      baseParams: { ...(asset.params ?? {}) },
+      modState: { ...(asset.mod ?? {}) },
     };
 
     this.entries.set(asset.id, entry);
@@ -147,7 +172,7 @@ class RendererPool {
     }
 
     // Evicted mid-mount — a constant occurrence during fast scrolling.
-    if (controller.signal.aborted || !this.entries.has(asset.id)) {
+    if (controller.signal.aborted || !this.entries.has(cardId)) {
       renderer.dispose();
       return;
     }
@@ -155,19 +180,35 @@ class RendererPool {
     entry.mounted = true;
     if (this.paused) renderer.pause();
 
-    this.notify(asset.id, state, entry.failure ?? renderer.error);
+    this.notify(cardId, state, entry.failure ?? renderer.error);
     this.startLoop();
   }
 
-  demote(assetId: string): void {
-    const entry = this.entries.get(assetId);
+  /**
+   * Release a card's renderer.
+   *
+   * `owner` is the host element the caller believes it mounted into. When
+   * supplied, the demote is IGNORED unless it matches the entry's actual
+   * host.
+   *
+   * This guard is load-bearing, not defensive noise. A grid card and the
+   * focused overlay render the same itemId, so both mount a RendererStage
+   * for it. Opening an asset freezes the board, which made the grid card
+   * demote "its" renderer — except the pool entry at that key now belonged
+   * to the focused overlay, so the enlarged view went black instantly.
+   * Ownership makes that impossible by construction rather than relying on
+   * the two stages coordinating.
+   */
+  demote(cardId: string, owner?: HTMLElement): void {
+    const entry = this.entries.get(cardId);
     if (!entry) return;
+    if (owner && entry.host !== owner) return;
 
     entry.controller.abort();
     entry.renderer.dispose();
-    this.entries.delete(assetId);
+    this.entries.delete(cardId);
 
-    this.notify(assetId, 'poster', null);
+    this.notify(cardId, 'poster', null);
     if (this.entries.size === 0) this.stopLoop();
   }
 
@@ -177,20 +218,73 @@ class RendererPool {
    */
   private enforceBudget(incomingId: string): void {
     const candidates = [...this.entries.values()]
-      .filter((e) => e.assetId !== incomingId && e.state !== 'focused')
+      .filter((e) => e.cardId !== incomingId && e.state !== 'focused')
       .sort((a, b) => a.promotedAt - b.promotedAt);
 
     let over = this.entries.size + (this.entries.has(incomingId) ? 0 : 1) - MAX_LIVE_RENDERERS;
 
     for (const victim of candidates) {
       if (over <= 0) break;
-      this.demote(victim.assetId);
+      this.demote(victim.cardId);
       over--;
     }
   }
 
-  get(assetId: string): AssetRenderer | null {
-    return this.entries.get(assetId)?.renderer ?? null;
+  get(cardId: string): AssetRenderer | null {
+    return this.entries.get(cardId)?.renderer ?? null;
+  }
+
+  /** The inspector owns the unmodulated truth; the pool layers motion on it. */
+  setBaseParams(cardId: string, params: ParamState): void {
+    const entry = this.entries.get(cardId);
+    if (entry) entry.baseParams = { ...params };
+  }
+
+  setBaseParam(cardId: string, id: string, value: ParamState[string]): void {
+    const entry = this.entries.get(cardId);
+    if (entry) entry.baseParams[id] = value;
+  }
+
+  setModState(cardId: string, mod: ModState): void {
+    const entry = this.entries.get(cardId);
+    if (!entry) return;
+
+    // Drop smoothing history for routings that no longer exist, so
+    // reassigning a source doesn't inherit the previous one's momentum.
+    for (const key of Object.keys(entry.modState)) {
+      if (!mod[key]) getModBus().forget(`${cardId}:${key}`);
+    }
+    entry.modState = { ...mod };
+
+    // Restore anything that was being modulated back to its base value —
+    // otherwise a parameter freezes wherever the LFO happened to leave it.
+    const schema = entry.renderer.getControlSchema();
+    if (!schema) return;
+    for (const control of schema.controls) {
+      if (mod[control.id]) continue;
+      const base = entry.baseParams[control.id];
+      if (base !== undefined) entry.renderer.setParam(control.id, base);
+    }
+  }
+
+  /** Current modulated value, for the live readout in the inspector. */
+  sampleModulated(cardId: string, controlId: string): number | null {
+    const entry = this.entries.get(cardId);
+    if (!entry) return null;
+
+    const mod = entry.modState[controlId];
+    if (!mod) return null;
+
+    const schema = entry.renderer.getControlSchema();
+    const control = schema?.controls.find((c) => c.id === controlId);
+    if (!control) return null;
+
+    const base = entry.baseParams[controlId];
+    if (typeof base !== 'number') return null;
+
+    const signal = getModBus().sample(`${cardId}:${controlId}`, mod);
+    const next = applyModulation(control, base, mod, signal);
+    return typeof next === 'number' ? next : null;
   }
 
   get liveCount(): number {
@@ -205,6 +299,36 @@ class RendererPool {
   /* ---------------------------------------------------------------- *
    * The single frame loop
    * ---------------------------------------------------------------- */
+
+  /**
+   * Push modulated values into the renderer for this frame.
+   *
+   * Reads from baseParams and writes only to the renderer — the stored
+   * parameter is never overwritten. That separation is what lets you close
+   * an asset mid-oscillation and reopen it exactly where you left it, rather
+   * than wherever the LFO happened to be.
+   */
+  private applyModulation(entry: Entry): void {
+    const routings = Object.keys(entry.modState);
+    if (routings.length === 0) return;
+
+    const schema = entry.renderer.getControlSchema();
+    if (!schema) return;
+
+    const bus = getModBus();
+
+    for (const controlId of routings) {
+      const mod = entry.modState[controlId];
+      const control = schema.controls.find((c) => c.id === controlId);
+      if (!mod || !control) continue;
+
+      const base = entry.baseParams[controlId];
+      if (base === undefined) continue;
+
+      const signal = bus.sample(`${entry.cardId}:${controlId}`, mod);
+      entry.renderer.setParam(controlId, applyModulation(control, base, mod, signal));
+    }
+  }
 
   private startLoop(): void {
     if (this.rafId !== null || this.paused || this.entries.size === 0) return;
@@ -255,12 +379,14 @@ class RendererPool {
         audio: this.audio,
       };
 
+      this.applyModulation(entry);
+
       try {
         entry.renderer.render(ctx);
       } catch (err) {
         entry.failure = err instanceof Error ? err.message : String(err);
-        this.notify(entry.assetId, entry.state, entry.failure);
-        this.demote(entry.assetId);
+        this.notify(entry.cardId, entry.state, entry.failure);
+        this.demote(entry.cardId);
       }
     }
   };

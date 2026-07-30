@@ -8,6 +8,20 @@
       "when": 1785237639307,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1785295380104,
+      "tag": "0001_snapshot_poster",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785327768210,
+      "tag": "0002_snapshot_mod",
+      "breakpoints": true
     }
   ]
 }

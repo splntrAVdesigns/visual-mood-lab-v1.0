@@ -31,7 +31,9 @@ export function AssetCard({ asset, selected, onOpen }: AssetCardProps) {
       <RendererStage asset={asset} />
       <span className={s.cardFoot}>
         <span className={s.cardTitle}>{asset.title}</span>
-        <Badge className={s.cardBadge}>{ASSET_TYPE_BADGE[asset.type]}</Badge>
+        <Badge className={s.cardBadge}>
+          {asset.isSnapshot ? 'SNAP' : ASSET_TYPE_BADGE[asset.type]}
+        </Badge>
       </span>
     </button>
   );

@@ -1,0 +1,1 @@
+ALTER TABLE "board_items" ADD COLUMN "poster_override" text;

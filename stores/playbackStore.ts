@@ -36,6 +36,11 @@ interface PlaybackState {
    * poster until it happens to scroll off-screen and back.
    */
   epoch: number;
+  /**
+   * True while an asset is enlarged. Grid cards stop animating entirely so
+   * all GPU budget and all visual attention go to the focused asset.
+   */
+  boardFrozen: boolean;
 
   /** assetId -> current card state. The pool is derived from this. */
   cardStates: Map<string, CardState>;
@@ -47,6 +52,7 @@ interface PlaybackState {
   setReducedMotion: (reduced: boolean) => void;
   setAudioEnabled: (enabled: boolean) => void;
   bumpEpoch: () => void;
+  setBoardFrozen: (frozen: boolean) => void;
 
   promote: (assetId: string, state: CardState) => void;
   demote: (assetId: string) => void;
@@ -60,6 +66,7 @@ export const usePlaybackStore = create<PlaybackState>()((set, get) => ({
   reducedMotion: false,
   audioEnabled: false,
   epoch: 0,
+  boardFrozen: false,
   cardStates: new Map(),
 
   setPaused: (paused) => set({ paused }),
@@ -70,6 +77,7 @@ export const usePlaybackStore = create<PlaybackState>()((set, get) => ({
     set({ reducedMotion, paused: reducedMotion ? true : get().paused }),
   setAudioEnabled: (audioEnabled) => set({ audioEnabled }),
   bumpEpoch: () => set((s) => ({ epoch: s.epoch + 1 })),
+  setBoardFrozen: (boardFrozen) => set({ boardFrozen }),
 
   /**
    * Promote a card. Enforces the live-renderer ceiling by evicting the

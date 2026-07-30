@@ -19,7 +19,7 @@
  * but the buffer allocation, and any full-surface work the driver does, was
  * paying for 1280x1280 regardless.
  */
-const MAX_DIM = 900;
+export const MAX_DIM = 900;
 
 export interface CompiledProgram {
   program: WebGLProgram;

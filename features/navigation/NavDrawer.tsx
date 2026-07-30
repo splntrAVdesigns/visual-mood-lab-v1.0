@@ -1,5 +1,9 @@
 'use client';
 
+import { useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
+import { UploadDialog } from '@/features/library/UploadDialog';
+
 import {
   Drawer,
   SectionLabel,
@@ -10,9 +14,9 @@ import {
   TagIcon,
   UploadIcon,
 } from '@/components/ui';
-import { useShallow } from 'zustand/react/shallow';
 import {
   selectAllTags,
+  selectUploads,
   selectVisibleAssets,
   useBoardStore,
   useInspectorStore,
@@ -23,6 +27,7 @@ import s from '../features.module.css';
 const TYPES: AssetType[] = ['shader', 'p5', 'svg', 'image', 'video'];
 
 export function NavDrawer() {
+  const [uploadOpen, setUploadOpen] = useState(false);
   const open = useInspectorStore((st) => st.navOpen);
   const setNavOpen = useInspectorStore((st) => st.setNavOpen);
 
@@ -35,11 +40,13 @@ export function NavDrawer() {
 
   const tags = useBoardStore(useShallow(selectAllTags));
   const visible = useBoardStore(useShallow(selectVisibleAssets));
+  const uploads = useBoardStore(useShallow(selectUploads));
 
   const countOf = (type: AssetType) => assets.filter((a) => a.type === type).length;
   const filtersActive = typeFilter.size > 0 || tagFilter.size > 0;
 
   return (
+    <>
     <Drawer open={open} side="left" title="Visual Mood Lab" onClose={() => setNavOpen(false)}>
       <nav className={s.navSection}>
         <SectionLabel>Board</SectionLabel>
@@ -49,10 +56,16 @@ export function NavDrawer() {
             All assets
             <span className={s.navCount}>{visible.length}</span>
           </button>
-          <button type="button" className={s.navItem} disabled>
+          <button
+            type="button"
+            className={s.navItem}
+            data-active={tagFilter.has('upload') ? 'true' : undefined}
+            aria-pressed={tagFilter.has('upload')}
+            onClick={() => toggleTag('upload')}
+          >
             <LayersIcon className={s.navItemIcon} />
-            Collections
-            <span className={s.navCount}>—</span>
+            Library uploads
+            <span className={s.navCount}>{uploads.length}</span>
           </button>
         </div>
       </nav>
@@ -110,10 +123,9 @@ export function NavDrawer() {
       <nav className={s.navSection}>
         <SectionLabel>Lab</SectionLabel>
         <div className={s.navList}>
-          <button type="button" className={s.navItem} disabled>
+          <button type="button" className={s.navItem} onClick={() => setUploadOpen(true)}>
             <UploadIcon className={s.navItemIcon} />
             Upload
-            <span className={s.navCount}>P1</span>
           </button>
           <button type="button" className={s.navItem} disabled>
             <CodeIcon className={s.navItemIcon} />
@@ -123,5 +135,7 @@ export function NavDrawer() {
         </div>
       </nav>
     </Drawer>
+    <UploadDialog open={uploadOpen} onClose={() => setUploadOpen(false)} />
+    </>
   );
 }
