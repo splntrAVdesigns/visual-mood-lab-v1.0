@@ -17,6 +17,7 @@ const now = new Date(EPOCH).toISOString();
 function stub(id: string, title: string, type: Asset['type'], tags: string[], i: number): Asset {
   return {
     id,
+    itemId: id,
     type,
     title,
     tags,
