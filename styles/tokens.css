@@ -1,0 +1,112 @@
+/*
+ * Visual Mood Lab — design tokens
+ * --------------------------------
+ * Every colour, size, and duration in the app resolves to something here.
+ * If a component hardcodes a hex value, that is a bug.
+ *
+ * Palette discipline:
+ *   Four colours. Gray, black, white, one neon blue.
+ *   The accent marks state — selection, focus, active, modulation. Never decoration.
+ *   At most one accented element per screen region.
+ *   The artwork carries all other colour on screen.
+ */
+
+:root {
+  /* ---- surfaces ------------------------------------------------ */
+  --bg-canvas: #000000;      /* the board itself — pure black, always */
+  --bg-surface: #0d0d0f;     /* header, drawers */
+  --bg-raised: #16161a;      /* cards, inputs, popovers */
+  --bg-hover: #1d1d22;
+  --bg-active: #232329;
+
+  --border: #262629;
+  --border-hi: #35353a;
+
+  /* ---- text ---------------------------------------------------- */
+  --text: #e8e8ea;
+  --text-dim: #6e6e76;
+  --text-mute: #45454c;
+
+  /* ---- accent -------------------------------------------------- */
+  --accent: #00d3ff;
+  --accent-hover: #4ce0ff;
+  --accent-press: #00a8cc;
+  --accent-dim: rgba(0, 211, 255, 0.15);
+  --accent-faint: rgba(0, 211, 255, 0.07);
+  --accent-text: #000000;    /* on an accent fill */
+
+  /* ---- state --------------------------------------------------- */
+  --danger: #ff4d4d;
+  --danger-dim: rgba(255, 77, 77, 0.15);
+
+  /* ---- type ---------------------------------------------------- */
+  --font-ui: 'Geist', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', 'Roboto Mono', monospace;
+
+  --step--2: 0.6875rem;  /* 11px — micro labels, badges */
+  --step--1: 0.75rem;    /* 12px — control labels, metadata */
+  --step-0: 0.8125rem;   /* 13px — body, default UI */
+  --step-1: 0.9375rem;   /* 15px — section headings */
+  --step-2: 1.125rem;    /* 18px — drawer titles */
+  --step-3: 1.5rem;      /* 24px — page titles, wordmark */
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --tracking-wide: 0.08em;   /* uppercase micro labels only */
+  --tracking-mono: -0.01em;
+
+  /* ---- space --------------------------------------------------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* ---- geometry ------------------------------------------------ */
+  --radius: 3px;
+  --radius-lg: 5px;
+
+  --header-h: 48px;
+  --nav-drawer-w: 260px;
+  --inspector-w: 320px;
+  --control-h: 28px;
+  --touch-target: 36px;
+
+  /* ---- motion -------------------------------------------------- */
+  --dur-fast: 90ms;
+  --dur-base: 160ms;
+  --dur-drawer: 220ms;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* ---- elevation ----------------------------------------------- */
+  /* No shadows. On pure black a hairline reads better than any glow.
+     These exist only for elements that float over the canvas. */
+  --scrim: rgba(0, 0, 0, 0.6);
+  --overlay-border: 1px solid var(--border-hi);
+
+  /* ---- layers -------------------------------------------------- */
+  --z-board: 0;
+  --z-header: 40;
+  --z-drawer: 50;
+  --z-scrim: 45;
+  --z-tooltip: 70;
+  --z-dialog: 80;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 0ms;
+    --dur-drawer: 0ms;
+  }
+}
+
+/* Touch pointers get larger hit areas without changing the visual size. */
+@media (pointer: coarse) {
+  :root {
+    --control-h: 34px;
+    --touch-target: 44px;
+  }
+}

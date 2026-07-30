@@ -1,0 +1,723 @@
+/* ------------------------------------------------------------------ *
+ * Header
+ * ------------------------------------------------------------------ */
+
+.header {
+  position: fixed;
+  top: 0;
+  inset-inline: 0;
+  z-index: var(--z-header);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--header-h);
+  padding: 0 var(--space-2);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 var(--space-2);
+  font-size: var(--step-0);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  user-select: none;
+}
+
+/* The one place the accent appears in the header chrome. */
+.wordmarkAccent {
+  color: var(--accent);
+}
+
+.wordmarkVersion {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-mute);
+  letter-spacing: var(--tracking-mono);
+}
+
+.headerSpacer {
+  flex: 1;
+}
+
+.headerGroup {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.headerRule {
+  width: 1px;
+  height: 18px;
+  margin: 0 var(--space-2);
+  background: var(--border);
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: min(280px, 34vw);
+  height: var(--control-h);
+  padding: 0 var(--space-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-mute);
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.search:focus-within {
+  border-color: var(--border-hi);
+  color: var(--text-dim);
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  font-size: var(--step--1);
+  color: var(--text);
+}
+
+.searchInput::placeholder {
+  color: var(--text-mute);
+}
+
+@media (max-width: 720px) {
+  .search {
+    display: none;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Nav drawer
+ * ------------------------------------------------------------------ */
+
+.navSection {
+  padding: var(--space-2) 0;
+}
+
+.navList {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--touch-target);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius);
+  font-size: var(--step-0);
+  color: var(--text-dim);
+  text-align: left;
+  width: 100%;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.navItem:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.navItem[data-active='true'] {
+  color: var(--accent);
+  background: var(--accent-faint);
+}
+
+.navItemIcon {
+  flex: none;
+  color: inherit;
+}
+
+.navCount {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+
+.tagCloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-1);
+}
+
+.tag {
+  height: 22px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-dim);
+  transition: all var(--dur-fast) var(--ease);
+}
+
+.tag:hover {
+  border-color: var(--border-hi);
+  color: var(--text);
+}
+
+.tag[data-active='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-faint);
+}
+
+/* ------------------------------------------------------------------ *
+ * Board
+ * ------------------------------------------------------------------ */
+
+.main {
+  min-height: 100dvh;
+  padding-top: var(--header-h);
+  background: var(--bg-canvas);
+  transition: padding-right var(--dur-drawer) var(--ease);
+}
+
+/* On wide screens the inspector pushes the board rather than covering it,
+   so you can watch a parameter change while you drag it. */
+@media (min-width: 1100px) {
+  .main[data-inspector-open='true'] {
+    padding-right: var(--inspector-w);
+  }
+}
+
+.boardBar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5) var(--space-3);
+}
+
+.boardTitle {
+  font-size: var(--step-2);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+
+.boardMeta {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--gap);
+  padding: 0 var(--space-5) var(--space-7);
+}
+
+@media (max-width: 600px) {
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    padding-inline: var(--space-3);
+  }
+  .boardBar {
+    padding-inline: var(--space-3);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Card
+ * ------------------------------------------------------------------ */
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  aspect-ratio: 1;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  text-align: left;
+  /* Offscreen cards skip layout and paint entirely. */
+  content-visibility: auto;
+  contain-intrinsic-size: 240px;
+  transition: border-color var(--dur-fast) var(--ease);
+}
+
+.card:hover {
+  border-color: var(--border-hi);
+}
+
+.card[data-selected='true'] {
+  border-color: var(--accent);
+}
+
+.cardStage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--bg-canvas);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+/* Phase 0 placeholder. Replaced by a real poster in Phase 1 and a live
+   renderer in Phase 2. */
+.cardPlaceholder {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  background-image: linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 16px 16px;
+  background-position: center;
+  opacity: 0.35;
+}
+
+.cardPlaceholderMark {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  letter-spacing: var(--tracking-wide);
+  color: var(--text-mute);
+  text-transform: uppercase;
+}
+
+.cardFoot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  height: 30px;
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-top: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.cardTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--step--1);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card:hover .cardTitle,
+.card[data-selected='true'] .cardTitle {
+  color: var(--text);
+}
+
+.cardBadge {
+  flex: none;
+}
+
+.empty {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-7) var(--space-4);
+  text-align: center;
+}
+
+.emptyTitle {
+  font-size: var(--step-1);
+  color: var(--text-dim);
+}
+
+.emptyBody {
+  font-size: var(--step--1);
+  color: var(--text-mute);
+  max-width: 34ch;
+  line-height: var(--leading-normal);
+}
+
+/* ------------------------------------------------------------------ *
+ * Inspector
+ * ------------------------------------------------------------------ */
+
+.inspectorEmpty {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-6) 0;
+  text-align: center;
+  color: var(--text-mute);
+  font-size: var(--step--1);
+}
+
+.inspectorMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-2);
+}
+
+.inspectorMetaTitle {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group {
+  padding: var(--space-2) 0;
+}
+
+.groupHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) 0;
+  color: var(--text-mute);
+  font-size: var(--step--2);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.groupHead:hover {
+  color: var(--text-dim);
+}
+
+.groupChevron {
+  transition: transform var(--dur-fast) var(--ease);
+}
+
+.groupHead[aria-expanded='true'] .groupChevron {
+  transform: rotate(90deg);
+}
+
+.groupRule {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.swatch {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: var(--control-h);
+  padding: 0 var(--space-2);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.swatchChip {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 2px;
+  border: 1px solid var(--border-hi);
+}
+
+.swatchHex {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--text-dim);
+  letter-spacing: var(--tracking-mono);
+  text-transform: uppercase;
+}
+
+.vecRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  width: 100%;
+}
+
+.vecAxis {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.vecAxisLabel {
+  width: 10px;
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-mute);
+}
+
+.notice {
+  padding: var(--space-3);
+  border: 1px dashed var(--border-hi);
+  border-radius: var(--radius);
+  font-size: var(--step--2);
+  line-height: var(--leading-normal);
+  color: var(--text-mute);
+}
+
+.noticeStrong {
+  color: var(--text-dim);
+}
+
+.cardPoster {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--bg-canvas);
+}
+
+/* ---- live stage ------------------------------------------------- */
+
+.cardCanvas {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease);
+}
+
+.cardCanvas[data-live='true'] {
+  opacity: 1;
+}
+
+/* The poster stays mounted underneath so demotion is instant and there is
+   never a blank frame mid-scroll. */
+.cardPoster[data-dimmed='true'] {
+  opacity: 0;
+}
+
+.cardPoster {
+  transition: opacity var(--dur-base) var(--ease);
+}
+
+.cardLiveDot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.cardError {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 6px 8px;
+  background: var(--danger-dim);
+  border-top: 1px solid var(--danger);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  line-height: 1.35;
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ *
+ * Focused asset overlay
+ * ------------------------------------------------------------------ */
+
+.focusScrim {
+  position: fixed;
+  inset: 0;
+  z-index: 42; /* above the header (40), below the inspector drawer (50) —
+                  the drawer stays fully visible and usable while this dims
+                  everything behind it. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(var(--header-h) + var(--space-5)) var(--space-5) var(--space-5);
+  background: rgba(0, 0, 0, 0.88);
+  animation: focusScrimIn var(--dur-drawer) var(--ease);
+}
+
+@keyframes focusScrimIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.focusPanel {
+  position: relative;
+  width: min(78vw, 78vh, 900px);
+  aspect-ratio: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.focusHeader {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-4);
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.6), transparent);
+}
+
+.focusTitle {
+  flex: 1;
+  font-size: var(--step-0);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focusStage {
+  flex: 1;
+  display: flex;
+  position: relative;
+  min-height: 0;
+}
+
+@media (max-width: 640px) {
+  .focusScrim {
+    padding: calc(var(--header-h) + var(--space-3)) var(--space-3) var(--space-3);
+  }
+  .focusPanel {
+    width: min(94vw, 94vh);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Code panel
+ * ------------------------------------------------------------------ */
+
+/* With the code panel open the scrim becomes a two-column layout: source on
+   the left, preview on the right. The preview shrinks rather than the panel
+   overlapping it, so nothing important is ever hidden behind the source. */
+.focusScrim[data-code='true'] {
+  gap: var(--space-4);
+}
+
+.focusScrim[data-code='true'] .focusPanel {
+  width: min(48vw, 70vh, 620px);
+}
+
+.codePanel {
+  display: flex;
+  flex-direction: column;
+  width: min(46vw, 640px);
+  max-height: 100%;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  /* Source reads left-to-right; placing it first in the visual order means
+     the eye lands on code before preview when it is open. */
+  order: -1;
+}
+
+.codeHeader {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.codeTitle {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.codeMeta {
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-mute);
+  font-variant-numeric: tabular-nums;
+}
+
+.codeScroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: var(--bg-canvas);
+}
+
+.codeBody {
+  display: block;
+  padding: var(--space-3) 0;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  line-height: 1.6;
+  letter-spacing: var(--tracking-mono);
+  color: var(--text-dim);
+  tab-size: 2;
+}
+
+.codeLine {
+  display: flex;
+  gap: var(--space-3);
+  padding-right: var(--space-4);
+}
+
+.codeLine:hover {
+  background: var(--bg-hover);
+}
+
+.codeLineNo {
+  flex: none;
+  width: 3.5ch;
+  padding-left: var(--space-3);
+  text-align: right;
+  color: var(--text-mute);
+  user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.codeLineText {
+  white-space: pre;
+  color: var(--text);
+}
+
+.codeFooter {
+  display: flex;
+  gap: var(--space-2);
+  flex: none;
+  padding: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 900px) {
+  /* Not enough width for two columns — the code panel takes over and the
+     preview steps aside rather than both being uselessly narrow. */
+  .focusScrim[data-code='true'] .focusPanel {
+    display: none;
+  }
+  .codePanel {
+    width: 100%;
+    max-width: 640px;
+  }
+}

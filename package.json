@@ -1,0 +1,37 @@
+{
+  "name": "visual-mood-lab",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "verify:seed": "tsx scripts/verify-seed.ts",
+    "seed": "tsx scripts/seed.ts",
+    "seed:fresh": "tsx scripts/seed.ts -- --fresh",
+    "db:generate": "drizzle-kit generate",
+    "backfill:posters": "tsx scripts/backfill-posters.ts"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.5.4",
+    "@vercel/blob": "^2.6.1",
+    "drizzle-orm": "^0.45.2",
+    "next": "^16.0.0",
+    "p5": "^1.11.13",
+    "postgres": "^3.4.9",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "drizzle-kit": "^0.31.10",
+    "playwright": "^1.62.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

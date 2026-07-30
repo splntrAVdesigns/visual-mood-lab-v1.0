@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>sketch sandbox</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { display: block; }
+  #err {
+    position: fixed; inset: 0; padding: 12px;
+    font: 11px/1.5 ui-monospace, monospace;
+    color: #ff8080; background: rgba(0,0,0,.92);
+    white-space: pre-wrap; overflow: auto; display: none;
+  }
+</style>
+</head>
+<body>
+<div id="err"></div>
+<script src="/vendor/p5.min.js"></script>
+<script>
+/*
+ * Sandbox bootstrap.
+ *
+ * Runs in an iframe with a null origin. Receives sketch source over
+ * postMessage, evaluates it here, and reports schema, errors, and a heartbeat
+ * back to the host. Nothing in here can reach the host page's DOM or state.
+ */
+(function () {
+  var instance = null;
+  var params = {};
+  var errEl = document.getElementById('err');
+  var frame = 0;
+  var lastFpsAt = performance.now();
+  var fpsFrames = 0;
+  var fps = 0;
+  var paused = false;
+  var quality = 'preview';
+
+  /*
+   * Pixel density is the difference between a smooth thumbnail and a
+   * stuttering one. p5 defaults to the display density, so on a retina
+   * screen every sketch was rendering at 2x — four times the pixels — even
+   * for a 220px card. Preview cards are forced to 1x; only the focused
+   * view pays for the sharper buffer.
+   */
+  function densityFor(q) {
+    return q === 'full' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+  }
+
+  function post(msg) { parent.postMessage(msg, '*'); }
+
+  function showError(message, stack) {
+    errEl.style.display = 'block';
+    errEl.textContent = message + (stack ? '\n\n' + stack : '');
+    post({ type: 'error', message: message, stack: stack });
+  }
+
+  function clearError() {
+    errEl.style.display = 'none';
+    errEl.textContent = '';
+  }
+
+  window.onerror = function (message, _src, line, col, error) {
+    showError(String(message) + ' (line ' + line + ':' + col + ')', error && error.stack);
+    return true;
+  };
+
+  window.addEventListener('unhandledrejection', function (e) {
+    showError('Unhandled promise rejection: ' + String(e.reason));
+  });
+
+  function get(id) {
+    var v = params[id];
+    return v === undefined ? null : v;
+  }
+
+  function teardown() {
+    if (instance && instance.remove) {
+      try { instance.remove(); } catch (e) { /* already gone */ }
+    }
+    instance = null;
+    var c = document.querySelectorAll('canvas');
+    for (var i = 0; i < c.length; i++) c[i].remove();
+  }
+
+  function run(source) {
+    teardown();
+    clearError();
+    frame = 0;
+
+    var factory, declared;
+
+    try {
+      // Strip ES module syntax: the sandbox evaluates a plain script so it
+      // works without a build step and without dynamic import of blob URLs.
+      var code = source
+        .replace(/export\s+default\s+function\s+(\w+)/, 'var __sketch = function $1')
+        .replace(/export\s+default\s+/, 'var __sketch = ')
+        .replace(/export\s+const\s+params\s*=/, 'var __params =')
+        .replace(/export\s+(const|let|var|function)\s+/g, '$1 ');
+
+      var build = new Function(code + '\n;return { sketch: typeof __sketch !== "undefined" ? __sketch : null, params: typeof __params !== "undefined" ? __params : null };');
+      var out = build();
+      factory = out.sketch;
+      declared = out.params;
+    } catch (e) {
+      showError('Failed to evaluate sketch: ' + e.message, e.stack);
+      return;
+    }
+
+    if (typeof factory !== 'function') {
+      showError('Sketch has no default export function.');
+      return;
+    }
+
+    post({ type: 'schema', params: declared || null });
+
+    try {
+      instance = new p5(function (p) {
+        // Run the sketch factory, which assigns p.setup / p.draw.
+        var wrapped = factory(p, get);
+        if (typeof wrapped === 'function') wrapped(p, get);
+
+        // Wrap draw immediately and synchronously. The previous version
+        // polled on a 16ms setInterval waiting for p.draw to appear, which
+        // raced p5's own startup and silently gave up if it lost — a sketch
+        // that never animated with no error to explain why. The factory has
+        // already assigned p.draw by this line, so there is nothing to wait
+        // for.
+        // Density must be set before the sketch's createCanvas() call, so
+        // wrap setup rather than trying to apply it afterwards.
+        var userSetup = typeof p.setup === 'function' ? p.setup : null;
+        if (userSetup) {
+          p.setup = function () {
+            try { p.pixelDensity(densityFor(quality)); } catch (e) { /* pre-1.x */ }
+            userSetup.call(p);
+          };
+        }
+
+        var userDraw = typeof p.draw === 'function' ? p.draw : null;
+
+        if (!userDraw) {
+          showError('Sketch defines no draw() function.');
+          return;
+        }
+
+        p.draw = function () {
+          if (paused) return;
+          userDraw.call(p);
+          frame++;
+          fpsFrames++;
+          var now = performance.now();
+          if (now - lastFpsAt > 1000) {
+            fps = Math.round((fpsFrames * 1000) / (now - lastFpsAt));
+            fpsFrames = 0;
+            lastFpsAt = now;
+          }
+        };
+      });
+    } catch (e) {
+      showError('Sketch threw during setup: ' + e.message, e.stack);
+      return;
+    }
+
+    post({ type: 'ready' });
+  }
+
+  window.addEventListener('message', function (e) {
+    var msg = e.data;
+    if (!msg || typeof msg !== 'object') return;
+
+    switch (msg.type) {
+      case 'init':
+        params = msg.params || {};
+        run(msg.source || '');
+        break;
+      case 'params':
+        if (msg.params) params = msg.params;
+        else if (msg.id !== undefined) params[msg.id] = msg.value;
+        break;
+      case 'event':
+        if (instance && instance.onEvent) {
+          try { instance.onEvent(msg.event); } catch (err) { showError(String(err)); }
+        }
+        break;
+      case 'quality':
+        quality = msg.quality || 'preview';
+        if (instance && instance.pixelDensity) {
+          try { instance.pixelDensity(densityFor(quality)); } catch (e) { /* ignore */ }
+        }
+        break;
+      case 'play': paused = false; if (instance && instance.loop) instance.loop(); break;
+      case 'pause': paused = true; break;
+      case 'capture':
+        try {
+          var cv = document.querySelector('canvas');
+          post({ type: 'captured', requestId: msg.requestId, dataUrl: cv ? cv.toDataURL('image/png') : null });
+        } catch (err) {
+          post({ type: 'captured', requestId: msg.requestId, dataUrl: null });
+        }
+        break;
+    }
+  });
+
+  setInterval(function () {
+    post({ type: 'heartbeat', fps: fps, frame: frame });
+  }, 500);
+})();
+</script>
+</body>
+</html>
