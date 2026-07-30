@@ -1,70 +1,79 @@
-# Visual Mood Lab v1.5 — modulation panel fix, layout fix, transition smoothing
+# Visual Mood Lab v1.9 — two confirmed root causes, both fixed
 
 ```
 npm install --ignore-scripts
 npm run dev
 ```
 
-No schema change — keep your data, no reseed needed.
+After deploying: run `/api/seed` once. The board-item fix only takes effect
+on a seed run, and your existing deployment needs that run to create the
+cards it's currently missing.
 
 ---
 
-## Modulation sliders not responding — found the actual structural cause
+## 1. "31 assets seeded, 18 on the board"
 
-The store logic itself was fine — I exercised `setModulation` directly
-outside the browser and it updates and notifies correctly, every time. The
-bug was in the panel's markup: I gave each routing row its own
-`flex-direction: column` wrapper with the Slider as a direct child. The
-proven, working pattern everywhere else in this app (`Field`, used by every
-control in the main inspector) never puts a Slider directly in a
-column-direction flex container — it nests a *row*-direction flex area
-inside a column-stacked block, which is what a Slider's own `flex: 1`
-actually needs to size its width correctly. My hand-rolled version was
-structurally different from the one pattern already proven to work
-correctly across every other slider in the app, and — most likely — was
-rendering the track at a collapsed or unreliable width, which would explain
-drag doing visibly nothing.
+`lib/ingest/ingest.ts` had an early return for unchanged content:
 
-Fixed by throwing out the custom wrapper and using the real `Field`
-component, identical to how every other slider in this app is built. Same
-component, same structure, same guarantees.
+```ts
+if (prior && prior.contentHash === contentHash) {
+  return { id: prior.id, created: false, unchanged: true, ... };
+}
+```
 
-## Modulation panel no longer shrinks the graphic
+That return fired **before** `ensureCanonicalBoardItem`, which is called on
+both other paths further down. Assets and board items are separate tables —
+the board renders board items, not assets — so any asset whose content
+hadn't changed since a previous run got its row updated and its **card never
+created**.
 
-Code and Modulate used to share one rule that shrunk the focused panel to
-make room. Split them: Code keeps that behavior (already approved
-separately), Modulate does not. The graphic now stays full size; the
-sidecar takes its own space beside it, shifting the graphic right of centre
-via flex order. On a viewport too narrow to fit both, the row scrolls
-horizontally instead of squeezing the graphic — the small-screen fallback
-that hides the graphic entirely now only kicks in below 600px, not 900px,
-so it no longer catches ordinary laptops, which is what "smaller displays
-and laptops" specifically asked for.
+Your seed output said it exactly: `unchanged: 30, total: 31`. Thirty assets
+took the early-return path. Only the ones created back when their content
+was still changing ever got cards, which is where 18 came from. Every
+subsequent seed run would silently fail to surface anything already ingested.
 
-## Fullscreen transition smoothed where it's actually ours to fix
+Fixed by ensuring the board item on that path too.
 
-Entering fullscreen with a sidecar open was doing two layout shifts in the
-same tick: the sidecar closing (panel springing back to full width) and the
-browser's own fullscreen reflow, landing together as one compounded jolt.
-Both `F` and the fullscreen button now close any open sidecar first and
-wait one frame before requesting fullscreen, so the two shifts happen in
-sequence rather than on top of each other. Also added a width transition to
-the focused panel itself for the sidecar-driven resize specifically.
+**Verified specifically against the failing case:** seeded a fresh database,
+then seeded again with everything reporting `unchanged: 30` — the exact
+scenario that used to lose cards — and confirmed all sampled asset titles
+still render on the server-rendered board.
 
-Worth being direct about the limit here: the native Fullscreen API's own
-reflow is the browser's, not something CSS can animate — no transition rule
-can smooth that part, on any site, in any browser. What's fixed is the part
-that was actually under this app's control; the remaining bit of the jump
-is the platform, not something I can iterate away.
+## 2. Parameter edits reverting when reopening a tile
 
-## Verified this session
+`stores/inspectorStore.ts` contained zero references to the board store.
+Changing a parameter updated three things: the inspector's own state, the
+live renderer, and the database. It never updated the board store — which is
+what `openAssetById` reads when you reopen a card, and what the grid
+thumbnail renders from.
 
-Build clean · all three new CSS rules (`focusScrim[data-mod=`,
-`modPanelBody`, `:fullscreen`) confirmed present in the compiled bundle,
-not just written and forgotten · seed still clean, 30 assets, 0 warnings ·
-board still loads.
+So the value genuinely saved to Postgres, then got overwritten in the UI by
+the stale copy still sitting in the board store. It only appeared to work
+after a full page reload, since that is the one moment the store gets
+refilled from the server. Closing and reopening the overlay never triggered
+that.
 
-I still can't drive a real browser, so the actual drag interaction is the
-one thing in this patch I have not personally watched work — but the fix
-now uses the exact same component every other working slider in this app
-uses, rather than a parallel structure I'd invented for this one panel.
+This also explains the second half of the report — adjustments not showing
+on the preview tile after backing out to the board. Same stale store, same
+cause.
+
+Fixed by syncing params and modulation into the board store on every change,
+behind the same function that persists them, so the two can't drift apart
+again.
+
+## Still outstanding
+
+Tiles not animating on the deployed build, and the "1/3" live indicator
+never appearing. These are the same symptom — the indicator only renders
+when a renderer is actually live — and I have not found the cause. The
+persistence logging added in v1.8 stayed silent, which does rule out a
+failing save as the explanation, so it is something in the promotion path
+specific to production. Worth retesting after this deploy, since a board
+that was missing most of its cards was not a clean environment to diagnose in.
+
+## Queued, not started
+
+- +20 assets (50 total)
+- Strange Attractor rework — sliders don't meaningfully change the visual
+- Cube Transform rework — too plain
+- Mobile layout phase

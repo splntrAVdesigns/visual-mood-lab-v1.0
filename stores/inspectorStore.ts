@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { ControlSchema, ModState, Modulation, ParamState, ParamValue } from '@/renderers/control-schema';
 import { coerce, defaultsOf, hydrate } from '@/renderers/control-schema';
 import { getPool } from '@/lib/render/pool';
+import { useBoardStore } from './boardStore';
 import {
   flushParams,
   flushSnapshotParams,
@@ -48,8 +49,16 @@ interface InspectorState {
   resetAll: () => void;
 }
 
+/*
+ * Persist AND sync. These two always have to happen together: the database
+ * is the durable copy, but the board store is what the UI actually reads
+ * when you reopen a card or look at its grid thumbnail. Updating only the
+ * database made edits look like they never saved. Keeping both behind one
+ * function means a future call site cannot do one and forget the other.
+ */
 function persist(itemId: string, isSnapshot: boolean, params: ParamState): void {
   isSnapshot ? persistSnapshotParams(itemId, params) : persistParams(itemId, params);
+  useBoardStore.getState().updateAssetParams(itemId, params);
 }
 
 function flush(itemId: string, isSnapshot: boolean): void {
@@ -87,6 +96,7 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
     if (!itemId) return;
     getPool().setModState(itemId, next);
     persistMod(itemId, next, isSnapshot);
+    useBoardStore.getState().updateAssetMod(itemId, next);
   },
 
   closeInspector: () => {

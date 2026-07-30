@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { ModState, ParamState } from '@/renderers/control-schema';
 import type { Asset, AssetType, BoardLayout, SortKey } from '@/types/asset';
 
 interface BoardState {
@@ -18,6 +19,9 @@ interface BoardState {
   setAssets: (assets: Asset[]) => void;
   addAsset: (asset: Asset) => void;
   removeAsset: (itemId: string) => void;
+  /** Keeps the board's copy of a card in sync with inspector edits. */
+  updateAssetParams: (itemId: string, params: ParamState) => void;
+  updateAssetMod: (itemId: string, mod: ModState) => void;
   select: (id: string | null) => void;
   setLayout: (layout: BoardLayout) => void;
   setQuery: (query: string) => void;
@@ -40,6 +44,26 @@ export const useBoardStore = create<BoardState>()((set) => ({
 
   setAssets: (assets) => set({ assets }),
   addAsset: (asset) => set((s) => ({ assets: [asset, ...s.assets] })),
+
+  /*
+   * The inspector used to update three things on every parameter change —
+   * its own state, the live renderer, and the database — but never this
+   * store. Since reopening a card reads its values from here, and the grid
+   * thumbnail renders from here too, edits appeared to "not save": close the
+   * overlay, reopen it, and the stale original values came straight back out
+   * of this store, even though the database had the new ones. It only looked
+   * correct after a full page reload, which is the one moment this store gets
+   * refilled from the server.
+   */
+  updateAssetParams: (itemId, params) =>
+    set((s) => ({
+      assets: s.assets.map((a) => (a.itemId === itemId ? { ...a, params } : a)),
+    })),
+
+  updateAssetMod: (itemId, mod) =>
+    set((s) => ({
+      assets: s.assets.map((a) => (a.itemId === itemId ? { ...a, mod } : a)),
+    })),
   /**
    * Keyed by itemId, not id. A snapshot shares its underlying asset's `id`
    * with the original card, so filtering on `id` either removed nothing

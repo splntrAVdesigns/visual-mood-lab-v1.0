@@ -71,6 +71,18 @@ export async function ingestAsset(input: IngestInput): Promise<IngestResult> {
   const prior = existing[0];
 
   if (prior && prior.contentHash === contentHash) {
+    /*
+     * The asset row is untouched, but the BOARD ITEM may still be missing —
+     * and that is a different thing entirely. This early return used to skip
+     * ensureCanonicalBoardItem (called further down on both other paths),
+     * which meant re-seeding an asset whose content hadn't changed left it
+     * in the database with no card on the board. Symptom: /api/seed happily
+     * reports "total: 31" while the board renders 18, because the board
+     * renders board items, not assets. Every seed run after the first would
+     * silently fail to surface anything it had already ingested.
+     */
+    const boardId = await getOrCreateDefaultBoard(input.ownerId);
+    await ensureCanonicalBoardItem(boardId, prior.id, input.boardOrder ?? 0);
     return { id: prior.id, created: false, unchanged: true, schema: prior.schema, warnings };
   }
 
