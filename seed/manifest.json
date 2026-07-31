@@ -401,6 +401,127 @@
         "interactive",
         "particles"
       ]
+    },
+    {
+      "slug": "mandelbrot",
+      "type": "shader",
+      "file": "shaders/mandelbrot.frag",
+      "title": "Mandelbrot",
+      "tags": [
+        "fractal",
+        "math",
+        "minimal"
+      ]
+    },
+    {
+      "slug": "god-rays",
+      "type": "shader",
+      "file": "shaders/god-rays.frag",
+      "title": "God Rays",
+      "tags": [
+        "glow",
+        "light",
+        "organic"
+      ]
+    },
+    {
+      "slug": "wormhole",
+      "type": "shader",
+      "file": "shaders/wormhole.frag",
+      "title": "Wormhole",
+      "tags": [
+        "3d",
+        "motion",
+        "geometric"
+      ]
+    },
+    {
+      "slug": "grain-gradient",
+      "type": "shader",
+      "file": "shaders/grain-gradient.frag",
+      "title": "Grain Gradient",
+      "tags": [
+        "gradient",
+        "grain",
+        "minimal"
+      ]
+    },
+    {
+      "slug": "kaleidoscope-wire",
+      "type": "shader",
+      "file": "shaders/kaleidoscope-wire.frag",
+      "title": "Kaleidoscope Wire",
+      "tags": [
+        "symmetry",
+        "radial",
+        "minimal"
+      ]
+    },
+    {
+      "slug": "rorschach-metaball",
+      "type": "shader",
+      "file": "shaders/rorschach-metaball.frag",
+      "title": "Rorschach Metaball",
+      "tags": [
+        "metaball",
+        "organic",
+        "symmetry"
+      ]
+    },
+    {
+      "slug": "flocking",
+      "type": "p5",
+      "file": "sketches/flocking.js",
+      "title": "Flocking",
+      "tags": [
+        "swarm",
+        "particles",
+        "interactive"
+      ]
+    },
+    {
+      "slug": "murmuration",
+      "type": "p5",
+      "file": "sketches/murmuration.js",
+      "title": "Murmuration",
+      "tags": [
+        "swarm",
+        "organic",
+        "particles"
+      ]
+    },
+    {
+      "slug": "particle-detractor",
+      "type": "p5",
+      "file": "sketches/particle-detractor.js",
+      "title": "Particle Detractor",
+      "tags": [
+        "particles",
+        "math",
+        "motion"
+      ]
+    },
+    {
+      "slug": "landscape-grid",
+      "type": "p5",
+      "file": "sketches/landscape-grid.js",
+      "title": "Landscape Grid",
+      "tags": [
+        "grid",
+        "3d",
+        "noise"
+      ]
+    },
+    {
+      "slug": "static-energy",
+      "type": "p5",
+      "file": "sketches/static-energy.js",
+      "title": "Static Energy",
+      "tags": [
+        "glow",
+        "chaos",
+        "motion"
+      ]
     }
   ]
 }

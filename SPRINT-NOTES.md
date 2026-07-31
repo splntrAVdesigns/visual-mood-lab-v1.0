@@ -1,98 +1,97 @@
-# Visual Mood Lab v2.2 — Sprint 2 complete, real bugs found and fixed
+# Visual Mood Lab v2.3 — Sprint 3 complete, 48 assets
 
 ```
 npm install
 npm run build
 ```
 
-New manifest (37 assets, was 36) — reseed after deploying: visit
-`/api/seed`. Verified fresh: 37 created, **0 warnings**, every fixed and
-new asset confirmed present.
+New manifest (48 assets, was 37) — **reseed after deploying**: visit
+`/api/seed`. Verified fresh: 48 created, **0 warnings**, all 11 new assets
+confirmed through the real ingest pipeline.
+
+Balance: 21 shaders / 27 sketches.
 
 ---
 
-## Dot Scatter — the trickiest port in the batch, now done
+## Count note
 
-The original used framer-motion springs rendering real SVG `<rect>`
-elements. Neither exists inside this app's sandboxed p5 iframe — only p5
-itself is vendored in. Replaced with a hand-rolled spring integrator
-(plain velocity/acceleration toward a target, damped each frame) and
-canvas primitives instead of SVG. The glyph mark data and text-layout math
-carried over unchanged — pure geometry, no DOM involved.
+The brief listed ten items, but "flocking ×2" is genuinely two distinct
+sketches, so the real count was eleven. All eleven landed. That puts the
+library at 48, not 50 — the remaining two are SVG Particle (still held
+pending the texture-picker, as agreed) plus one more to be chosen.
 
-Word-hit-testing turned out to be the *easy* part, which is the opposite of
-how Grid Follow went a few days ago: a p5 sketch runs in its own iframe and
-gets real `mouseX`/`mouseY` local to itself, so "is the pointer over this
-card" is a plain bounds check — no shared-pointer, no-idle-signal problem
-this time.
+## The six shaders
 
-**SVG Particle held, as agreed** — waiting on the texture-picker.
+**Mandelbrot** — uses continuous smooth-iteration colouring. Colouring by
+raw integer escape count is what produces those hard contour bands you see
+in naive fractal renders; subtracting the fractional overshoot turns them
+into a real gradient. The Julia morph blends the iteration's *starting
+conditions* rather than branching, so it's a genuine continuous morph.
 
-**Sprint 2 is now complete: 8 of 9 supplied components landed.**
+**God Rays** — a real screen-space radial march. There's no scene to
+occlude here, so the occluder is procedural noise. That's the honest cheat
+that lets this work as a standalone asset instead of needing something
+behind it.
 
----
+**Wormhole** — the entire illusion is one substitution: texture by
+`1/radius` instead of `y`. Because `1/r` grows without bound toward the
+centre, marching it forward gives perfectly periodic depth — infinite
+tunnel, no geometry, no seam.
 
-## Codebase health check — two real issues found, not just reviewed
+**Grain Gradient** — grain applied in roughly perceptual space (dark
+regions get less absolute noise, matching how film behaves) and doubling as
+sub-LSB dither. Banding is the default failure mode of any smooth 8-bit
+gradient; this is what removes it, which is why even a low grain setting
+visibly cleans up the ramp.
 
-You asked specifically about RAF loops, memory leaks, and asset
-accumulation. Went through the render pool, both renderer dispose() paths,
-observer/timer cleanup, and the modulation bus. Two real, confirmable
-problems, fixed:
+**Kaleidoscope Wire** — deliberately the inverse of the existing
+Kaleidoscope: identical polar fold, but everything stroked, so it reads as
+plotter linework rather than stained glass. Antialiasing matters far more
+here than in a filled shader — at these line weights, aliased strokes
+shimmer badly under rotation.
 
-**Modulation bus leak.** `forget()` — the function that clears a routing's
-smoothing history — was only ever called when a routing was explicitly
-removed. It was never called when the *card itself* went away: scrolled
-off-screen, evicted by the live-renderer budget, or deleted. Every
-modulated card anyone ever viewed left a permanent, unreachable entry
-sitting in the bus's internal map. Fixed in `pool.demote()`, which now
-forgets every routing a card had before removing it — the actual "over
-accumulation" bug in the codebase.
+**Rorschach Metaball** — mirrors the *coordinate* before evaluating the
+field, not the result after. A symmetric field lets blobs merge across the
+centre line; mirroring afterward would leave a visible seam.
 
-**Dangling capture timers.** Every poster capture set a 3-second fallback
-timeout that never got cancelled, even when the capture succeeded
-immediately or the renderer was disposed. Small, but it's exactly the kind
-of thing that compounds — fixed both paths.
+## The five sketches
 
-Everything else checked out clean: the single shared RAF loop correctly
-skips zero-size (offscreen) entries, catches per-renderer errors without
-crashing the whole loop, `IntersectionObserver`s and hover timers in
-`RendererStage` are all properly disconnected/cleared on cleanup, and the
-shader program cache is naturally bounded by the seed library size (worth
-revisiting once the Playground phase lets people generate new shader
-sources at runtime, but not a problem with the current fixed library).
+**Flocking** — textbook Reynolds boids. Spatial hashing (bin by grid cell,
+only check neighbouring bins) is what keeps it near-linear instead of
+O(n squared) — that's the difference between the high end of the count
+slider being usable and being decorative.
 
-## Grid Follow's pixelation — found the actual cause
+**Murmuration** — deliberately *not* the same sketch with different
+defaults. Real starlings differ from textbook boids in two specific ways,
+both modelled: they track a fixed number of nearest neighbours regardless
+of distance (topological, not metric — this is what lets density change
+without the flock falling apart), and they're bound to a roost, which is
+why murmurations swirl in place rather than wandering off.
 
-`step()` — a hard binary threshold with zero antialiasing. Every pixel is
-either fully on the grid line or fully off it. Every other shader in this
-library uses `fwidth()`-based `smoothstep()` for edges; this one just
-hadn't followed that convention. Fixed to match.
+**Particle Detractor** — mixed attract/repel wells. The interesting
+structure is the separatrix, the line where competing forces balance, which
+is why a long trail matters more here than in most particle sketches:
+single frames show dots, accumulation shows the field.
 
-**While fixing it, swept the whole shader library for the same pattern**
-rather than just patching the one asset you flagged:
+**Landscape Grid** — deliberately the opposite approach to the existing
+Terrain Wireframe. That one is a WEBGL mesh you orbit in true 3D; this
+does hand-rolled 2D perspective division, which is what allows the
+horizon-locked infinite scroll a real camera makes awkward — and it's far
+cheaper, so the grid can be much denser.
 
-- **Dot Matrix**'s square-dot mode had the identical unantialiased `step()`
-  sitting right next to its round-dot mode's correct antialiased version.
-- **Truchet Weave** — dormant since an earlier sprint, unrelated to this
-  batch — had a genuinely broken line: `(1.0 - smoothstep(...)) * 0.0 +
-  step(...)`. The `* 0.0` silently zeroed out the intended antialiased
-  term, leaving only a hard-edged fallback active for its tile-boundary
-  overlay. Caught and fixed the polarity too — my first attempt at fixing
-  it inverted the highlight (centers instead of edges), caught before
-  shipping by checking the math against what `step()` was actually doing.
-
-All three verified through the real shader-schema pipeline, not just
-eyeballed.
+**Static Energy** — midpoint displacement: same algorithm as fractal
+terrain, run on a line instead of a grid. That's what gives lightning its
+characteristic jaggedness at every scale.
 
 ## Verified this session
 
-Typecheck and build clean · fresh seed 37/37, 0 warnings · every touched
-asset (dot-scatter, grid-follow, dot-matrix, truchet-weave) confirmed
-present with correct control counts via direct API check.
+Typecheck and build clean · fresh seed 48/48 created, **0 warnings**
+(including the reserved-uniform-collision check that has caught real bugs
+before) · all 11 new assets spot-checked present via direct API call with
+expected control counts (13–18 each) · all ten `ControlKind` values still
+exercised across the library.
 
 ## Next
 
-Sprint 3: the 10 creative-freedom originals (Mandelbrot, God Rays,
-Wormhole, Grain Gradient, Kaleidoscope 2.0, Rorschach Metaball as GLSL;
-Flocking ×2, Particle Detractor, Landscape Wireframe Grid, Static Energy as
-p5), to close out the 50-asset target.
+Two assets to reach 50, then Phase 5 (Playground) or the mobile layout
+phase — your call on sequencing.

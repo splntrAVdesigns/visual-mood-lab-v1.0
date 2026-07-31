@@ -1,7 +1,7 @@
 # Visual Mood Lab — Implementation Plan
 
-**Status:** Phase 4 complete (LFO half) → 50-asset library expansion in progress (37/50) → Phase 5
-**Last updated:** 2026-07-31 (rev 8 — Sprint 2 of the library expansion complete: all 9 supplied-component ports landed excluding Video Text, held by decision. Real memory leak found and fixed in the modulation bus; two real shader antialiasing bugs found and fixed, including one dormant since an earlier sprint.)
+**Status:** Phase 4 complete (LFO half) → library expansion 48/50 → Phase 5
+**Last updated:** 2026-07-31 (rev 9 — Sprint 3 complete: 11 creative-freedom originals landed, 48 assets total. Two remaining to reach 50: SVG Particle, held pending the texture-picker, plus one more to be chosen.)
 
 ---
 
@@ -423,12 +423,44 @@ mode's correct antialiased version, and — dormant since an earlier sprint —
 intended antialiased term, leaving only a hard-edged fallback active. All
 three fixed and reverified through the real shader-schema pipeline.
 
-**Sprint 3 — 10 creative-freedom originals**, not started once Sprint 2's
-final two ports (SVG Particle, Dot Scatter) land. Proposed shader/sketch
-split: Mandelbrot, God Rays, Wormhole, Grain Gradient, Kaleidoscope 2.0
-(Wireframe), Rorschach Metaball as GLSL (6); Flocking ×2, Particle
-Detractor, Landscape Wireframe Grid, Static Energy as p5 (4, plus SVG
-Particle once ported) — final split to be confirmed once Sprint 2 closes.
+**Sprint 3 — creative-freedom originals.** ✅ Complete. Eleven landed
+(the brief listed ten items, but "flocking ×2" is genuinely two distinct
+sketches, so the real count was eleven):
+
+*GLSL (6)* — **Mandelbrot** (continuous smooth-iteration colouring, which
+is what turns integer escape-count banding into a real gradient; live morph
+toward Julia by blending the iteration's starting conditions rather than
+branching). **God Rays** (a real screen-space radial march; since there is
+no scene to occlude, the occluder is procedural — that is the honest cheat
+that lets this stand alone). **Wormhole** (the whole illusion is texturing
+by `1/radius` instead of `y`, which gives unbounded, seamlessly periodic
+depth with no geometry). **Grain Gradient** (grain applied in roughly
+perceptual space, and doubling as sub-LSB dither — banding is the default
+failure of any smooth 8-bit ramp, and this is what removes it).
+**Kaleidoscope Wire** (deliberately the inverse of the existing
+Kaleidoscope: same polar fold, but every element stroked, so it reads as
+plotter linework rather than stained glass). **Rorschach Metaball**
+(mirrors the *coordinate* before evaluating the field rather than the
+result after — a symmetric field lets blobs merge across the centre line
+instead of butting against a seam).
+
+*p5 (5)* — **Flocking** (textbook Reynolds boids; spatial hashing is what
+makes the high end of the count slider usable rather than decorative).
+**Murmuration** (deliberately not the same sketch with different defaults:
+real starlings track a fixed number of *nearest* neighbours regardless of
+distance — topological, not metric — and are bound to a roost, which is why
+murmurations swirl in place instead of dispersing). **Particle Detractor**
+(mixed attract/repel wells; the interesting structure is the separatrix
+where forces balance, which is why the trail matters more here than in most
+particle sketches). **Landscape Grid** (deliberately the opposite approach
+to the existing Terrain Wireframe: hand-rolled 2D perspective division
+instead of a WEBGL mesh, which is what allows the horizon-locked infinite
+scroll and is far cheaper). **Static Energy** (midpoint displacement — the
+same algorithm as fractal terrain, run on a line, which is what gives
+lightning its jaggedness at every scale).
+
+**Remaining to reach 50:** SVG Particle (held pending the texture-picker)
+plus one more, to be chosen.
 
 **Exit for the whole expansion:** 50 seed assets, `verify-seed` clean with
 zero warnings, every asset with real modulatable params and a control-kind
