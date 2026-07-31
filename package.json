@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.4",
+    "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^2.6.1",
     "drizzle-orm": "^0.45.2",
     "next": "^16.0.0",
