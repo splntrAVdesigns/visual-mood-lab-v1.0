@@ -9,6 +9,7 @@ import { FocusedAssetOverlay } from '@/features/board/FocusedAssetOverlay';
 import { openAssetById, closeAsset } from '@/features/board/openAsset';
 import { CommandPalette } from './CommandPalette';
 import { useBoardStore, useInspectorStore, usePlaybackStore, MAX_LIVE_RENDERERS } from '@/stores';
+import { getPool } from '@/lib/render/pool';
 import type { Asset } from '@/types/asset';
 import { AppHeader } from './AppHeader';
 import { NavDrawer } from './NavDrawer';
@@ -37,6 +38,23 @@ export function AppShell({ assets, needsSeed = false, focusItemId }: AppShellPro
   const setReducedMotion = usePlaybackStore((st) => st.setReducedMotion);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  /*
+   * Publish asset id -> poster URL so texture controls can resolve what
+   * they point at. Subscribed rather than set once: posters are captured
+   * lazily after a card first renders, so this map genuinely fills in over
+   * the first few seconds of a session rather than being complete at mount.
+   */
+  useEffect(() => {
+    const publish = (list: Asset[]) => {
+      const sources: Record<string, string> = {};
+      for (const a of list) if (a.posterUrl) sources[a.id] = a.posterUrl;
+      getPool().setTextureSources(sources);
+    };
+
+    publish(useBoardStore.getState().assets);
+    return useBoardStore.subscribe((state) => publish(state.assets));
+  }, []);
 
   /* Open the deep-linked card once, on mount. Not pushUrl — the URL that got
      us here is already correct. */

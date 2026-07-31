@@ -1524,3 +1524,113 @@
     display: none;
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Texture picker
+ * ------------------------------------------------------------------ */
+
+.texturePicker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.textureTrigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+  height: var(--control-h);
+  padding: 0 var(--space-2);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: left;
+}
+
+.textureTrigger:hover {
+  border-color: var(--border-hi);
+}
+
+.textureThumb,
+.textureThumbEmpty {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 2px;
+  object-fit: cover;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-hi);
+}
+
+.textureThumbEmpty {
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-mute);
+}
+
+.textureLabel {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--step--1);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.textureGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  max-height: 240px;
+  overflow-y: auto;
+  padding: var(--space-2);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.textureOption {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-raised);
+}
+
+.textureOption:hover,
+.textureOption[data-active='true'] {
+  border-color: var(--accent);
+}
+
+.textureOptionImg {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+}
+
+.textureOptionName {
+  padding: 2px var(--space-1);
+  font-size: var(--step--2);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.textureEmpty {
+  grid-column: 1 / -1;
+  font-size: var(--step--2);
+  color: var(--text-mute);
+  text-align: center;
+  padding: var(--space-3);
+}

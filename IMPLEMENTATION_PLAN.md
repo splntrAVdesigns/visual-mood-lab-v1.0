@@ -1,7 +1,7 @@
 # Visual Mood Lab — Implementation Plan
 
-**Status:** Phase 4 complete (LFO half) → library expansion 48/50 → Phase 5
-**Last updated:** 2026-07-31 (rev 9 — Sprint 3 complete: 11 creative-freedom originals landed, 48 assets total. Two remaining to reach 50: SVG Particle, held pending the texture-picker, plus one more to be chosen.)
+**Status:** Phase 4 complete (LFO half) → library 48/50 → hardening pass complete → mobile layout phase next
+**Last updated:** 2026-07-31 (rev 10 — hardening pass: texture-picker built for real (unblocking SVG Particle), performance budget re-measured against §9 for the first time since Phase 0, reduced-motion unified, focus audit run, renderer budget made device-aware.)
 
 ---
 
@@ -559,19 +559,67 @@ Collectively these cover **all ten `ControlKind` values**, which is the point. I
 
 ---
 
+## 7c. Hardening pass — Definition of Done audit
+
+Run against §13 before starting the mobile layout phase, on the reasoning
+that a layout phase built on an unmeasured foundation is the wrong order.
+Five items, all closed:
+
+1. **Texture-picker built for real.** Disabled stub since Phase 0. Now a
+   working picker: choose any board asset with a captured poster, and
+   sampler-driven shaders (ASCII Mosaic, Chromatic Glitch) sample it.
+   Deliberately samples the **poster**, not live output — sampling a live
+   asset needs a second render pass plus dependency ordering between
+   renderers (what happens when two shaders sample each other?), which is a
+   real architecture change, not a control. Self-reference is filtered out
+   for the same reason; Feedback Trails already covers "sample my own
+   previous frame" properly via the backbuffer. Image decoding is cached,
+   because the uniform-binding path runs every frame and would otherwise
+   issue a request 60 times a second. **This unblocks SVG Particle.**
+
+2. **Performance budget re-measured.** §13 requires this every phase; it had
+   not been done since Phase 0's near-empty shell. Result: **215.9KB
+   gzipped total**, roughly **12KB above the Phase 0 baseline** — for
+   snapshots, the modulation bus, command palette, upload flow, hero canvas,
+   texture picker, and 18 additional assets. Comfortably inside the ≤60KB
+   app-code allowance. Posters: largest 12.3KB against a 40KB budget, median
+   6.0KB, none over. §9 now carries measured values, not just targets.
+
+3. **Reduced-motion unified.** The hero canvas read `matchMedia` once at
+   mount and never again, while the render pool listened for live changes —
+   so toggling the OS setting mid-session left the hero animating while
+   everything else correctly stopped. Both now read one store value.
+
+4. **Focus-visible audit.** Worth recording that the initial read was wrong:
+   counting per-component rules suggested wide gaps, but a global
+   `:focus-visible` rule in `globals.css` already covers every focusable
+   element. The audit found exactly one real defect — `.input:focus` set
+   `outline: none` at higher specificity (0,2,0 vs 0,1,0), silently
+   suppressing the focus ring on text inputs for keyboard users. Fixed.
+
+5. **Renderer budget is device-aware.** §12's risk register claimed "quality
+   tiers; posters-only mode below a device-capability threshold" as the
+   mobile-GPU mitigation, but only the quality tiers existed — the budget was
+   a flat 3 regardless of hardware. Now 1–3 based on `pointer: coarse` and
+   `hardwareConcurrency`. Measured off capability signals rather than
+   user-agent sniffing: those are honest about what a device can do; a UA
+   string is a guess about what it is.
+
+---
+
 ## 9. Performance budget
 
 Hard numbers. Treat a regression as a build failure.
 
-| Metric | Budget |
-|---|---|
-| Concurrent live renderers | ≤ 6 |
-| WebGL2 contexts | 1 shared (fallback pool ≤ 4) |
-| Board scroll | 60fps with 40 cards |
-| Initial JS (board route) | Framework baseline + **≤ 60KB app code**, gzipped |
-| Poster image | ≤ 40KB, WebP, 480px long edge |
-| Sandbox heartbeat timeout | 2000ms |
-| Time to first poster paint | < 1.2s on 4G |
+| Metric | Budget | Measured (rev 10, 48 assets) |
+|---|---|---|
+| Concurrent live renderers | ≤ 6 | **1–3, device-aware** ✅ |
+| WebGL2 contexts | 1 shared (fallback pool ≤ 4) | 1 shared ✅ |
+| Board scroll | 60fps with 40 cards | not measurable without a browser |
+| Initial JS (board route) | Framework baseline + **≤ 60KB app code**, gzipped | **215.9KB total gzipped** — ~12KB above the Phase 0 shell ✅ |
+| Poster image | ≤ 40KB, WebP, 480px long edge | **largest 12.3KB, median 6.0KB**, 0 over budget ✅ |
+| Sandbox heartbeat timeout | 2000ms | 2000ms ✅ |
+| Time to first poster paint | < 1.2s on 4G | not measurable without a browser |
 
 > **Revised after Phase 0.** The original budget was a flat 200KB gzipped total.
 > Measured first-load on the finished Phase 0 shell — no renderers, no WebGL, no

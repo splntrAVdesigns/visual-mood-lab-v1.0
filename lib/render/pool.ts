@@ -59,6 +59,9 @@ class RendererPool {
   private paused = false;
   private globalSpeed = 1;
   private pointer = { x: 0.5, y: 0.5, down: false };
+
+  /** assetId -> poster URL, kept current by the board. */
+  private textureSources: Record<string, string> = {};
   private audio: Float32Array | null = null;
 
   private lastFrameAt = 0;
@@ -80,6 +83,20 @@ class RendererPool {
 
   setGlobalSpeed(speed: number): void {
     this.globalSpeed = speed;
+  }
+
+  /**
+   * Publish the id -> poster URL map that texture controls resolve against.
+   * Live renderers are updated in place so linking a source takes effect on
+   * the next frame rather than requiring a remount.
+   */
+  setTextureSources(sources: Record<string, string>): void {
+    this.textureSources = sources;
+    for (const entry of this.entries.values()) {
+      if ('textureSources' in entry.renderer) {
+        (entry.renderer as { textureSources: Record<string, string> }).textureSources = sources;
+      }
+    }
   }
 
   setPointer(x: number, y: number, down: boolean): void {
@@ -143,6 +160,14 @@ class RendererPool {
     // is what "just a regular snapshot image" should have been from the
     // start.
     const renderer = createRenderer(asset.isSnapshot ? 'image' : asset.type, asset.id);
+
+    // Texture controls store an asset id; the renderer needs poster URLs to
+    // resolve them. Injected here rather than having the renderer reach into
+    // the board store, which would couple the rendering layer to app state.
+    if ('textureSources' in renderer) {
+      (renderer as { textureSources: Record<string, string> }).textureSources =
+        this.textureSources;
+    }
     const now = performance.now();
 
     const entry: Entry = {

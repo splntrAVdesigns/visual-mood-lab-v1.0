@@ -67,6 +67,6 @@ function ControlBody({ control, value, dirty, onChange, onReset }: ControlRowPro
     case 'trigger':
       return <TriggerControlRow control={control} onChange={onChange} />;
     case 'texture':
-      return <TextureControlRow control={control} value={value} dirty={dirty} onReset={onReset} />;
+      return <TextureControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />;
   }
 }

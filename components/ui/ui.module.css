@@ -321,9 +321,21 @@
   border-color: var(--border-hi);
 }
 
+/* Pointer focus: border tint only, no ring — matches how the rest of the
+   app treats mouse interaction. */
 .input:focus {
   border-color: var(--accent);
   outline: none;
+}
+
+/* Keyboard focus: restore the ring. `.input:focus` above is specificity
+   (0,2,0) and was beating the global `:focus-visible` rule at (0,1,0),
+   which meant text inputs silently lost the focus ring that every other
+   interactive element in the app gets. The border tint alone is a much
+   weaker signal and inconsistent with the rest of the UI. */
+.input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .inputMono {

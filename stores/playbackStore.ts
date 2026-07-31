@@ -16,8 +16,34 @@ export type QualityTier = 'auto' | 'preview' | 'full';
  * (three of which could be p5 iframes running their own animation loops)
  * competing for one GPU, so every card ran badly rather than a few running
  * well. Three is the point where each one stays smooth.
+ *
+ * Now device-aware. The risk register listed "quality tiers; posters-only
+ * mode below a device-capability threshold" as the mitigation for weaker
+ * GPUs, but only the quality tiers were ever built — the budget itself was
+ * a flat 3 regardless of what it was running on. A phone holding three
+ * concurrent WebGL/p5 contexts is a materially different proposition from a
+ * desktop doing the same, both for frame rate and for battery.
+ *
+ * Deliberately measured off capability signals rather than user-agent
+ * sniffing: `pointer: coarse` says touch-primary, and hardwareConcurrency
+ * says how much CPU is actually available. Both are honest about what the
+ * device can do; a UA string is a guess about what it is.
  */
-export const MAX_LIVE_RENDERERS = 3;
+function detectRendererBudget(): number {
+  // SSR and any environment without matchMedia get the desktop default —
+  // this value is only ever consumed client-side, and guessing low on the
+  // server would make the first client render disagree with the second.
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 3;
+
+  const coarse = window.matchMedia('(pointer: coarse)').matches;
+  const cores = typeof navigator !== 'undefined' ? (navigator.hardwareConcurrency ?? 4) : 4;
+
+  if (coarse && cores <= 4) return 1;
+  if (coarse || cores <= 4) return 2;
+  return 3;
+}
+
+export const MAX_LIVE_RENDERERS = detectRendererBudget();
 
 interface PlaybackState {
   /** Master transport. When true, nothing animates anywhere. */

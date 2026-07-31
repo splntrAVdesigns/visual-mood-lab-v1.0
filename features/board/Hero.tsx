@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import { usePlaybackStore } from '@/stores';
 import s from '../features.module.css';
 
 interface Cube {
@@ -31,14 +32,21 @@ interface Cube {
  */
 function HeroCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  /*
+   * Read from the playback store rather than calling matchMedia here.
+   * AppShell already subscribes to the OS preference and keeps this value
+   * live via a change listener; this component used to check matchMedia
+   * ONCE at mount and never again, so toggling the system setting mid-
+   * session left the hero animating while every other surface correctly
+   * stopped. One source, one listener, no way for the two to disagree.
+   */
+  const reduceMotion = usePlaybackStore((st) => st.reducedMotion);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     let width = 0;
     let height = 0;
@@ -147,7 +155,7 @@ function HeroCanvas() {
       ro.disconnect();
       io.disconnect();
     };
-  }, []);
+  }, [reduceMotion]);
 
   return <canvas ref={canvasRef} className={s.heroCanvas} aria-hidden="true" />;
 }

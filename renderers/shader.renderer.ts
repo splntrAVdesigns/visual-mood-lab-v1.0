@@ -2,6 +2,7 @@ import type { Asset } from '@/types/asset';
 import type { ControlSchema, ParamState, ParamValue, RGBA } from './control-schema';
 import { defaultsOf } from './control-schema';
 import { getGLStage, glUnavailableReason, MAX_DIM, type CompiledProgram, type UniformSetter } from '@/lib/gl/context-pool';
+import { getTextureImage } from '@/lib/gl/texture-source';
 import type { AssetRenderer, CaptureOpts, Quality, RenderContext } from './types';
 
 /**
@@ -32,6 +33,17 @@ export class ShaderRenderer implements AssetRenderer {
   private backbuffer: HTMLCanvasElement | null = null;
   private backCtx: CanvasRenderingContext2D | null = null;
   private usesBackbuffer = false;
+
+  /**
+   * assetId -> poster URL, for resolving texture controls.
+   *
+   * Injected rather than read from the board store directly: renderers run
+   * inside the pool with no React context and no store subscription, and
+   * giving one a direct dependency on the board store would make it
+   * untestable and couple the rendering layer to app state. The pool sets
+   * this when it mounts a renderer.
+   */
+  textureSources: Record<string, string> = {};
 
   constructor(assetId: string) {
     this.assetId = assetId;
@@ -183,9 +195,22 @@ export class ShaderRenderer implements AssetRenderer {
           break;
         }
         case 'texture': {
-          // Phase 3 resolves this to a real asset; until then, a flat fill so
-          // sampler-driven shaders still render something coherent.
-          const tex = stage.getFallbackTexture();
+          /*
+           * A texture control stores an asset id; the board resolves that to
+           * that asset's poster URL and hands it over as `textureSources`.
+           * Until an image has decoded (or if nothing is linked at all) this
+           * falls back to a flat fill, which is what keeps sampler-driven
+           * shaders rendering something coherent rather than sampling
+           * garbage on their first few frames.
+           */
+          const assetId = typeof value === 'string' ? value : null;
+          const url = assetId ? this.textureSources[assetId] : undefined;
+          const image = url ? getTextureImage(url) : null;
+
+          const tex = image
+            ? stage.uploadTexture(`${this.assetId}:${control.id}`, image)
+            : stage.getFallbackTexture();
+
           if (tex) set(binding.name, tex);
           break;
         }
