@@ -1,8 +1,24 @@
-/** cube-transform — 3D cube with orbit controls, live transforms and
-    full animation control. Drag to orbit, scroll to zoom. */
+/**
+ * transform-shape — five 3D primitives (cube, sphere, torus, cone,
+ * cylinder) with orbit controls, arrangement, and a motion echo trail.
+ *
+ * Rework note: this was "Cube Transform" — one shape, breathing on by
+ * default even when the person just wanted a still reference, and no trail
+ * option despite Particle Cube next to it in the library proving the trail
+ * technique works well here. Renamed in spirit if not in file: same slug,
+ * so existing param tuning on this asset carries forward rather than
+ * orphaning a row.
+ */
 
 export const params = {
-  count: { kind: 'stepper', label: 'Cubes', min: 1, max: 64, step: 1, default: 1 },
+  shape: { kind: 'select', label: 'Shape', default: 'cube', options: [
+    { value: 'cube', label: 'Cube' },
+    { value: 'sphere', label: 'Sphere' },
+    { value: 'torus', label: 'Torus' },
+    { value: 'cone', label: 'Cone' },
+    { value: 'cylinder', label: 'Cylinder' },
+  ] },
+  count: { kind: 'stepper', label: 'Count', min: 1, max: 64, step: 1, default: 1 },
   size: { kind: 'slider', label: 'Size', min: 0.05, max: 0.6, step: 0.005, default: 0.22, modulatable: true },
   arrangement: { kind: 'select', label: 'Arrangement', default: 'single', options: [
     { value: 'single', label: 'Single' },
@@ -14,15 +30,17 @@ export const params = {
   spinX: { kind: 'slider', label: 'Spin X', min: -2, max: 2, step: 0.01, default: 0.18, modulatable: true },
   spinY: { kind: 'slider', label: 'Spin Y', min: -2, max: 2, step: 0.01, default: 0.3, modulatable: true },
   spinZ: { kind: 'slider', label: 'Spin Z', min: -2, max: 2, step: 0.01, default: 0 },
-  stagger: { kind: 'slider', label: 'Spin stagger', min: 0, max: 1, step: 0.01, default: 0.25, hint: 'Offsets each cube\u2019s rotation phase.' },
-  breathe: { kind: 'slider', label: 'Breathe', min: 0, max: 1, step: 0.01, default: 0.15, modulatable: true },
+  stagger: { kind: 'slider', label: 'Spin stagger', min: 0, max: 1, step: 0.01, default: 0.25, hint: 'Offsets each shape\u2019s rotation phase.' },
+  breathe: { kind: 'slider', label: 'Breathe', min: 0, max: 1, step: 0.01, default: 0, modulatable: true, hint: 'Zero by default — a still shape is often what you actually want a reference form to be.' },
   breatheRate: { kind: 'slider', label: 'Breathe rate', min: 0.05, max: 3, step: 0.05, default: 0.6, showIf: { truthy: 'breathe' } },
+  trail: { kind: 'slider', label: 'Motion trail', min: 0, max: 0.95, step: 0.01, default: 0, hint: 'Echoes past frames instead of clearing — most visible with spin or breathe active.' },
   render: { kind: 'select', label: 'Render', default: 'wire', options: [
     { value: 'wire', label: 'Wireframe' },
     { value: 'solid', label: 'Solid' },
     { value: 'both', label: 'Solid + edges' },
   ] },
   weight: { kind: 'slider', label: 'Edge weight', min: 0.25, max: 5, step: 0.05, default: 1 },
+  detail: { kind: 'stepper', label: 'Detail', min: 3, max: 48, step: 1, default: 24, hint: 'Segments for sphere / torus / cone / cylinder. No effect on cube.', showIf: { notEquals: ['shape', 'cube'] } },
   stroke: { kind: 'color', label: 'Edges', default: { r: 0, g: 0.83, b: 1, a: 1 } },
   fillColor: { kind: 'color', label: 'Faces', default: { r: 0.04, g: 0.05, b: 0.08, a: 1 } },
   lightAngle: { kind: 'slider', label: 'Light angle', min: -180, max: 180, step: 1, default: 40, unit: 'deg' },
@@ -36,18 +54,45 @@ export default function sketch(p, get) {
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight, p.WEBGL);
     p.colorMode(p.RGB, 1, 1, 1, 1);
+    p.background(0);
   };
 
-  p.windowResized = () => p.resizeCanvas(p.windowWidth, p.windowHeight);
-  p.onEvent = (name) => { if (name === 'reset') resetAt = p.millis(); };
+  p.windowResized = () => { p.resizeCanvas(p.windowWidth, p.windowHeight); p.background(0); };
+  p.onEvent = (name) => { if (name === 'reset') { resetAt = p.millis(); p.background(0); } };
+
+  function drawShape(shape, size, detail) {
+    if (shape === 'sphere') return p.sphere(size / 2, detail, detail);
+    if (shape === 'torus') return p.torus(size * 0.4, size * 0.18, detail, Math.max(6, Math.floor(detail / 2)));
+    if (shape === 'cone') return p.cone(size / 2, size, detail, 1);
+    if (shape === 'cylinder') return p.cylinder(size / 2, size, detail, 1);
+    return p.box(size);
+  }
 
   p.draw = () => {
-    p.background(0);
+    const trail = get('trail');
+
+    if (trail > 0) {
+      // Trail in WEBGL mode: draw a translucent screen-space quad BEFORE the
+      // camera transform, same technique Particle Cube already uses. This is
+      // what makes motion echo rather than repaint from a blank frame.
+      p.push();
+      p.resetMatrix();
+      p.noStroke();
+      p.fill(0, 0, 0, 1 - trail);
+      p.translate(0, 0, -1);
+      p.plane(p.width * 2, p.height * 2);
+      p.pop();
+    } else {
+      p.background(0);
+    }
+
     if (get('interactive')) p.orbitControl(1, 1, 0.1);
 
     const t = (p.millis() - resetAt) * 0.001;
     const n = Math.floor(get('count'));
     const mode = get('render');
+    const shape = get('shape');
+    const detail = Math.floor(get('detail'));
     const st = get('stroke');
     const fl = get('fillColor');
     const base = Math.min(p.width, p.height);
@@ -93,7 +138,7 @@ export default function sketch(p, get) {
         p.strokeWeight(get('weight'));
       }
 
-      p.box(size);
+      drawShape(shape, size, detail);
       p.pop();
     }
   };

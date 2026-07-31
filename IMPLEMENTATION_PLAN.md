@@ -1,7 +1,7 @@
 # Visual Mood Lab — Implementation Plan
 
-**Status:** Phase 4 complete (LFO half) → Phase 5, deployment-ready
-**Last updated:** 2026-07-29 (rev 6 — snapshots simplified to flat captured images, modulation moved from right-click to a persistent sidecar panel, Restore Defaults fixed to be always reachable, deploy prep landed)
+**Status:** Phase 4 complete (LFO half) → 50-asset library expansion in progress (36/50) → Phase 5
+**Last updated:** 2026-07-31 (rev 7 — Strange Attractor and Transform Shape reworked; 6 of 8 supplied-component ports landed; SVG Particle and Dot Scatter ports + 10 creative-freedom originals still queued)
 
 ---
 
@@ -302,7 +302,97 @@ Not part of the original phase numbering — added once the app was solid enough
 
 ---
 
-## 8. Seed library
+## 7b. Library expansion — 30 → 50 assets
+
+Not part of the original phase numbering, started once the deployment was
+stable. Three sub-sprints, agreed up front:
+
+**Sprint 1 — reworks.** ✅ Complete.
+- **Strange Attractor:** the real bug behind "sliders don't do anything" —
+  three of the four systems shared one generic set of sliders. Thomas and
+  Halvorsen received them silently rescaled by arbitrary factors never
+  shown in the UI; Aizawa, the most organic-looking system, ignored them
+  entirely and used hardcoded constants. Moving "Constant A" while Aizawa
+  was selected did nothing, which is exactly the complaint. Every system
+  now owns its real constants, shown only when selected (`showIf`).
+  Additive blending added for vibrancy, replacing flat alpha blending.
+- **Cube Transform → Transform Shape:** five primitives (cube, sphere,
+  torus, cone, cylinder) via p5 WEBGL's built-in shape functions. Breathing
+  now defaults to 0 (was 0.15 — a still reference shape is often what's
+  actually wanted). Motion trail added using the same translucent-quad
+  technique Particle Cube already proved. Kept the original `cube-transform`
+  slug so the existing asset row updates in place rather than orphaning.
+
+**Sprint 2 — 8 of 9 supplied component ports.** Video Text excluded by
+decision — it depends on a remote video URL and DOM `<video>` clipped by an
+SVG mask, which doesn't fit this app's "the source *is* the whole asset"
+model without either vendoring a video file or building real video-texture
+support in the shader renderer. Worth its own future decision, not folded
+into this sprint.
+
+None of the remaining nine could be dropped in as-is — every one needed a
+real reimplementation against this app's two renderer types (single-pass
+GLSL, or p5 canvas in a sandboxed iframe), not a port of the original
+runtime. Two real bugs were caught during authoring, not shipped and found
+later:
+- `u_mouse` is delivered in **pixel** coordinates, not normalised 0–1 — an
+  early draft of Grid Follow assumed otherwise and compared raw pixel
+  values against 0–1 cell math.
+- Pointer position is a single **board-wide** value with no
+  per-card "currently hovering" signal, which made an "auto-drift when
+  idle" toggle unbuildable as a heuristic — replaced with an explicit
+  Pointer/Auto-drift select instead of a feature that could never detect
+  what it claimed to detect.
+
+Landed:
+- **Grid Follow** (from "Grid Based Follow" / Prism Grid) — the original
+  rendered one real DOM element per cell with CSS 3D transforms; rebuilt as
+  a single fragment shader using the same per-pixel cell math Ordered
+  Dither and Halftone Screen already use.
+- **Pulse Lines** — the original animated via CSS `@keyframes`, a
+  browser-timing model with no shader equivalent; rebuilt as a travelling
+  sine pulse per line, phase-staggered to read as a sweep.
+- **Dot Matrix** — the original was a genuine two-pass `ogl` pipeline
+  (noise to an offscreen target, then a second pass samples it into dots).
+  This app's shader renderer is single-pass per asset by design; collapsed
+  both passes into one shader instead of building general multi-pass
+  infrastructure for one asset. Procedural dots instead of the original's
+  canvas-baked glyph atlas, consistent with every other dither/halftone
+  shader already in the library.
+- **Grid Snake** — the most direct port in the batch; the original was
+  already canvas2D and already deterministic (seeded RNG, BFS pathfinding,
+  no external state). Found one real gap while porting: cell size and gap
+  were only computed once at setup, so adjusting them via the inspector
+  would silently do nothing until a window resize. Fixed with the same
+  rebuild-on-param-change pattern other structural sketches already use.
+- **Star Field** (from "Star Field" / GlitterWrap) — also already
+  canvas2D and frame-driven; the perspective/trail/glitter physics carried
+  over closely. Framer-specific plumbing (static-export detection, a
+  props-ref pattern built for live design-tool editing) dropped — this
+  renderer is always either live or a captured PNG, never a design canvas.
+- **LED Display** (from "Pixel LED Display") — bitmap font table and
+  column-building logic carried over unchanged. The original's separate
+  "items list + separator" model collapsed into one text field, since this
+  app has no list-of-strings control kind and one message covers the same
+  ticker use case.
+
+**Not yet landed:** SVG Particle (needs a decision on how to handle the
+missing texture-picker — proposed: baked default source pattern rather than
+requiring the stub) and Dot Scatter (SVG + framer-motion physics scatter,
+needs porting to p5-native spring/brownian motion).
+
+**Sprint 3 — 10 creative-freedom originals**, not started once Sprint 2's
+final two ports (SVG Particle, Dot Scatter) land. Proposed shader/sketch
+split: Mandelbrot, God Rays, Wormhole, Grain Gradient, Kaleidoscope 2.0
+(Wireframe), Rorschach Metaball as GLSL (6); Flocking ×2, Particle
+Detractor, Landscape Wireframe Grid, Static Energy as p5 (4, plus SVG
+Particle once ported) — final split to be confirmed once Sprint 2 closes.
+
+**Exit for the whole expansion:** 50 seed assets, `verify-seed` clean with
+zero warnings, every asset with real modulatable params and a control-kind
+mix at least as broad as the original 30.
+
+
 
 Twenty hand-authored assets ship with the repo: 10 GLSL shaders and 10 p5.js sketches. Image and video assets are uploaded manually by the owner.
 

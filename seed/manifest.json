@@ -238,11 +238,12 @@
       "slug": "cube-transform",
       "type": "p5",
       "file": "sketches/cube-transform.js",
-      "title": "Cube Transform",
+      "title": "Transform Shape",
       "tags": [
+        "geometric",
         "3d",
-        "interactive",
-        "geometric"
+        "primitives",
+        "interactive"
       ]
     },
     {
@@ -321,6 +322,72 @@
         "3d",
         "particles",
         "interactive",
+        "glow"
+      ]
+    },
+    {
+      "slug": "grid-follow",
+      "type": "shader",
+      "file": "shaders/grid-follow.frag",
+      "title": "Grid Follow",
+      "tags": [
+        "grid",
+        "interactive",
+        "minimal"
+      ]
+    },
+    {
+      "slug": "pulse-lines",
+      "type": "shader",
+      "file": "shaders/pulse-lines.frag",
+      "title": "Pulse Lines",
+      "tags": [
+        "minimal",
+        "wave",
+        "grid"
+      ]
+    },
+    {
+      "slug": "dot-matrix",
+      "type": "shader",
+      "file": "shaders/dot-matrix.frag",
+      "title": "Dot Matrix",
+      "tags": [
+        "dither",
+        "noise",
+        "raster"
+      ]
+    },
+    {
+      "slug": "grid-snake",
+      "type": "p5",
+      "file": "sketches/grid-snake.js",
+      "title": "Grid Snake",
+      "tags": [
+        "grid",
+        "geometric",
+        "interactive"
+      ]
+    },
+    {
+      "slug": "star-field",
+      "type": "p5",
+      "file": "sketches/star-field.js",
+      "title": "Star Field",
+      "tags": [
+        "particles",
+        "glow",
+        "motion"
+      ]
+    },
+    {
+      "slug": "led-display",
+      "type": "p5",
+      "file": "sketches/led-display.js",
+      "title": "LED Display",
+      "tags": [
+        "typography",
+        "grid",
         "glow"
       ]
     }

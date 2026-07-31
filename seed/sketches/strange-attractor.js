@@ -6,33 +6,54 @@
  * plots where it lands. The shape is never drawn, only revealed: density
  * builds where the system spends its time, so structure emerges out of a
  * handful of constants. Drag to orbit.
+ *
+ * Rework note: the previous version shared one set of generic sliders
+ * ("Constant A/B/C") across all four systems. That meant Thomas and
+ * Halvorsen received A/B silently rescaled by arbitrary factors the person
+ * never saw, and Aizawa — the most organic-looking of the four — ignored
+ * every one of them and used hardcoded constants instead. Moving those
+ * sliders while Aizawa was selected did nothing at all, which is exactly
+ * the "sliders don't meaningfully change the visual" complaint. Each system
+ * now owns its real constants, shown only when that system is selected.
  */
 
 export const params = {
-  system: { kind: 'select', label: 'System', default: 'lorenz', options: [
+  system: { kind: 'select', label: 'System', default: 'aizawa', options: [
     { value: 'lorenz', label: 'Lorenz' },
     { value: 'thomas', label: 'Thomas' },
     { value: 'halvorsen', label: 'Halvorsen' },
     { value: 'aizawa', label: 'Aizawa' },
   ] },
-  steps: { kind: 'slider', label: 'Points per frame', min: 200, max: 12000, step: 100, default: 3000, scale: 'log' },
+
+  lorenzSigma: { kind: 'slider', label: 'Sigma', min: 1, max: 30, step: 0.1, default: 10, modulatable: true, showIf: { equals: ['system', 'lorenz'] } },
+  lorenzRho: { kind: 'slider', label: 'Rho', min: 1, max: 50, step: 0.1, default: 28, modulatable: true, showIf: { equals: ['system', 'lorenz'] } },
+  lorenzBeta: { kind: 'slider', label: 'Beta', min: 0.5, max: 8, step: 0.05, default: 2.667, showIf: { equals: ['system', 'lorenz'] } },
+
+  thomasB: { kind: 'slider', label: 'Damping', min: 0.05, max: 1, step: 0.005, default: 0.19, modulatable: true, hint: 'Below ~0.32 the system is chaotic; above it, motion settles.', showIf: { equals: ['system', 'thomas'] } },
+
+  halvorsenA: { kind: 'slider', label: 'Coupling', min: 1, max: 3, step: 0.01, default: 1.4, modulatable: true, showIf: { equals: ['system', 'halvorsen'] } },
+
+  aizawaA: { kind: 'slider', label: 'A', min: 0.3, max: 1.6, step: 0.01, default: 0.95, modulatable: true, showIf: { equals: ['system', 'aizawa'] } },
+  aizawaB: { kind: 'slider', label: 'B', min: 0.2, max: 1.4, step: 0.01, default: 0.7, modulatable: true, showIf: { equals: ['system', 'aizawa'] } },
+  aizawaC: { kind: 'slider', label: 'C', min: 0.1, max: 1.2, step: 0.01, default: 0.6, showIf: { equals: ['system', 'aizawa'] } },
+  aizawaD: { kind: 'slider', label: 'D', min: 1.5, max: 5.5, step: 0.05, default: 3.5, modulatable: true, showIf: { equals: ['system', 'aizawa'] } },
+
+  steps: { kind: 'slider', label: 'Points per frame', min: 200, max: 12000, step: 100, default: 3200, scale: 'log' },
   dt: { kind: 'slider', label: 'Step size', min: 0.0005, max: 0.02, step: 0.0005, default: 0.006, hint: 'Smaller is smoother but advances more slowly.' },
-  paramA: { kind: 'slider', label: 'Constant A', min: 0.05, max: 20, step: 0.01, default: 10, modulatable: true },
-  paramB: { kind: 'slider', label: 'Constant B', min: 0.05, max: 40, step: 0.01, default: 28, modulatable: true },
-  paramC: { kind: 'slider', label: 'Constant C', min: 0.05, max: 10, step: 0.01, default: 2.667 },
   zoom: { kind: 'slider', label: 'Zoom', min: 0.5, max: 30, step: 0.1, default: 9, scale: 'log' },
-  spin: { kind: 'slider', label: 'Auto spin', min: -1, max: 1, step: 0.005, default: 0.07 },
+  spin: { kind: 'slider', label: 'Auto spin', min: -1, max: 1, step: 0.005, default: 0.09 },
   tilt: { kind: 'slider', label: 'Tilt', min: -90, max: 90, step: 1, default: -18, unit: 'deg' },
-  fade: { kind: 'slider', label: 'Fade', min: 0, max: 0.3, step: 0.002, default: 0.045, hint: 'Zero accumulates forever into a dense solid.' },
-  pointSize: { kind: 'slider', label: 'Point size', min: 0.5, max: 6, step: 0.1, default: 1.3 },
-  alpha: { kind: 'slider', label: 'Point alpha', min: 0.02, max: 1, step: 0.01, default: 0.32 },
+  fade: { kind: 'slider', label: 'Fade', min: 0, max: 0.3, step: 0.002, default: 0.05, hint: 'Zero accumulates forever into a dense solid.' },
+  pointSize: { kind: 'slider', label: 'Point size', min: 0.5, max: 6, step: 0.1, default: 1.6 },
+  alpha: { kind: 'slider', label: 'Point alpha', min: 0.02, max: 1, step: 0.01, default: 0.4 },
+  glow: { kind: 'slider', label: 'Glow', min: 0, max: 1, step: 0.01, default: 0.5, hint: 'Additive halo — the previous version had none, which read as flat next to Particle Cube.' },
   colorMode: { kind: 'select', label: 'Colour by', default: 'depth', options: [
     { value: 'depth', label: 'Depth' },
     { value: 'velocity', label: 'Velocity' },
     { value: 'time', label: 'Age' },
   ] },
   near: { kind: 'color', label: 'Near', default: { r: 0, g: 0.83, b: 1, a: 1 } },
-  far: { kind: 'color', label: 'Far', default: { r: 0.35, g: 0.06, b: 0.55, a: 1 } },
+  far: { kind: 'color', label: 'Far', default: { r: 0.75, g: 0.15, b: 0.85, a: 1 } },
   interactive: { kind: 'toggle', label: 'Drag to orbit', default: true },
   reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed' },
 };
@@ -46,23 +67,19 @@ export default function sketch(p, get) {
     age = 0;
   }
 
-  /** One integration step. Returns the derivative for the active system. */
   function derivative(s) {
-    const a = get('paramA');
-    const b = get('paramB');
-    const c = get('paramC');
     const sys = get('system');
 
     if (sys === 'thomas') {
-      const t = a * 0.018; // usable range for this system is far smaller
+      const b = get('thomasB');
       return {
-        dx: Math.sin(s.y) - t * s.x,
-        dy: Math.sin(s.z) - t * s.y,
-        dz: Math.sin(s.x) - t * s.z,
+        dx: Math.sin(s.y) - b * s.x,
+        dy: Math.sin(s.z) - b * s.y,
+        dz: Math.sin(s.x) - b * s.z,
       };
     }
     if (sys === 'halvorsen') {
-      const h = 1.4 + a * 0.02;
+      const h = get('halvorsenA');
       return {
         dx: -h * s.x - 4 * s.y - 4 * s.z - s.y * s.y,
         dy: -h * s.y - 4 * s.z - 4 * s.x - s.z * s.z,
@@ -70,24 +87,32 @@ export default function sketch(p, get) {
       };
     }
     if (sys === 'aizawa') {
-      const A = 0.95, B = 0.7, C = 0.6, D = 3.5, E = 0.25, F = 0.1;
+      const A = get('aizawaA');
+      const B = get('aizawaB');
+      const C = get('aizawaC');
+      const D = get('aizawaD');
+      const E = 0.25;
+      const F = 0.1;
       return {
         dx: (s.z - B) * s.x - D * s.y,
         dy: D * s.x + (s.z - B) * s.y,
         dz: C + A * s.z - (s.z ** 3) / 3 - (s.x * s.x + s.y * s.y) * (1 + E * s.z) + F * s.z * (s.x ** 3),
       };
     }
-    // Lorenz
+    const sigma = get('lorenzSigma');
+    const rho = get('lorenzRho');
+    const beta = get('lorenzBeta');
     return {
-      dx: a * (s.y - s.x),
-      dy: s.x * (b - s.z) - s.y,
-      dz: s.x * s.y - c * s.z,
+      dx: sigma * (s.y - s.x),
+      dy: s.x * (rho - s.z) - s.y,
+      dz: s.x * s.y - beta * s.z,
     };
   }
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight, p.WEBGL);
     p.colorMode(p.RGB, 1, 1, 1, 1);
+    p.noStroke();
     p.background(0);
     reseed();
   };
@@ -98,8 +123,6 @@ export default function sketch(p, get) {
   p.draw = () => {
     const fade = get('fade');
     if (fade > 0) {
-      // Fading in WEBGL means drawing a translucent full-screen quad in
-      // screen space, before any camera transform is applied.
       p.push();
       p.resetMatrix();
       p.noStroke();
@@ -121,7 +144,9 @@ export default function sketch(p, get) {
     const mode = get('colorMode');
     const alpha = get('alpha');
     const size = get('pointSize');
+    const glow = get('glow');
 
+    p.blendMode(p.ADD);
     p.strokeWeight(size);
 
     for (let i = 0; i < steps; i++) {
@@ -131,8 +156,6 @@ export default function sketch(p, get) {
       state.z += d.dz * dt;
       age += dt;
 
-      // Chaotic systems diverge if a constant is pushed out of range; catch
-      // it rather than letting NaN silently blank the canvas.
       if (!isFinite(state.x) || Math.abs(state.x) > 1e4) { reseed(); break; }
 
       let f;
@@ -144,8 +167,31 @@ export default function sketch(p, get) {
         f = p.constrain((state.z * zoom * 0.02) + 0.5, 0, 1);
       }
 
-      p.stroke(p.lerp(near.r, far.r, f), p.lerp(near.g, far.g, f), p.lerp(near.b, far.b, f), alpha);
-      p.point(state.x * zoom, state.y * zoom, (state.z - 25) * zoom * 0.6);
+      const cr = p.lerp(near.r, far.r, f);
+      const cg = p.lerp(near.g, far.g, f);
+      const cb = p.lerp(near.b, far.b, f);
+      const px = state.x * zoom;
+      const py = state.y * zoom;
+      const pz = (state.z - 25) * zoom * 0.6;
+
+      // point() is a single GPU point sprite — orders of magnitude cheaper
+      // than circle(), which matters at up to 12,000 calls a frame. Additive
+      // blending alone already builds real brightness where the trajectory
+      // revisits the same region often, which is most of what "vibrant"
+      // needs. A sparse, larger, low-alpha second pass over every 6th point
+      // adds a soft halo without doubling the draw-call count.
+      p.stroke(cr, cg, cb, alpha);
+      p.point(px, py, pz);
+
+      if (glow > 0 && i % 6 === 0) {
+        p.push();
+        p.strokeWeight(size * 4);
+        p.stroke(cr, cg, cb, alpha * glow * 0.25);
+        p.point(px, py, pz);
+        p.pop();
+      }
     }
+
+    p.blendMode(p.BLEND);
   };
 }
