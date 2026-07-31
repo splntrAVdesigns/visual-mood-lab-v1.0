@@ -1,7 +1,7 @@
 # Visual Mood Lab — Implementation Plan
 
-**Status:** Phase 4 complete (LFO half) → 50-asset library expansion in progress (36/50) → Phase 5
-**Last updated:** 2026-07-31 (rev 7 — Strange Attractor and Transform Shape reworked; 6 of 8 supplied-component ports landed; SVG Particle and Dot Scatter ports + 10 creative-freedom originals still queued)
+**Status:** Phase 4 complete (LFO half) → 50-asset library expansion in progress (37/50) → Phase 5
+**Last updated:** 2026-07-31 (rev 8 — Sprint 2 of the library expansion complete: all 9 supplied-component ports landed excluding Video Text, held by decision. Real memory leak found and fixed in the modulation bus; two real shader antialiasing bugs found and fixed, including one dormant since an earlier sprint.)
 
 ---
 
@@ -376,10 +376,52 @@ Landed:
   app has no list-of-strings control kind and one message covers the same
   ticker use case.
 
-**Not yet landed:** SVG Particle (needs a decision on how to handle the
-missing texture-picker — proposed: baked default source pattern rather than
-requiring the stub) and Dot Scatter (SVG + framer-motion physics scatter,
-needs porting to p5-native spring/brownian motion).
+**Not yet landed:** SVG Particle — held by decision until the texture-picker
+stub gets built out for real, since baking in a default source pattern was
+the only alternative and wasn't worth the compromise for one asset.
+
+**Dot Scatter — landed.** The trickiest port of the batch: the original
+used framer-motion springs and rendered real SVG `<rect>` elements, neither
+of which exist inside this app's sandboxed p5 iframe (only p5 itself is
+vendored in). Replaced with a hand-rolled critically-damped spring
+integrator and plain canvas rects/ellipses. The glyph mark database and
+layout math ported over unchanged — pure geometry, no DOM dependency. Word-
+hit-testing turned out to be the easy part here, not the hard one: unlike
+the shared, board-wide pointer GLSL shaders read, a p5 sketch gets real
+`mouseX`/`mouseY` local to its own iframe, so "is the pointer over this
+card" is a plain bounds check.
+
+**Sprint 2 exit: complete.** 8 of 9 supplied components landed (Video Text
+excluded by decision), verified via `verify-seed` at 37/37 assets, zero
+warnings.
+
+### Codebase health pass — not originally scoped, done because it mattered
+
+Prompted by a direct question about RAF loops, memory leaks, and asset
+accumulation. Two real, confirmable issues found and fixed, not just
+reviewed and waved through:
+
+- **Modulation bus leak.** `getModBus().forget()` was only ever called when
+  a routing was explicitly removed — never when the card itself was fully
+  demoted (scrolled off, budget-evicted, deleted). Every modulated card
+  anyone ever viewed left a permanent, unreachable smoothing-state entry
+  behind in the bus's internal map. Fixed in `pool.demote()`, which now
+  forgets every routing a card had before removing it.
+- **Dangling capture timers.** A p5 renderer's poster-capture request set a
+  3-second fallback timeout that was never cancelled — not when the capture
+  succeeded early, not when the renderer was disposed. Both paths now clear
+  it properly.
+
+Shader antialiasing swept across the whole library, not just the new
+assets: **Grid Follow** used `step()` (a hard binary edge with no
+antialiasing at all) for its grid lines — exactly the pixelation reported.
+Fixed with the same `fwidth()`-based `smoothstep()` pattern every other
+shader in the library already uses. The same sweep caught **Dot Matrix**'s
+square-dot mode using unantialiased `step()` right next to its round-dot
+mode's correct antialiased version, and — dormant since an earlier sprint —
+**Truchet Weave**'s tile-boundary overlay had a `* 0.0` silently killing its
+intended antialiased term, leaving only a hard-edged fallback active. All
+three fixed and reverified through the real shader-schema pipeline.
 
 **Sprint 3 — 10 creative-freedom originals**, not started once Sprint 2's
 final two ports (SVG Particle, Dot Scatter) land. Proposed shader/sketch

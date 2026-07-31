@@ -204,6 +204,18 @@ class RendererPool {
     if (!entry) return;
     if (owner && entry.host !== owner) return;
 
+    // The modulation bus keeps a smoothing-history entry per routed control,
+    // keyed by cardId:controlId. setModState() already cleans these up when
+    // a routing is explicitly removed, but that left the far more common
+    // case uncovered: the card itself goes away — scrolled off, budget-
+    // evicted, the snapshot deleted — while its routings are still active.
+    // Nothing was ever telling the bus that card no longer exists, so every
+    // modulated card anyone ever viewed left a permanent, unreachable entry
+    // behind. Over a long session this grows without bound.
+    for (const controlId of Object.keys(entry.modState)) {
+      getModBus().forget(`${cardId}:${controlId}`);
+    }
+
     entry.controller.abort();
     entry.renderer.dispose();
     this.entries.delete(cardId);

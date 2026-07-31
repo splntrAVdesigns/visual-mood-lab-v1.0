@@ -390,6 +390,17 @@
         "grid",
         "glow"
       ]
+    },
+    {
+      "slug": "dot-scatter",
+      "type": "p5",
+      "file": "sketches/dot-scatter.js",
+      "title": "Dot Scatter",
+      "tags": [
+        "typography",
+        "interactive",
+        "particles"
+      ]
     }
   ]
 }

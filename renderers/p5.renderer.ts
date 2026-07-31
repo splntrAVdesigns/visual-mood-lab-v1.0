@@ -39,6 +39,7 @@ export class P5Renderer implements AssetRenderer {
   private initSentAt = 0;
   private fps = 0;
   private captureWaiters = new Map<number, (url: string | null) => void>();
+  private captureTimers = new Map<number, ReturnType<typeof setTimeout>>();
   private nextRequestId = 1;
   private onMessage: ((e: MessageEvent) => void) | null = null;
 
@@ -124,6 +125,11 @@ export class P5Renderer implements AssetRenderer {
         if (waiter && msg.requestId) {
           waiter(msg.dataUrl ?? null);
           this.captureWaiters.delete(msg.requestId);
+          const timer = this.captureTimers.get(msg.requestId);
+          if (timer) {
+            clearTimeout(timer);
+            this.captureTimers.delete(msg.requestId);
+          }
         }
         break;
       }
@@ -201,10 +207,12 @@ export class P5Renderer implements AssetRenderer {
     const dataUrl = await new Promise<string | null>((resolve) => {
       this.captureWaiters.set(requestId, resolve);
       this.send({ type: 'capture', requestId });
-      setTimeout(() => {
+      const timer = setTimeout(() => {
+        this.captureTimers.delete(requestId);
         this.captureWaiters.delete(requestId);
         resolve(null);
       }, 3000);
+      this.captureTimers.set(requestId, timer);
     });
 
     if (!dataUrl) return null;
@@ -225,6 +233,8 @@ export class P5Renderer implements AssetRenderer {
     this.onMessage = null;
     this.frameEl?.remove();
     this.frameEl = null;
+    for (const timer of this.captureTimers.values()) clearTimeout(timer);
+    this.captureTimers.clear();
     this.captureWaiters.clear();
   }
 }

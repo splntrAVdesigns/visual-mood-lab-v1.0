@@ -61,8 +61,16 @@ void main() {
   vec2 cellUv = fract(px / cellPx);
 
   float lw = u_lineWidth / cellPx;
-  float lineX = step(cellUv.x, lw) + step(1.0 - lw, cellUv.x);
-  float lineY = step(cellUv.y, lw) + step(1.0 - lw, cellUv.y);
+  // step() has no antialiasing at all — every pixel is either fully on the
+  // line or fully off it, which is exactly what read as pixelated. Every
+  // other shader in this library uses fwidth()-based smoothstep for edges
+  // (see gradient-grid's line rendering); this one just hadn't followed
+  // that convention yet.
+  float aa = fwidth(cellUv.x) + fwidth(cellUv.y);
+  float lineX = 1.0 - smoothstep(lw - aa, lw + aa, cellUv.x)
+              + smoothstep(1.0 - lw - aa, 1.0 - lw + aa, cellUv.x);
+  float lineY = 1.0 - smoothstep(lw - aa, lw + aa, cellUv.y)
+              + smoothstep(1.0 - lw - aa, 1.0 - lw + aa, cellUv.y);
   float line = clamp(lineX + lineY, 0.0, 1.0);
 
   vec3 col = mix(u_bg, u_lineColor, line * u_lineAlpha);

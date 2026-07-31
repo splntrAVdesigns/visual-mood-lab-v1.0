@@ -78,7 +78,8 @@ void main() {
   if (u_dotShape == 1) {
     vec2 a = abs(cellUv);
     float halfSize = bright * u_dotSize * 0.5;
-    mark = 1.0 - step(halfSize, max(a.x, a.y));
+    float aa = fwidth(max(a.x, a.y)) + 1e-4;
+    mark = 1.0 - smoothstep(halfSize - aa, halfSize + aa, max(a.x, a.y));
   } else {
     float dist = length(cellUv);
     float radius = bright * u_dotSize * 0.5;

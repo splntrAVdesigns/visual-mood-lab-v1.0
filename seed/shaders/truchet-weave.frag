@@ -100,7 +100,8 @@ void main() {
 
   if (u_showTiles) {
     vec2 e = abs(fract(uv * u_tiles) - 0.5);
-    col = mix(col, vec3(0.15), (1.0 - smoothstep(0.47, 0.5, max(e.x, e.y))) * 0.0 + step(0.48, max(e.x, e.y)) * 0.25);
+    float edge = smoothstep(0.47, 0.5, max(e.x, e.y));
+    col = mix(col, vec3(0.15), edge * 0.25);
   }
 
   fragColor = vec4(col, 1.0);
