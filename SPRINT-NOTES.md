@@ -1,79 +1,57 @@
-# Visual Mood Lab v2.0 — 36/50 assets, checkpoint
+# Visual Mood Lab v2.1 — security audit fixed
 
 ```
-npm install --ignore-scripts
-npm run dev
+npm install
+npm run build
 ```
 
-New manifest (36 assets, was 30) — reseed after deploying: visit
-`/api/seed`. Verified fresh: 36 created, **0 warnings**, every new and
-reworked asset present with correct title and control count.
+No schema change — keep your data, no reseed needed. `package-lock.json` is
+included this time since the `overrides` field needs to be regenerated —
+delete your old lockfile if npm complains, then reinstall.
 
 ---
 
-## Honest status: this is a checkpoint, not the full 22-item sprint
+## The 7 vulnerabilities — checked properly, not just patched blindly
 
-10 items total were agreed (2 reworks + 8 supplied-component ports). I
-completed 8 of them here with the same rigor as everything else in this
-build — real verification, not just "looks right." The remaining 2 (SVG
-Particle, Dot Scatter) are architecturally the most novel of the batch and
-deserved their own focused pass rather than being rushed to hit a count.
-Sprint 3 (10 creative-freedom originals) hasn't started, as agreed —
-sequenced after Sprint 2 closes.
+`npm audit fix --force` wanted to **downgrade Next.js to version 9** to
+satisfy its resolver. That's not a fix, that's destroying the app — Next 9
+predates the App Router entirely. Checked what was actually resolved
+instead of trusting the automated suggestion:
 
-## The two reworks
+- **esbuild (moderate)** — not a real risk here, but real dead weight:
+  nested three levels deep through a *deprecated* package
+  (`@esbuild-kit`, which the tool's own deprecation notice says was
+  "merged into tsx"). Drizzle-kit already has its own fine copy of esbuild
+  elsewhere in the tree; this old one was just unused legacy baggage.
+- **postcss (high, 3 CVEs)** — real, resolved at `8.4.31` via Next's
+  internal dependency, patched at `8.5.18+`.
+- **sharp (high)** — real, resolved at `0.34.5`, patched at `0.35.0+`.
 
-**Strange Attractor.** Found the actual bug behind "sliders don't do
-anything": three of four systems shared one generic set of sliders. Thomas
-and Halvorsen got them silently rescaled by factors never shown in the UI;
-**Aizawa — the most organic-looking system — ignored all three and used
-hardcoded constants instead.** Moving "Constant A" while Aizawa was
-selected did literally nothing. Every system now owns real, connected
-constants shown only when selected. Added additive blending for vibrancy
-(the original had none, which read flat next to Particle Cube).
+Fixed with npm's `overrides` field — forces these three specific nested
+packages up to patched versions without touching Next.js or Drizzle-kit's
+own versions at all:
 
-**Transform Shape** (was Cube Transform). Five primitives via p5 WEBGL's
-built-in shape functions. Breathing now defaults to 0, not 0.15 — a still
-reference shape is usually what's wanted by default. Trail/echo effect
-added using the same technique Particle Cube already proved. Kept the same
-slug so the existing row updates in place instead of orphaning.
+```json
+"overrides": {
+  "postcss": "^8.5.18",
+  "sharp": "^0.35.0",
+  "esbuild": "^0.25.0"
+}
+```
 
-## Six of eight supplied-component ports
+## Verified, not just "npm audit says 0"
 
-None could be dropped in as-is — every one needed real reimplementation
-against this app's two renderer types, not a literal port. Two real bugs
-caught during authoring rather than shipped and found later:
+- `npm audit` → **0 vulnerabilities**
+- `npm ls` confirms the actual resolved versions: postcss 8.5.25, sharp
+  0.35.3, esbuild deduped to one safe 0.25.12 across the entire tree
+  (previously three different versions floating around)
+- Full typecheck and production build still clean
+- **The one dependency chain the override actually touches beyond Next's
+  internals** — drizzle-kit's CLI and `tsx` (which the seed/verify
+  pipeline runs on) — both confirmed still working: `drizzle-kit generate
+  --help` runs fine, and a full `verify-seed` pass across all 36 assets
+  still comes back clean
+- Fresh seed + build + boot cycle: 36/36 created, 0 warnings, board loads
 
-- **`u_mouse` arrives in pixel coordinates, not normalised 0–1.** An early
-  draft of Grid Follow assumed otherwise and compared raw pixels against
-  0–1 cell math — would have rendered nothing sensible.
-- **Pointer position is one board-wide value with no per-card "hovering"
-  signal.** An "auto-drift when idle" toggle built on that assumption was
-  unbuildable — it can never detect idle, since it never sees anything but
-  a valid position. Replaced with an honest Pointer/Auto-drift select
-  instead of a feature that couldn't work as designed.
-
-**Grid Follow** — DOM+CSS-3D cell grid rebuilt as one fragment shader.
-**Pulse Lines** — CSS `@keyframes` (browser timing, no shader equivalent)
-rebuilt as a phase-staggered travelling sine pulse. **Dot Matrix** — a real
-two-pass `ogl` pipeline collapsed into one shader rather than building
-general multi-pass infrastructure for a single asset. **Grid Snake** — the
-most direct port; already canvas2D and deterministic. Found one real gap
-while porting: cell size/gap were computed once at setup, so adjusting them
-via the inspector would silently do nothing until a resize — fixed with the
-rebuild-on-change pattern other sketches already use. **Star Field** —
-canvas2D particle warp tunnel, physics carried over closely. **LED
-Display** — bitmap font ticker, list-of-strings model collapsed to one text
-field since this app has no matching control kind.
-
-## Verified this session
-
-Build clean · seed fresh, 36/36 created, 0 warnings · every new/reworked
-asset confirmed present with correct title and expected control count via
-direct API check, not just visual inspection.
-
-## Next message
-
-SVG Particle (needs a decision: baked default source vs. waiting on the
-texture-picker stub) and Dot Scatter (SVG + framer-motion physics needs
-porting to p5-native spring/brownian motion), then Sprint 3's 10 originals.
+Nothing about the app's behavior changed — this is purely dependency
+hygiene, verified rather than assumed.
