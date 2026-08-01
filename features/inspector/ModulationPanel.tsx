@@ -11,6 +11,13 @@ import s from '../features.module.css';
 interface ModulationPanelProps {
   controls: Control[];
   onClose: () => void;
+  /**
+   * Render inline inside an existing scroll region instead of as a fixed
+   * sidecar. The mobile focused view already owns one scrolling column and
+   * a close affordance of its own, so the sidecar chrome — fixed width,
+   * own border, own header close button — would be duplicated furniture.
+   */
+  embedded?: boolean;
 }
 
 const DEFAULT_MOD: Modulation = { source: 'lfo.sine', amount: 0.3, rate: 0.4, smoothing: 0 };
@@ -32,9 +39,29 @@ const DEFAULT_MOD: Modulation = { source: 'lfo.sine', amount: 0.3, rate: 0.4, sm
  * shrinking it rather than covering it, using the exact same slide-in
  * mechanism — so this cost no new layout code, only a new list.
  */
-export function ModulationPanel({ controls, onClose }: ModulationPanelProps) {
+export function ModulationPanel({ controls, onClose, embedded = false }: ModulationPanelProps) {
   const mod = useInspectorStore((st) => st.mod);
   const [expanded, setExpanded] = useState<string | null>(controls[0]?.id ?? null);
+
+  const rows = (
+    <div className={embedded ? s.modPanelListEmbedded : s.modPanelList}>
+        {controls.length === 0 && (
+          <p className={s.notice}>Nothing on this asset can be modulated.</p>
+        )}
+
+      {controls.map((control) => (
+        <ModRow
+          key={control.id}
+          control={control}
+          active={mod[control.id]}
+          expanded={expanded === control.id}
+          onToggleExpand={() => setExpanded((e) => (e === control.id ? null : control.id))}
+        />
+      ))}
+    </div>
+  );
+
+  if (embedded) return rows;
 
   return (
     <aside className={s.modPanel} onClick={(e) => e.stopPropagation()} aria-label="Modulation">
@@ -45,22 +72,7 @@ export function ModulationPanel({ controls, onClose }: ModulationPanelProps) {
         </span>
         <IconButton label="Close modulation" icon={<CloseIcon />} onClick={onClose} />
       </header>
-
-      <div className={s.modPanelList}>
-        {controls.length === 0 && (
-          <p className={s.notice}>Nothing on this asset can be modulated.</p>
-        )}
-
-        {controls.map((control) => (
-          <ModRow
-            key={control.id}
-            control={control}
-            active={mod[control.id]}
-            expanded={expanded === control.id}
-            onToggleExpand={() => setExpanded((e) => (e === control.id ? null : control.id))}
-          />
-        ))}
-      </div>
+      {rows}
     </aside>
   );
 }

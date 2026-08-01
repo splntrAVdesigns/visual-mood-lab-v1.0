@@ -6,6 +6,8 @@ import { BoardGrid } from '@/features/board/BoardGrid';
 import { Hero } from '@/features/board/Hero';
 import { InspectorDrawer } from '@/features/inspector/InspectorDrawer';
 import { FocusedAssetOverlay } from '@/features/board/FocusedAssetOverlay';
+import { MobileFocusedView } from '@/features/board/MobileFocusedView';
+import { useIsMobile } from '@/lib/hooks/useIsMobile';
 import { openAssetById, closeAsset } from '@/features/board/openAsset';
 import { CommandPalette } from './CommandPalette';
 import { useBoardStore, useInspectorStore, usePlaybackStore, MAX_LIVE_RENDERERS } from '@/stores';
@@ -38,6 +40,7 @@ export function AppShell({ assets, needsSeed = false, focusItemId }: AppShellPro
   const setReducedMotion = usePlaybackStore((st) => st.setReducedMotion);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   /*
    * Publish asset id -> poster URL so texture controls can resolve what
@@ -114,8 +117,21 @@ export function AppShell({ assets, needsSeed = false, focusItemId }: AppShellPro
         <BoardGrid />
       </main>
 
-      <InspectorDrawer />
-      <FocusedAssetOverlay />
+      {/*
+        Two genuinely different compositions, not one squeezed. On desktop
+        the inspector is a fixed drawer beside a centred graphic; on mobile
+        the controls live inside the focused view itself, in one scrolling
+        column beneath a pinned canvas. Rendering the desktop drawer as well
+        would put a second, redundant control surface behind the sheet.
+      */}
+      {isMobile ? (
+        <MobileFocusedView />
+      ) : (
+        <>
+          <InspectorDrawer />
+          <FocusedAssetOverlay />
+        </>
+      )}
       <FooterCredit />
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />

@@ -1,7 +1,7 @@
 # Visual Mood Lab — Implementation Plan
 
-**Status:** Phase 4 complete (LFO half) → **library complete at 50/50** → mobile layout phase next
-**Last updated:** 2026-08-01 (rev 11 — library complete at 50 assets: SVG Particle and Drift Blocks landed. Seed route now prunes retired assets instead of orphaning them.)
+**Status:** Phase 4 complete (LFO half) → library complete at 50/50 → **mobile layout shipped** → Phase 5 (Playground) next
+**Last updated:** 2026-08-01 (rev 12 — mobile layout phase: a genuinely separate focused-view composition for narrow screens, plus a real accessibility fix — pinch-zoom had been blocked outright.)
 
 ---
 
@@ -627,6 +627,59 @@ Five items, all closed:
    `hardwareConcurrency`. Measured off capability signals rather than
    user-agent sniffing: those are honest about what a device can do; a UA
    string is a guess about what it is.
+
+---
+
+## 7d. Mobile layout phase
+
+Deliberately sequenced after the hardening pass, on the reasoning that a
+layout phase built on an unmeasured foundation is the wrong order.
+
+**A separate composition, not a squeezed one.** The desktop focused view is
+a centred 1:1 graphic with the inspector in a fixed drawer pinned to the
+right edge — two independently positioned overlays that happen to sit side
+by side. That model has nowhere to go below ~820px; the drawer would cover
+the exact thing being adjusted. The mobile view is therefore a different
+component: one full-height column, canvas pinned at the top and never
+scrolling away, everything else in a single scroll region beneath it. Being
+able to watch what a control does while dragging it is the point of the
+app, so the canvas staying visible is the constraint everything else bends
+around.
+
+**Modulation behind a tab rather than stacked.** A shader with twenty
+parameters plus routing for each would be an endless scroll; switching tabs
+is cheaper than hunting. `ModulationPanel` gained an `embedded` mode so it
+renders inline in the sheet's scroll region rather than as a fixed sidecar
+with its own width, border and close button — duplicated furniture inside a
+container that already owns all three.
+
+**Detection is capability-based, not user-agent.** Viewport width plus
+pointer type, matching how the renderer budget is chosen. A narrow desktop
+window gets the mobile layout, which is correct — it responds to available
+space and input method, not to a guess about hardware.
+
+**Real fixes found while building it:**
+
+- **Pinch-zoom was blocked outright.** `maximumScale: 1` had been set on the
+  reasoning that the board is a fixed app surface rather than a document.
+  That fails WCAG 1.4.4 and locks out anyone who needs to magnify to read a
+  control label — a largely theoretical cost while this was desktop-only, an
+  actual barrier the moment there is a mobile layout. Removed; the layout
+  sizes off `dvh` and scrolls, so zoom degrades gracefully.
+- **`100dvh`, not `100vh`.** Mobile browsers show and hide the URL bar and
+  `vh` does not account for it — the bottom of the sheet would sit
+  permanently under browser chrome.
+- **`overscroll-behavior: contain`** on the sheet, so rubber-banding past the
+  end of the control list does not scroll the board underneath.
+- **Grid columns retuned.** The desktop `minmax(220px, 1fr)` yields a single
+  column on a ~360px phone, making 50 assets a very long scroll. 148px gives
+  two columns on the narrowest common phone, three on a large one.
+- **Snapshot delete made permanently visible** below the breakpoint. It is
+  hover-revealed on desktop, and there is no hover on touch.
+
+**Not exposed on mobile:** fullscreen. iOS Safari does not support the
+Fullscreen API for arbitrary elements, only `<video>`, so a button that
+silently does nothing would be worse than its absence.
 
 ---
 

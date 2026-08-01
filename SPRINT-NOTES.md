@@ -1,75 +1,84 @@
-# Visual Mood Lab v2.5 — library complete at 50
+# Visual Mood Lab v2.6 — mobile layout
 
 ```
 npm install
 npm run build
 ```
 
-**Reseed after deploying** — visit `/api/seed`. That run will also prune the
-orphaned Chromatic Glitch row your deployment has been carrying (the reason
-your seed reported 49 against a 48-entry manifest).
-
-**Final: 50 assets — 21 shaders / 29 sketches.**
+No manifest change — **no reseed needed**.
 
 ---
 
-## 1. Orphan row — fixed permanently, not deleted once
+## A separate composition, not a squeezed one
 
-Seeding upserted by slug but never removed anything, so an asset retired
-from the manifest kept its row forever. That's why your deployment showed
-`total: 49` against 48 manifest entries — leftover Chromatic Glitch from
-before Particle Cube replaced it.
+The desktop focused view is a centred 1:1 graphic with the inspector in a
+fixed drawer pinned to the right edge — two independently positioned
+overlays that happen to sit side by side. Below about 820px that model has
+nowhere to go: the drawer covers the exact thing being adjusted.
 
-Fixed in the seed route itself rather than with a one-off delete, so any
-future retired asset self-cleans. **Scoped to rows that have a `seedSlug`**,
-so anything you upload is never touched by it.
+So the mobile view is a different component, not a media query on the old
+one:
 
-Verified both directions, because "deletes things" deserves proof:
-- Added a probe asset, seeded, removed it from the manifest, reseeded →
-  `pruned: 1`, total back to 50. ✅
-- Registered an upload, reseeded → upload survived, `pruned: 0`. ✅
+- **One full-height column.** Header, canvas, actions, tabs, scroll region.
+- **The canvas is pinned and never scrolls away.** Watching what a control
+  does while you drag it is the entire point of the app — a sheet that
+  covers the graphic defeats it. Capped at 44% of viewport height so the
+  controls always have room, including on a short landscape phone.
+- **Everything below is one scroll region** with the full parameter list,
+  grouped exactly as on desktop.
+- **Modulation sits behind a tab**, not stacked underneath. A shader with
+  twenty parameters plus routing for each would be an endless scroll;
+  switching is cheaper than hunting. `ModulationPanel` gained an `embedded`
+  mode so it renders inline rather than as a fixed sidecar with its own
+  width, border and close button — duplicated furniture inside a container
+  that already has all three.
 
-## 2. SVG Particle (Option B, as directed)
+Detection is **capability-based, not user-agent**: viewport width plus
+pointer type, same reasoning as the renderer budget. A narrow desktop
+window gets the mobile layout, which is correct — it responds to available
+space and input method, not to a guess about hardware.
 
-Ships with procedurally generated source shapes — ring, grid, cross, wave,
-burst — rather than a linked image. Worth being precise about why: the
-texture picker from the hardening pass resolves images for **GLSL shaders
-only**. There is currently no image-loading path in the p5 sandbox at all,
-and carrying decoded pixel data across the postMessage boundary is a real
-protocol extension. That stays on the backlog rather than being quietly
-half-done here.
+## Real fixes found while building it
 
-The sampling approach is unchanged in spirit — walk a grid, keep a particle
-wherever the shape is solid — but the "is this solid" test is analytic per
-shape rather than an alpha lookup into a bitmap. Faster, and the shape can
-change live without re-sampling anything. 18 controls, pointer-repel and
-reassembly intact.
+**Pinch-zoom was blocked outright.** `maximumScale: 1` was set on the
+reasoning that the board is a fixed app surface rather than a document.
+That fails WCAG 1.4.4 and locks out anyone who needs to magnify to read a
+control label. Largely theoretical while this was desktop-only; an actual
+barrier the moment there's a mobile layout. Removed — and verified gone
+from the rendered HTML, not just from the source.
 
-## 3. Drift Blocks — the hero background as a real asset
+**`100dvh`, not `100vh`.** Mobile browsers show and hide the URL bar; `vh`
+doesn't account for it, so the bottom of the sheet would sit permanently
+under browser chrome.
 
-Five shapes (square, circle, triangle, hexagon, octagon), full colour
-control, modulatable size/speed/opacity, optional spin and jitter. 19
-controls.
+**`overscroll-behavior: contain`** on the sheet — rubber-banding past the
+end of the control list would otherwise scroll the board underneath, which
+is especially disorienting when the thing behind is a grid.
 
-**The hero decoration itself is untouched, deliberately.** It lives outside
-the renderer pool, which is why it never competes for the live-renderer
-budget — now 1–3 slots depending on device. Wiring it into the shared
-pipeline would spend one of those slots on chrome instead of on an asset
-someone actually chose to watch. This is a sibling sharing the same visual
-DNA, independently tunable.
+**Grid columns retuned.** The desktop `minmax(220px, 1fr)` yields a *single*
+column on a ~360px phone, making 50 assets a very long scroll. 148px gives
+two columns on the narrowest common phone, three on a large one.
 
-The cubic ease in/out on each shape's journey is what makes the drift read
-as considered rather than mechanical — per-shape durations mean the field
-never pulses in unison.
+**Snapshot delete made permanently visible** below the breakpoint — it's
+hover-revealed on desktop, and there is no hover on touch.
+
+**Fullscreen deliberately not exposed on mobile.** iOS Safari doesn't
+support the Fullscreen API for arbitrary elements, only `<video>`. A button
+that silently does nothing is worse than its absence.
 
 ## Verified this session
 
-Typecheck and build clean · **50/50 seeded, 0 warnings** · both new assets
-confirmed present with 18 and 19 controls via direct API check · prune
-verified in both directions · `verify-seed` clean, all ten `ControlKind`
-values still exercised.
+Typecheck and build clean · 50/50 seeded, 0 warnings · all mobile CSS
+confirmed present in the compiled bundle (`mobileFocus`, `mobileStage`,
+`mobileSheet`, `100dvh`, `overscroll-behavior`) · `maximum-scale` confirmed
+absent from served HTML.
+
+**Not verified by me:** actual touch interaction on a real device. Drag,
+tab switching, and scroll behaviour are reasoned from the code and the
+platform constraints, not observed. That's the first thing worth trying.
 
 ## Next
 
-**Mobile layout phase** — the library is closed, the foundation is measured,
-nothing outstanding blocking it.
+Phase 5 (Playground) — CodeMirror, hot-reload, live uniform parsing,
+save-sketch-to-library, fork-an-asset. The last unbuilt phase in the
+original plan.

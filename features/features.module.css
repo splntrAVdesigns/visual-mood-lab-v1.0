@@ -1634,3 +1634,171 @@
   text-align: center;
   padding: var(--space-3);
 }
+
+/* ------------------------------------------------------------------ *
+ * Mobile focused view
+ *
+ * A full-height column: header, pinned canvas, actions, tabs, then one
+ * scroll region. The canvas deliberately never scrolls away — being able
+ * to see what a control does while dragging it is the whole point of the
+ * app, and a control sheet that covers the graphic defeats it.
+ * ------------------------------------------------------------------ */
+
+.mobileFocus {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dialog);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-canvas);
+  /* Dynamic viewport height: on mobile browsers the URL bar shows and
+     hides, and 100vh does not account for it — the bottom of the sheet
+     would sit permanently under the browser chrome. 100dvh tracks the
+     actually-visible area. */
+  height: 100dvh;
+}
+
+.mobileFocusHeader {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--header-h);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.mobileFocusTitle {
+  font-size: var(--step-0);
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobileFocusSpacer {
+  flex: 1;
+}
+
+/* Square, capped so the controls below always have room. On a short
+   landscape phone the canvas would otherwise eat the entire viewport. */
+.mobileStage {
+  flex: none;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  max-height: 44dvh;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.mobileActions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  overflow-x: auto;
+}
+
+.mobileTabs {
+  flex: none;
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.mobileTab {
+  flex: 1;
+  height: 42px;
+  font-size: var(--step--1);
+  color: var(--text-dim);
+  border-bottom: 2px solid transparent;
+}
+
+.mobileTab[data-active='true'] {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.mobileSheet {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* Keeps a rubber-band scroll at the end of the list from chaining to the
+     board underneath. */
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--space-3) var(--space-4) var(--space-8);
+}
+
+.mobileGroup {
+  margin-bottom: var(--space-5);
+}
+
+.mobileGroupLabel {
+  font-size: var(--step--2);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-mute);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Modulation rows rendered inline rather than in the sidecar shell. */
+.modPanelListEmbedded {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- mobile board ------------------------------------------------ */
+
+@media (max-width: 820px) {
+  /* Touch targets: 44px is the long-standing floor for a comfortable tap,
+     and several controls sized for a mouse sit below it. */
+  .sortButton {
+    height: 34px;
+    padding: 0 var(--space-3);
+  }
+
+  .recentCard {
+    width: 112px;
+  }
+
+  .snapshotCard {
+    width: 132px;
+  }
+
+  /* The delete affordance on a snapshot is hover-revealed on desktop.
+     There is no hover on touch, so it has to be permanently visible. */
+  .snapshotDelete {
+    opacity: 1;
+  }
+
+  .hero {
+    height: 220px;
+    margin-inline: var(--space-3);
+  }
+
+  .boardBar,
+  .recentSection,
+  .snapshotSection {
+    padding-inline: var(--space-3);
+  }
+
+  /* 220px minimum yields a single column on a ~360px phone, which wastes
+     the screen and makes browsing 50 assets a very long scroll. 148px
+     gives two columns on the narrowest common phone and three on a large
+     one, while staying comfortably tappable. */
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+    padding-inline: var(--space-3);
+    gap: var(--space-2);
+  }
+}
