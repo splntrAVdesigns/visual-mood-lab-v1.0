@@ -522,6 +522,28 @@
         "chaos",
         "motion"
       ]
+    },
+    {
+      "slug": "svg-particle",
+      "type": "p5",
+      "file": "sketches/svg-particle.js",
+      "title": "SVG Particle",
+      "tags": [
+        "particles",
+        "interactive",
+        "geometric"
+      ]
+    },
+    {
+      "slug": "drift-blocks",
+      "type": "p5",
+      "file": "sketches/drift-blocks.js",
+      "title": "Drift Blocks",
+      "tags": [
+        "minimal",
+        "geometric",
+        "motion"
+      ]
     }
   ]
 }

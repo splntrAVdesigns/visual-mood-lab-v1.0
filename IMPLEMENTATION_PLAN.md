@@ -1,7 +1,7 @@
 # Visual Mood Lab — Implementation Plan
 
-**Status:** Phase 4 complete (LFO half) → library 48/50 → hardening pass complete → mobile layout phase next
-**Last updated:** 2026-07-31 (rev 10 — hardening pass: texture-picker built for real (unblocking SVG Particle), performance budget re-measured against §9 for the first time since Phase 0, reduced-motion unified, focus audit run, renderer budget made device-aware.)
+**Status:** Phase 4 complete (LFO half) → **library complete at 50/50** → mobile layout phase next
+**Last updated:** 2026-08-01 (rev 11 — library complete at 50 assets: SVG Particle and Drift Blocks landed. Seed route now prunes retired assets instead of orphaning them.)
 
 ---
 
@@ -459,8 +459,31 @@ scroll and is far cheaper). **Static Energy** (midpoint displacement — the
 same algorithm as fractal terrain, run on a line, which is what gives
 lightning its jaggedness at every scale).
 
-**Remaining to reach 50:** SVG Particle (held pending the texture-picker)
-plus one more, to be chosen.
+**Library complete — 50 assets (21 shaders / 29 sketches).** The final two:
+
+- **SVG Particle** — shipped with procedurally generated source shapes
+  rather than a linked image. The texture picker built in the hardening
+  pass resolves images for GLSL shaders only; carrying decoded pixel data
+  across the p5 sandbox's postMessage boundary is a real protocol
+  extension, not a small addition, so it stays on the backlog. The sampling
+  approach is unchanged in spirit — walk a grid, keep a particle wherever
+  the shape is solid — but the "is this solid" test is analytic per shape
+  rather than an alpha lookup, which is faster and lets the shape change
+  live without re-sampling a bitmap.
+- **Drift Blocks** — ports the board's own hero-background logic into a
+  real asset with five shapes (square, circle, triangle, hexagon, octagon),
+  full colour control and modulatable params. The hero decoration itself is
+  deliberately untouched: it lives outside the renderer pool, so wiring it
+  into the shared pipeline would spend one of only 1–3 live-renderer slots
+  on chrome rather than on an asset someone chose to watch.
+
+**Seed route now prunes.** Seeding upserted by slug but never removed
+anything, so an asset retired from the manifest (Chromatic Glitch, replaced
+by Particle Cube several sprints ago) kept its row forever — invisible on
+the board but permanently inflating the count. The prune is scoped to rows
+that HAVE a `seedSlug`, so uploads are never touched. Verified both
+directions: a retired seed asset is removed, and a registered upload
+survives untouched.
 
 **Exit for the whole expansion:** 50 seed assets, `verify-seed` clean with
 zero warnings, every asset with real modulatable params and a control-kind

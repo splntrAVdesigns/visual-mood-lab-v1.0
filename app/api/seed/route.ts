@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { NextResponse } from 'next/server';
-import { sql } from 'drizzle-orm';
+import { and, isNotNull, notInArray, sql } from 'drizzle-orm';
 
 import { getDb, isLocalDb, schema } from '@/lib/db/client';
 import { ingestAsset } from '@/lib/ingest/ingest';
@@ -141,7 +141,35 @@ export async function GET(req: Request) {
       );
     }
 
+    /*
+     * Prune seed assets that are no longer in the manifest.
+     *
+     * Seeding upserts by slug but never removed anything, so an asset
+     * retired from the manifest (Chromatic Glitch, replaced by Particle
+     * Cube several sprints ago) kept its row forever — invisible on the
+     * board, but permanently inflating the asset count and leaving stray
+     * data behind. Scoped to rows that HAVE a seedSlug, so anything a
+     * person uploaded themselves is never touched by this.
+     */
     const db = await getDb();
+    const slugs = manifest.assets.map((a) => a.slug);
+
+    const orphans = await db
+      .select({ id: schema.assets.id, seedSlug: schema.assets.seedSlug })
+      .from(schema.assets)
+      .where(and(isNotNull(schema.assets.seedSlug), notInArray(schema.assets.seedSlug, slugs)));
+
+    let pruned = 0;
+    if (orphans.length > 0) {
+      // Board items reference assets, so those go first.
+      for (const orphan of orphans) {
+        await db.delete(schema.boardItems).where(sql`${schema.boardItems.assetId} = ${orphan.id}`);
+        await db.delete(schema.assets).where(sql`${schema.assets.id} = ${orphan.id}`);
+        log.push(`- ${orphan.seedSlug} — pruned (no longer in manifest)`);
+        pruned++;
+      }
+    }
+
     const rows = await db.select().from(schema.assets);
 
     return NextResponse.json({
@@ -150,6 +178,7 @@ export async function GET(req: Request) {
       created,
       updated,
       unchanged,
+      pruned,
       total: rows.length,
       posters: rows.filter((r) => r.posterUrl).length,
       schemas: rows.filter((r) => r.schema).length,
