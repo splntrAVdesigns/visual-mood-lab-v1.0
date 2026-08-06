@@ -56,6 +56,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     verificationTokensTable: verificationTokens,
   }),
   session: { strategy: "jwt" },
+  // Vercel deployments don't have a fixed hostname known ahead of time
+  // (preview URLs, the *.vercel.app domain, a future custom domain) the
+  // way AUTH_URL would assume. Without trustHost, Auth.js can refuse to
+  // trust the incoming request's host header for constructing callback/
+  // redirect URLs — this is a known, previously-flagged risk for exactly
+  // the "Server error / problem with the server configuration" failure
+  // mode, separate from (and worth fixing regardless of) whether missing
+  // env vars turn out to be the actual root cause of that error.
+  trustHost: true,
   pages: {
     signIn: "/login",
     // Auth.js has no native signup page concept — /signup is a plain
