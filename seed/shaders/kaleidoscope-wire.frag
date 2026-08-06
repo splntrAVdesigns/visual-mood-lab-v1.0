@@ -11,6 +11,13 @@ precision highp float;
  * rather than stained glass. All edges use fwidth-based antialiasing, which
  * matters far more here than in a filled shader: at these line weights,
  * aliased strokes shimmer badly under any rotation.
+ *
+ * Poster re-ingest marker: forces a content-hash change so `npm run seed`
+ * treats this asset as genuinely updated (not `unchanged`) and regenerates
+ * + re-uploads its placeholder poster through the storage backend, now that
+ * BLOB_READ_WRITE_TOKEN is correctly set locally. The prior seed run wrote
+ * the poster to local disk instead of Vercel Blob, leaving a dead URL in
+ * production. This comment can be removed once confirmed fixed.
  */
 
 uniform float u_time;

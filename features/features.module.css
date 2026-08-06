@@ -120,13 +120,22 @@
      both here too was what forced the whole header wider than a phone
      viewport, making pinch-zoom-out the only way to reach the settings
      button on the far right. Removing them lets the header fit its
-     content naturally instead of overflowing. */
+     content naturally instead of overflowing.
+     !important is deliberate: the base (unconditional) .accountMenu rule
+     lives ~1700 lines further down this same file. Two same-specificity
+     rules for the same property resolve by SOURCE ORDER, not by which one
+     is inside a media query — so without !important, that later base rule
+     always wins the cascade regardless of viewport width, which is
+     exactly what silently broke this the first time. Reordering the file
+     would also fix it, but is fragile against the next edit landing
+     between the two rules and reintroducing the same bug; !important is
+     the version that can't regress that way. */
   .wordmark {
-    display: none;
+    display: none !important;
   }
 
   .accountMenu {
-    display: none;
+    display: none !important;
   }
 }
 
