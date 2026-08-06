@@ -15,7 +15,7 @@
 import { eq, inArray } from 'drizzle-orm';
 import { getDb, schema } from '../lib/db/client';
 import { getStorage } from '../lib/storage';
-import { LOCAL_USER } from '../lib/auth';
+import { LIBRARY_OWNER_ID } from '../lib/data/assets';
 
 /** Minimal structural types so this compiles without Playwright installed. */
 interface PlaywrightPage {
@@ -56,7 +56,7 @@ async function main(): Promise<void> {
     .from(schema.assets)
     .where(inArray(schema.assets.type, ['shader', 'p5']));
 
-  const mine = rows.filter((r) => r.ownerId === LOCAL_USER.id);
+  const mine = rows.filter((r) => r.ownerId === LIBRARY_OWNER_ID);
   console.log(`\nBackfilling ${mine.length} poster(s) from ${BASE}\n`);
 
   const browser = await chromium.launch();

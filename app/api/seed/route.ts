@@ -5,7 +5,7 @@ import { and, isNotNull, notInArray, sql } from 'drizzle-orm';
 
 import { getDb, isLocalDb, schema } from '@/lib/db/client';
 import { ingestAsset } from '@/lib/ingest/ingest';
-import { LOCAL_USER } from '@/lib/auth';
+import { LIBRARY_OWNER_ID } from '@/lib/data/assets';
 
 /**
  * Browser-triggerable seeding: visit /api/seed to migrate and load the
@@ -120,7 +120,7 @@ export async function GET(req: Request) {
       const source = readFileSync(join(seedDir, entry.file), 'utf8');
 
       const res = await ingestAsset({
-        ownerId: LOCAL_USER.id,
+        ownerId: LIBRARY_OWNER_ID,
         type: entry.type,
         title: entry.title,
         tags: entry.tags,

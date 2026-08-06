@@ -1,0 +1,234 @@
+/* features/auth/auth.module.css
+ *
+ * Every value here resolves to a token from styles/tokens.css. The
+ * wordmark and hero canvas mirror features/board/Hero.tsx exactly — same
+ * classes' intent, same visual language, so this page reads as the same
+ * product rather than a themed lookalike.
+ */
+
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(380px, 520px) 1fr;
+  background: var(--bg-canvas);
+}
+
+@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ---- form side ---------------------------------------------------- */
+
+.formPane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: var(--space-7);
+  border-right: var(--overlay-border);
+}
+
+@media (max-width: 900px) {
+  .formPane {
+    border-right: none;
+    padding: var(--space-6) var(--space-5);
+  }
+}
+
+.formInner {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+/* Mirrors features/features.module.css .heroTitle / .wordmarkAccent /
+   .heroVersion exactly — same brand mark, same sizing logic. */
+.wordmark {
+  font-size: clamp(2.5rem, 5.5vw, 3.75rem);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  line-height: 1.1;
+  margin: 0 0 var(--space-6);
+}
+
+.wordmarkAccent {
+  color: var(--accent);
+}
+
+.wordmarkVersion {
+  font-family: var(--font-mono);
+  font-size: 0.5em;
+  color: var(--text-mute);
+}
+
+.pageTitle {
+  font-family: var(--font-ui);
+  font-size: var(--step-3);
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 var(--space-2);
+  letter-spacing: -0.01em;
+}
+
+.subtitle {
+  font-family: var(--font-ui);
+  font-size: var(--step-0);
+  color: var(--text-dim);
+  margin: 0 0 var(--space-6);
+  line-height: var(--leading-normal);
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--text-dim);
+  margin-bottom: var(--space-2);
+}
+
+.forgotLink {
+  display: block;
+  width: fit-content;
+  margin: var(--space-2) 0 0 auto;
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  color: var(--text-dim);
+  text-decoration: none;
+}
+
+.forgotLink:hover {
+  color: var(--accent);
+}
+
+.forgotLink:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+.error {
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  color: var(--danger);
+  background: var(--danger-dim);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  margin: 0;
+}
+
+.notice {
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  color: var(--text-dim);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  margin: 0;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide);
+  margin: var(--space-2) 0;
+}
+
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.footer {
+  margin-top: var(--space-6);
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.footer a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.footer a:hover {
+  color: var(--accent-hover);
+}
+
+.footer a:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius);
+}
+
+/* Persistent site credit, pinned to the bottom of the form pane
+   regardless of how tall the form content above it is. */
+.siteFooter {
+  position: absolute;
+  bottom: var(--space-5);
+  left: var(--space-7);
+  right: var(--space-7);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-mute);
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .siteFooter {
+    left: var(--space-5);
+    right: var(--space-5);
+  }
+}
+
+/* ---- hero side ------------------------------------------------------ */
+/* Pure decoration — no text overlay. All copy lives in the form pane. */
+
+.heroPane {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-canvas);
+  clip-path: polygon(8% 0, 100% 0, 100% 100%, 0 100%);
+  display: none;
+}
+
+@media (min-width: 901px) {
+  .heroPane {
+    display: block;
+  }
+}
+
+.heroCanvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* Same fade treatment as the board's own hero — softens the canvas into
+   the surrounding black rather than cutting sharply. */
+.heroFade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, var(--bg-canvas) 0%, transparent 18%);
+  pointer-events: none;
+}

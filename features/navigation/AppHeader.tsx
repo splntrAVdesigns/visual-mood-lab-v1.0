@@ -15,14 +15,22 @@ import {
 import { useBoardStore, useInspectorStore, usePlaybackStore } from '@/stores';
 import { LiveIndicator } from './LiveIndicator';
 import { SeedButton } from './SeedButton';
+import { AccountMenu } from './AccountMenu';
 import s from '../features.module.css';
 
 interface AppHeaderProps {
   onOpenSettings: () => void;
+  onOpenAccount: () => void;
   needsSeed?: boolean;
+  user?: { id: string; name: string } | null;
 }
 
-export function AppHeader({ onOpenSettings, needsSeed = false }: AppHeaderProps) {
+export function AppHeader({
+  onOpenSettings,
+  onOpenAccount,
+  needsSeed = false,
+  user = null,
+}: AppHeaderProps) {
   const toggleNav = useInspectorStore((st) => st.toggleNav);
   const navOpen = useInspectorStore((st) => st.navOpen);
 
@@ -102,6 +110,8 @@ export function AppHeader({ onOpenSettings, needsSeed = false }: AppHeaderProps)
           </Tooltip>
         </>
       )}
+
+      <AccountMenu user={user} onOpenAccount={onOpenAccount} />
 
       <Tooltip content="Settings">
         <IconButton label="Settings" icon={<SettingsIcon />} onClick={onOpenSettings} />

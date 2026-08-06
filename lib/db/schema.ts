@@ -129,6 +129,11 @@ export const assetsRelations = relations(assets, ({ many }) => ({
   boardItems: many(boardItems),
 }));
 
+// Auth tables (users, accounts, sessions, verificationTokens) — kept in a
+// separate file since they're Auth.js's contract, not ours, but re-exported
+// here so they're part of the schema map `client.ts` passes to Drizzle.
+export * from './schema.auth';
+
 export type AssetRow = typeof assets.$inferSelect;
 export type NewAssetRow = typeof assets.$inferInsert;
 export type BoardRow = typeof boards.$inferSelect;

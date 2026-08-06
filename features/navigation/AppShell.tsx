@@ -15,6 +15,7 @@ import { getPool } from '@/lib/render/pool';
 import type { Asset } from '@/types/asset';
 import { AppHeader } from './AppHeader';
 import { NavDrawer } from './NavDrawer';
+import { AccountDialog } from './AccountDialog';
 import s from '../features.module.css';
 
 interface AppShellProps {
@@ -23,9 +24,11 @@ interface AppShellProps {
   needsSeed?: boolean;
   /** Set by /asset/[id]: open this card as soon as the shell mounts. */
   focusItemId?: string;
+  /** The signed-in account, for the header's account menu. */
+  user?: { id: string; name: string } | null;
 }
 
-export function AppShell({ assets, needsSeed = false, focusItemId }: AppShellProps) {
+export function AppShell({ assets, needsSeed = false, focusItemId, user = null }: AppShellProps) {
   /* Hydrate synchronously on first render so SSR and the client agree —
      doing this in an effect would paint the empty state first and flash. */
   const [hydrated] = useState(() => {
@@ -40,6 +43,7 @@ export function AppShell({ assets, needsSeed = false, focusItemId }: AppShellPro
   const setReducedMotion = usePlaybackStore((st) => st.setReducedMotion);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const isMobile = useIsMobile();
 
   /*
@@ -108,8 +112,13 @@ export function AppShell({ assets, needsSeed = false, focusItemId }: AppShellPro
 
   return (
     <>
-      <AppHeader onOpenSettings={() => setSettingsOpen(true)} needsSeed={needsSeed} />
-      <NavDrawer />
+      <AppHeader
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenAccount={() => setAccountOpen(true)}
+        needsSeed={needsSeed}
+        user={user}
+      />
+      <NavDrawer user={user} onOpenAccount={() => setAccountOpen(true)} />
       <CommandPalette />
 
       <main className={s.main} data-inspector-open={inspectorOpen ? 'true' : 'false'}>
@@ -135,6 +144,7 @@ export function AppShell({ assets, needsSeed = false, focusItemId }: AppShellPro
       <FooterCredit />
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <AccountDialog open={accountOpen} onClose={() => setAccountOpen(false)} />
     </>
   );
 }

@@ -8,14 +8,15 @@
  * upload works — there is no second code path to drift.
  */
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { sql } from 'drizzle-orm';
 
 import { getDb, isLocalDb, schema } from '../lib/db/client';
+import { runMigrations } from '../lib/db/migrate';
 import { ingestAsset } from '../lib/ingest/ingest';
-import { LOCAL_USER } from '../lib/auth';
+import { LIBRARY_OWNER_ID } from '../lib/data/assets';
 import { paramsToSchema } from '../lib/sketch/params-to-schema';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -27,66 +28,6 @@ interface ManifestEntry {
   file: string;
   title: string;
   tags: string[];
-}
-
-/**
- * Applies pending migrations, tracked in a `_migrations` table.
- *
- * An earlier version swallowed "already exists" errors instead. That works
- * until a migration fails halfway for a real reason and the error text
- * happens to contain those words — then you silently skip it and corrupt the
- * schema. Tracking applied filenames is the only version that stays correct.
- */
-async function migrate(): Promise<void> {
-  const db = await getDb();
-  const dir = join(ROOT, 'lib', 'db', 'migrations');
-
-  await db.execute(
-    sql.raw(
-      'CREATE TABLE IF NOT EXISTS _migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())',
-    ),
-  );
-
-  const applied = new Set<string>();
-  const rows = (await db.execute(sql.raw('SELECT name FROM _migrations'))) as unknown;
-  for (const r of normaliseRows(rows)) {
-    if (typeof r.name === 'string') applied.add(r.name);
-  }
-
-  const files = readdirSync(dir)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
-
-  let ran = 0;
-
-  for (const file of files) {
-    if (applied.has(file)) continue;
-
-    const body = readFileSync(join(dir, file), 'utf8');
-    const statements = body
-      .split('--> statement-breakpoint')
-      .map((x) => x.trim())
-      .filter(Boolean);
-
-    for (const stmt of statements) {
-      await db.execute(sql.raw(stmt));
-    }
-
-    await db.execute(sql.raw(`INSERT INTO _migrations (name) VALUES ('${file}')`));
-    ran++;
-  }
-
-  console.log(ran === 0 ? 'Migrations up to date.' : `Applied ${ran} migration(s).`);
-}
-
-/** postgres-js and PGlite disagree on result shape; normalise to rows. */
-function normaliseRows(result: unknown): Array<Record<string, unknown>> {
-  if (Array.isArray(result)) return result as Array<Record<string, unknown>>;
-  if (result && typeof result === 'object' && 'rows' in result) {
-    const rows = (result as { rows?: unknown }).rows;
-    if (Array.isArray(rows)) return rows as Array<Record<string, unknown>>;
-  }
-  return [];
 }
 
 async function fresh(): Promise<void> {
@@ -108,7 +49,8 @@ async function main(): Promise<void> {
     await fresh();
   }
 
-  await migrate();
+  const { ran } = await runMigrations();
+  console.log(ran === 0 ? 'Migrations up to date.' : `Applied ${ran} migration(s).`);
   console.log('');
 
   const manifest = JSON.parse(readFileSync(join(SEED, 'manifest.json'), 'utf8')) as {
@@ -138,7 +80,7 @@ async function main(): Promise<void> {
       }
 
       const res = await ingestAsset({
-        ownerId: LOCAL_USER.id,
+        ownerId: LIBRARY_OWNER_ID,
         type: entry.type,
         title: entry.title,
         tags: entry.tags,

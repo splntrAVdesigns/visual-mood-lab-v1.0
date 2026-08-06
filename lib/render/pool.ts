@@ -187,7 +187,19 @@ class RendererPool {
       modState: { ...(asset.mod ?? {}) },
     };
 
-    this.entries.set(asset.id, entry);
+    // Keyed by cardId, matching every read/delete elsewhere in this class
+    // (.get/.has/.delete all use cardId). This used to be keyed by asset.id
+    // instead — invisible for as long as canonical board items had
+    // itemId === assetId (the old id scheme), since the two keys happened
+    // to be identical strings. Once board items became correctly scoped
+    // per-board (itemId = `${boardId}:${assetId}`, needed so the same
+    // shared library asset can have a canonical item on more than one
+    // board), that accidental equality broke, and the mismatch surfaced as
+    // every render silently disposing itself right after mount — see the
+    // eviction check a few lines down, which was always finding "no entry"
+    // for the correct key and tearing the renderer down before a single
+    // frame ever drew.
+    this.entries.set(cardId, entry);
     renderer.setQuality(state === 'focused' ? 'full' : 'preview');
 
     try {

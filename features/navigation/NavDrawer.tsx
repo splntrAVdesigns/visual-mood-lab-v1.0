@@ -13,6 +13,7 @@ import {
   SlidersIcon,
   TagIcon,
   UploadIcon,
+  Button,
 } from '@/components/ui';
 import {
   selectAllTags,
@@ -22,11 +23,17 @@ import {
   useInspectorStore,
 } from '@/stores';
 import { ASSET_TYPE_LABEL, type AssetType } from '@/types/asset';
+import { logoutAction } from '@/features/auth/actions';
 import s from '../features.module.css';
 
 const TYPES: AssetType[] = ['shader', 'p5', 'svg', 'image', 'video'];
 
-export function NavDrawer() {
+interface NavDrawerProps {
+  user?: { id: string; name: string } | null;
+  onOpenAccount: () => void;
+}
+
+export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
   const [uploadOpen, setUploadOpen] = useState(false);
   const open = useInspectorStore((st) => st.navOpen);
   const setNavOpen = useInspectorStore((st) => st.setNavOpen);
@@ -47,7 +54,29 @@ export function NavDrawer() {
 
   return (
     <>
-    <Drawer open={open} side="left" title="Visual Mood Lab" onClose={() => setNavOpen(false)}>
+    <Drawer
+      open={open}
+      side="left"
+      title="Visual Mood Lab"
+      onClose={() => setNavOpen(false)}
+      footer={
+        user && (
+          <div className={s.drawerAccountRow}>
+            <button type="button" className={s.drawerAccountName} onClick={onOpenAccount}>
+              <span className={s.drawerAccountAvatar} aria-hidden="true">
+                {user.name.charAt(0).toUpperCase()}
+              </span>
+              <span className={s.drawerAccountNameText}>{user.name}</span>
+            </button>
+            <form action={logoutAction}>
+              <Button type="submit" variant="ghost">
+                Log out
+              </Button>
+            </form>
+          </div>
+        )
+      }
+    >
       <nav className={s.navSection}>
         <SectionLabel>Board</SectionLabel>
         <div className={s.navList}>
