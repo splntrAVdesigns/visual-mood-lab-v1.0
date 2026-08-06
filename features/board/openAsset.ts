@@ -34,6 +34,7 @@ export function openAssetById(itemId: string, pushUrl = true): void {
       itemId,
       asset.isSnapshot ?? false,
       asset.mod ?? {},
+      asset.isOwned ?? false,
     );
 
   if (pushUrl && typeof window !== 'undefined') {

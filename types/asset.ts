@@ -30,6 +30,16 @@ export interface Asset {
   itemId: string;
   /** True for a saved parameter variation of another card's asset. */
   isSnapshot?: boolean;
+  /**
+   * True when the signed-in viewer owns the underlying asset (their own
+   * upload) rather than viewing a shared library asset cloned onto their
+   * board. Determines where edits persist — see stores/inspectorStore.ts's
+   * persist()/flush(). Library-derived cards can't write to the shared
+   * asset row (that would let one person's slider edit alter what every
+   * other account sees), so they persist as a per-card override instead,
+   * the same mechanism a snapshot already uses.
+   */
+  isOwned?: boolean;
   type: AssetType;
   title: string;
   tags: string[];

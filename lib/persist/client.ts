@@ -92,7 +92,33 @@ const pending = new Map<string, ParamState>();
  * renderer update stays synchronous in the store, and only the persisted
  * copy is debounced.
  */
-export function persistParams(assetId: string, params: ParamState, delay = 500): void {
+/**
+ * Debounced parameter save.
+ *
+ * Dragging a slider fires dozens of changes per second; each one must reach
+ * the live renderer immediately but must NOT become a database write. The
+ * renderer update stays synchronous in the store, and only the persisted
+ * copy is debounced.
+ *
+ * `onSaved` exists specifically to keep the board store's own copy of
+ * `params` in sync WITHOUT firing on every tick either — inspectorStore.ts
+ * used to call `useBoardStore.getState().updateAssetParams()` synchronously
+ * on every setParam(), which produces a brand-new `asset` object reference
+ * on every single drag tick. RendererStage's effect depends on that whole
+ * object, so every tick was tearing the live renderer down and re-promoting
+ * it — visible as the canvas going black for the entire duration of a drag,
+ * recovering only once the churn settled after release. Routing that same
+ * board-store write through this same debounce fixes it at the source: the
+ * board store (and thus the renderer's mount effect) now only sees a new
+ * object once dragging actually pauses, exactly like the network write
+ * already did.
+ */
+export function persistParams(
+  assetId: string,
+  params: ParamState,
+  delay = 500,
+  onSaved?: (params: ParamState) => void,
+): void {
   pending.set(assetId, params);
 
   const existing = timers.get(assetId);
@@ -105,6 +131,8 @@ export function persistParams(assetId: string, params: ParamState, delay = 500):
       timers.delete(assetId);
       pending.delete(assetId);
       if (!payload) return;
+
+      onSaved?.(payload);
 
       fetch(`/api/assets/${assetId}`, {
         method: 'PATCH',
@@ -124,7 +152,7 @@ export function persistParams(assetId: string, params: ParamState, delay = 500):
  * Flush any queued save immediately. Called when the inspector closes so a
  * change made a moment before closing is not lost to the debounce window.
  */
-export function flushParams(assetId: string): void {
+export function flushParams(assetId: string, onSaved?: (params: ParamState) => void): void {
   const timer = timers.get(assetId);
   const payload = pending.get(assetId);
   if (!timer || !payload) return;
@@ -132,6 +160,8 @@ export function flushParams(assetId: string): void {
   clearTimeout(timer);
   timers.delete(assetId);
   pending.delete(assetId);
+
+  onSaved?.(payload);
 
   fetch(`/api/assets/${assetId}`, {
     method: 'PATCH',
@@ -228,8 +258,14 @@ export async function deleteSnapshot(itemId: string): Promise<boolean> {
 }
 
 /** Persists a snapshot's params. Distinct from persistParams: snapshots
-    write to the board item's paramsOverride, not the asset row. */
-export function persistSnapshotParams(itemId: string, params: ParamState, delay = 500): void {
+    write to the board item's paramsOverride, not the asset row. Same
+    onSaved purpose as persistParams — see that function's doc comment. */
+export function persistSnapshotParams(
+  itemId: string,
+  params: ParamState,
+  delay = 500,
+  onSaved?: (params: ParamState) => void,
+): void {
   const key = `snapshot:${itemId}`;
   pending.set(key, params);
 
@@ -243,6 +279,8 @@ export function persistSnapshotParams(itemId: string, params: ParamState, delay 
       timers.delete(key);
       pending.delete(key);
       if (!payload) return;
+
+      onSaved?.(payload);
 
       fetch(`/api/boards/default/items/${itemId}`, {
         method: 'PATCH',
@@ -258,7 +296,7 @@ export function persistSnapshotParams(itemId: string, params: ParamState, delay 
   );
 }
 
-export function flushSnapshotParams(itemId: string): void {
+export function flushSnapshotParams(itemId: string, onSaved?: (params: ParamState) => void): void {
   const key = `snapshot:${itemId}`;
   const timer = timers.get(key);
   const payload = pending.get(key);
@@ -267,6 +305,8 @@ export function flushSnapshotParams(itemId: string): void {
   clearTimeout(timer);
   timers.delete(key);
   pending.delete(key);
+
+  onSaved?.(payload);
 
   fetch(`/api/boards/default/items/${itemId}`, {
     method: 'PATCH',
@@ -286,14 +326,21 @@ export function flushSnapshotParams(itemId: string): void {
  * shouldn't write a row per frame — and routed to the snapshot's own column
  * when the open card is a snapshot.
  */
-export function persistMod(itemId: string, mod: ModState, isSnapshot: boolean, delay = 500): void {
+/**
+ * Persist modulation routing. Debounced like params — dragging a rate slider
+ * shouldn't write a row per frame. `usesBoardItemPath` — same meaning and
+ * same reason as persistParams/persistSnapshotParams: true for a snapshot
+ * OR a canonical card the viewer doesn't own (a library asset cloned onto
+ * their board), since neither can write to the shared asset row.
+ */
+export function persistMod(itemId: string, mod: ModState, usesBoardItemPath: boolean, delay = 500): void {
   const key = `mod:${itemId}`;
   pending.set(key, mod as never);
 
   const existing = timers.get(key);
   if (existing) clearTimeout(existing);
 
-  const url = isSnapshot
+  const url = usesBoardItemPath
     ? `/api/boards/default/items/${itemId}`
     : `/api/assets/${itemId}`;
 

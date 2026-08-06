@@ -16,7 +16,7 @@ precision highp float;
 uniform float u_time;
 uniform vec2 u_resolution;
 
-uniform float u_segments;     // @label(Segments) @range(2, 32) @default(8)
+uniform int u_segments;       // @label(Segments) @range(2, 32) @default(8)
 uniform float u_rotation;     // @label(Rotation) @range(-180, 180) @default(0) @unit(deg)
 uniform float u_spin;         // @label(Auto spin) @range(-2, 2) @default(0.12) @mod
 uniform float u_zoom;         // @label(Zoom) @range(0.2, 5) @default(1.1) @log @mod
@@ -58,7 +58,13 @@ void main() {
   float a = atan(uv.y, uv.x) + radians(u_rotation) + u_time * u_spin;
 
   // Fold into wedges, then mirror alternating wedges so edges meet cleanly.
-  float seg = 6.28318 / max(u_segments, 2.0);
+  // u_segments MUST be an integer — atan2 wraps at ±π (the left edge of
+  // screen), and this fold only tiles seamlessly across that wrap point
+  // when 2π divides evenly into whole wedges. A fractional segment count
+  // (this was `uniform float`, allowing values like 14.5) leaves a
+  // leftover half-wedge exactly at the wrap seam — a visible break on the
+  // left, independent of anything else in this shader.
+  float seg = 6.28318 / max(float(u_segments), 2.0);
   a = mod(a, seg);
   a = abs(a - seg * 0.5);
 

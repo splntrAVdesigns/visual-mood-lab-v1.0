@@ -47,7 +47,7 @@ export function toAsset(row: AssetRow): Omit<Asset, 'itemId' | 'isSnapshot'> {
   };
 }
 
-function toCard(asset: AssetRow, item: BoardItemRow): Asset {
+function toCard(asset: AssetRow, item: BoardItemRow, viewerId: string): Asset {
   // Canonical items get a deterministic id (see ensureCanonicalBoardItem);
   // a snapshot's id is always a random UUID (see createSnapshot) and can
   // never collide with that deterministic form by construction. This has
@@ -61,6 +61,7 @@ function toCard(asset: AssetRow, item: BoardItemRow): Asset {
     ...toAsset(asset),
     itemId: item.id,
     isSnapshot: isSnapshot || undefined,
+    isOwned: asset.ownerId === viewerId,
     // paramsOverride is what makes a snapshot look different from its
     // sibling; falling back to the asset's own params covers the canonical
     // (non-snapshot) card, which has no override row.
@@ -165,7 +166,7 @@ export async function getOrCreateDefaultBoard(ownerId: string): Promise<string> 
  * The board, as cards. This is what the grid actually renders — not raw
  * assets, so a snapshot and its source asset both appear as distinct cards.
  */
-export async function listBoardItems(boardId: string): Promise<Asset[]> {
+export async function listBoardItems(boardId: string, viewerId: string): Promise<Asset[]> {
   const db = await getDb();
 
   const rows = await db
@@ -175,10 +176,10 @@ export async function listBoardItems(boardId: string): Promise<Asset[]> {
     .where(eq(schema.boardItems.boardId, boardId))
     .orderBy(asc(schema.boardItems.order));
 
-  return rows.map((r) => toCard(r.asset, r.item));
+  return rows.map((r) => toCard(r.asset, r.item, viewerId));
 }
 
-export async function getBoardItem(itemId: string): Promise<Asset | null> {
+export async function getBoardItem(itemId: string, viewerId: string): Promise<Asset | null> {
   const db = await getDb();
 
   const rows = await db
@@ -189,7 +190,7 @@ export async function getBoardItem(itemId: string): Promise<Asset | null> {
     .limit(1);
 
   const row = rows[0];
-  return row ? toCard(row.asset, row.item) : null;
+  return row ? toCard(row.asset, row.item, viewerId) : null;
 }
 
 /**
@@ -240,6 +241,7 @@ export async function createSnapshot(
   assetId: string,
   params: Record<string, unknown>,
   order: number,
+  viewerId: string,
 ): Promise<Asset | null> {
   const db = await getDb();
   const id = crypto.randomUUID();
@@ -252,38 +254,49 @@ export async function createSnapshot(
     paramsOverride: params as never,
   });
 
-  return getBoardItem(id);
+  return getBoardItem(id, viewerId);
 }
 
 export async function updateSnapshotMod(
   itemId: string,
+  boardId: string,
   mod: Record<string, unknown>,
 ): Promise<void> {
   const db = await getDb();
   await db
     .update(schema.boardItems)
     .set({ modOverride: mod as never })
-    .where(eq(schema.boardItems.id, itemId));
+    .where(and(eq(schema.boardItems.id, itemId), eq(schema.boardItems.boardId, boardId)));
 }
 
-export async function setSnapshotPoster(itemId: string, url: string): Promise<void> {
+export async function setSnapshotPoster(itemId: string, boardId: string, url: string): Promise<void> {
   const db = await getDb();
   await db
     .update(schema.boardItems)
     .set({ posterOverride: url })
-    .where(eq(schema.boardItems.id, itemId));
+    .where(and(eq(schema.boardItems.id, itemId), eq(schema.boardItems.boardId, boardId)));
 }
 
+/**
+ * `itemId` alone was never enough here — it identifies a row, but not
+ * whether the caller is allowed to touch it. `itemId` is not a secret; it
+ * appears directly in URLs (`/asset/<itemId>`), so any signed-in user who
+ * saw or guessed one could previously PATCH another account's board item.
+ * Scoping every write to the caller's own `boardId` (same pattern
+ * deleteBoardItem, below, already used correctly) closes that off — a
+ * mismatched boardId now just matches zero rows instead of silently
+ * succeeding against someone else's data.
+ */
 export async function updateSnapshotParams(
   itemId: string,
+  boardId: string,
   params: Record<string, unknown>,
 ): Promise<boolean> {
   const db = await getDb();
-  const res = await db
+  await db
     .update(schema.boardItems)
     .set({ paramsOverride: params as never })
-    .where(and(eq(schema.boardItems.id, itemId), eq(schema.boardItems.assetId, schema.boardItems.assetId)));
-  void res;
+    .where(and(eq(schema.boardItems.id, itemId), eq(schema.boardItems.boardId, boardId)));
   return true;
 }
 

@@ -114,7 +114,12 @@ export function AppHeader({
       <AccountMenu user={user} onOpenAccount={onOpenAccount} />
 
       <Tooltip content="Settings">
-        <IconButton label="Settings" icon={<SettingsIcon />} onClick={onOpenSettings} />
+        <IconButton
+          label="Settings"
+          icon={<SettingsIcon />}
+          onClick={onOpenSettings}
+          className={s.settingsIcon}
+        />
       </Tooltip>
     </header>
   );

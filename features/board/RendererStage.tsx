@@ -106,13 +106,25 @@ export function RendererStage({ asset, focused = false }: RendererStageProps) {
       unsubscribe();
       pool.demote(asset.itemId, host);
     };
-  }, [asset, focused, reducedMotion, quality, epoch, hovered, boardFrozen]);
-  // Deps intentionally include the whole `asset` object — asset.itemId
-  // changing (opening a different card) must always re-run this effect.
-  // epoch changes force this effect to re-run, which recreates the
-  // IntersectionObserver and re-checks current visibility. That is what lets
-  // a grid card reclaim its live renderer after a focused overlay — which
-  // borrows the same renderer for the same asset — closes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- asset.itemId
+    // is deliberately used instead of `asset`; see the comment below.
+  }, [asset.itemId, focused, reducedMotion, quality, epoch, hovered, boardFrozen]);
+  // Deps deliberately do NOT include the whole `asset` object — only
+  // asset.itemId, a primitive. This effect's job is mounting/detaching a
+  // renderer for a given card; it doesn't need the latest params or mod to
+  // do that, because live edits already reach the renderer through a
+  // completely separate path (inspectorStore's setParam calls
+  // renderer.setParam() directly). Depending on the whole object meant
+  // ANY change to the asset — including a debounced params/mod sync from
+  // the board store, which always produces a new object reference — was
+  // tearing this renderer down and re-promoting it, visible as a flash
+  // every time an edit settled. asset.itemId is exactly the one thing that
+  // genuinely means "a different card" (opening a different asset,
+  // closing this one), which is the only case that should ever remount.
+  // The effect body still reads the current `asset` via closure when it
+  // does run — that's always fresh from whichever render scheduled it, and
+  // this effect not re-running when only params change is precisely the
+  // point, not a staleness bug.
 
   useEffect(() => {
     getPool().setPaused(paused || reducedMotion);

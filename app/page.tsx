@@ -11,7 +11,7 @@ export default async function BoardPage() {
   try {
     const user = await requireUser();
     const boardId = await getOrCreateDefaultBoard(user.id);
-    const assets = await listBoardItems(boardId);
+    const assets = await listBoardItems(boardId, user.id);
     return <AppShell assets={assets} user={user} />;
   } catch (err) {
     // A real auth failure (proxy's cookie check passed but the session

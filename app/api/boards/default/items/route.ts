@@ -21,10 +21,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Expected { assetId, params }' }, { status: 400 });
     }
 
-    const items = await listBoardItems(boardId);
+    const items = await listBoardItems(boardId, user.id);
     const order = items.length;
 
-    const card = await createSnapshot(boardId, body.assetId, body.params, order);
+    const card = await createSnapshot(boardId, body.assetId, body.params, order, user.id);
     if (!card) return NextResponse.json({ error: 'Failed to create snapshot' }, { status: 500 });
 
     return NextResponse.json({ ok: true, item: card });

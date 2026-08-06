@@ -57,6 +57,27 @@
   background: var(--border);
 }
 
+/* The settings gear is the one persistent, always-reachable entry point to
+   app-wide preferences — worth the extra visual weight of a second accent
+   element in the header, on top of the wordmark's "Lab". Everywhere else
+   in this file, "accent appears on at most one element" still holds; this
+   is a deliberate, considered exception for a control users need to be
+   able to find at a glance, not a drift from that discipline.
+   !important is deliberate here, not laziness: IconButton's own hover/
+   active states live in a separate CSS module (components/ui/ui.module.css)
+   and would otherwise win the cascade unpredictably depending on which
+   module's output happens to load later in the bundle — this override
+   needs to hold regardless of that build-order detail. */
+.settingsIcon,
+.settingsIcon:hover,
+.settingsIcon:active {
+  color: var(--accent) !important;
+}
+
+.settingsIcon:hover {
+  opacity: 0.8;
+}
+
 .search {
   display: flex;
   align-items: center;
@@ -90,6 +111,21 @@
 
 @media (max-width: 720px) {
   .search {
+    display: none;
+  }
+
+  /* Header decluttering for mobile: the wordmark is redundant with the
+     hero section directly below it, and the account name/log-out pair
+     already lives in the drawer footer (see .drawerAccountRow) — keeping
+     both here too was what forced the whole header wider than a phone
+     viewport, making pinch-zoom-out the only way to reach the settings
+     button on the far right. Removing them lets the header fit its
+     content naturally instead of overflowing. */
+  .wordmark {
+    display: none;
+  }
+
+  .accountMenu {
     display: none;
   }
 }
@@ -222,7 +258,12 @@
 
 @media (max-width: 600px) {
   .grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    /* Explicit 2 columns rather than auto-fill(minmax(150px,1fr)) — that
+       arithmetic should produce 2 columns at typical phone widths, but is
+       sensitive to exact container width (scrollbar gutter, box-sizing,
+       any stray horizontal overflow elsewhere on the page) and could
+       silently collapse to 1. An explicit column count can't collapse. */
+    grid-template-columns: repeat(2, 1fr);
     padding-inline: var(--space-3);
   }
   .boardBar {

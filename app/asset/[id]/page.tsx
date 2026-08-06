@@ -17,7 +17,7 @@ export default async function AssetPage({ params }: { params: Promise<{ id: stri
   try {
     const user = await requireUser();
     const boardId = await getOrCreateDefaultBoard(user.id);
-    const assets = await listBoardItems(boardId);
+    const assets = await listBoardItems(boardId, user.id);
 
     // A stale or foreign itemId (deleted asset, someone else's link, a
     // typo) isn't an error — openAssetById already no-ops gracefully on an
