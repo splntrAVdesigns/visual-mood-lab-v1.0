@@ -6,6 +6,7 @@ import {
   Button,
   CloseIcon,
   CodeIcon,
+  FullscreenIcon,
   IconButton,
   Tooltip,
 } from '@/components/ui';
@@ -281,14 +282,3 @@ export function FocusedAssetOverlay() {
   );
 }
 
-function FullscreenIcon({ on }: { on: boolean }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.25}>
-      {on ? (
-        <path d="M6 2v2.5A1.5 1.5 0 0 1 4.5 6H2M10 2v2.5A1.5 1.5 0 0 0 11.5 6H14M6 14v-2.5A1.5 1.5 0 0 0 4.5 10H2M10 14v-2.5a1.5 1.5 0 0 1 1.5-1.5H14" />
-      ) : (
-        <path d="M2 6V3.5A1.5 1.5 0 0 1 3.5 2H6M14 6V3.5A1.5 1.5 0 0 0 12.5 2H10M2 10v2.5A1.5 1.5 0 0 0 3.5 14H6M14 10v2.5a1.5 1.5 0 0 1-1.5 1.5H10" />
-      )}
-    </svg>
-  );
-}

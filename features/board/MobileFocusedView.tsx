@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Badge, Button, CloseIcon, CodeIcon, IconButton } from '@/components/ui';
+import { Badge, Button, CloseIcon, CodeIcon, FullscreenIcon, IconButton, Tooltip } from '@/components/ui';
 import {
   selectSelectedAsset,
   useBoardStore,
@@ -58,6 +58,7 @@ export function MobileFocusedView() {
 
   const [tab, setTab] = useState<Tab>('controls');
   const [showCode, setShowCode] = useState(false);
+  const [pseudoFullscreen, setPseudoFullscreen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
@@ -65,11 +66,16 @@ export function MobileFocusedView() {
   useEffect(() => {
     setTab('controls');
     setShowCode(false);
+    setPseudoFullscreen(false);
     setSavedNote(null);
     // Reset scroll when switching assets — carrying the previous asset's
     // scroll position into a different control list is disorienting.
     sheetRef.current?.scrollTo({ top: 0 });
-  }, [asset?.itemId]);
+    // `open` is in the deps too, not just asset?.itemId — this component
+    // returns null rather than unmounting when closed (see below), so
+    // reopening the SAME asset would otherwise leave pseudoFullscreen (and
+    // the tab/scroll state) stuck exactly where it was left last time.
+  }, [asset?.itemId, open]);
 
   useEffect(() => {
     if (!savedNote) return;
@@ -144,11 +150,24 @@ export function MobileFocusedView() {
   };
 
   return (
-    <div className={s.mobileFocus} role="dialog" aria-modal="true" aria-label={asset.title}>
+    <div
+      className={s.mobileFocus}
+      data-fullscreen={pseudoFullscreen || undefined}
+      role="dialog"
+      aria-modal="true"
+      aria-label={asset.title}
+    >
       <header className={s.mobileFocusHeader}>
         <span className={s.mobileFocusTitle}>{asset.title}</span>
         <Badge>{asset.isSnapshot ? 'SNAP' : ASSET_TYPE_BADGE[asset.type]}</Badge>
         <span className={s.mobileFocusSpacer} />
+        <Tooltip content={pseudoFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+          <IconButton
+            label="Toggle fullscreen"
+            icon={<FullscreenIcon on={pseudoFullscreen} />}
+            onClick={() => setPseudoFullscreen((v) => !v)}
+          />
+        </Tooltip>
         <IconButton label="Close" icon={<CloseIcon />} onClick={() => closeAsset()} />
       </header>
 

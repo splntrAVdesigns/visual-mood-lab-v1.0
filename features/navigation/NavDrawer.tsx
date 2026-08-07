@@ -156,10 +156,16 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
             <UploadIcon className={s.navItemIcon} />
             Upload
           </button>
-          <button type="button" className={s.navItem} disabled>
+          <button
+            type="button"
+            className={s.navItem}
+            disabled
+            aria-disabled="true"
+            title="Playground is coming in a future update"
+          >
             <CodeIcon className={s.navItemIcon} />
             Playground
-            <span className={s.navCount}>P5</span>
+            <span className={s.navCount}>Coming Soon</span>
           </button>
         </div>
       </nav>

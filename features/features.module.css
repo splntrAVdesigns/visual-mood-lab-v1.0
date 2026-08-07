@@ -177,6 +177,20 @@
   background: var(--accent-faint);
 }
 
+.navItem:disabled {
+  color: var(--text-mute);
+  cursor: not-allowed;
+}
+
+.navItem:disabled:hover {
+  background: none;
+  color: var(--text-mute);
+}
+
+.navItem:disabled .navItemIcon {
+  opacity: 0.5;
+}
+
 .navItemIcon {
   flex: none;
   color: inherit;
@@ -1785,6 +1799,27 @@
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   padding: var(--space-3) var(--space-4) var(--space-8);
+}
+
+/*
+ * Pseudo-fullscreen for the mobile focused view — CSS-only expansion, not
+ * the native Fullscreen API. iOS Safari has no Fullscreen API support for
+ * arbitrary elements (only <video>), so a button calling requestFullscreen()
+ * here would silently do nothing on the one platform this view exists for.
+ * The desktop overlay's native fullscreen strips down to canvas + toggle +
+ * close; this mirrors that same reduction using layout instead of a browser
+ * API — same intent, since the API itself isn't available here.
+ */
+.mobileFocus[data-fullscreen='true'] .mobileActions,
+.mobileFocus[data-fullscreen='true'] .mobileTabs,
+.mobileFocus[data-fullscreen='true'] .mobileSheet {
+  display: none;
+}
+
+.mobileFocus[data-fullscreen='true'] .mobileStage {
+  flex: 1;
+  max-height: none;
+  aspect-ratio: unset;
 }
 
 .mobileGroup {

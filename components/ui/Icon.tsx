@@ -77,6 +77,23 @@ export const SettingsIcon = (p: IconProps) => (
   </Svg>
 );
 
+/**
+ * Toggle glyph — arrows pointing out (enter fullscreen) vs. in (exit).
+ * Shared between the desktop overlay (native Fullscreen API) and the
+ * mobile focused view (CSS-only pseudo-fullscreen, since iOS Safari has no
+ * Fullscreen API for arbitrary elements — see MobileFocusedView.tsx). Same
+ * icon either way; only what the click handler does differs.
+ */
+export const FullscreenIcon = ({ on, ...p }: IconProps & { on?: boolean }) => (
+  <Svg {...p}>
+    {on ? (
+      <path d="M6 2v2.5A1.5 1.5 0 0 1 4.5 6H2M10 2v2.5A1.5 1.5 0 0 0 11.5 6H14M6 14v-2.5A1.5 1.5 0 0 0 4.5 10H2M10 14v-2.5a1.5 1.5 0 0 1 1.5-1.5H14" />
+    ) : (
+      <path d="M2 6V3.5A1.5 1.5 0 0 1 3.5 2H6M14 6V3.5A1.5 1.5 0 0 0 12.5 2H10M2 10v2.5A1.5 1.5 0 0 0 3.5 14H6M14 10v2.5a1.5 1.5 0 0 1-1.5 1.5H10" />
+    )}
+  </Svg>
+);
+
 export const SearchIcon = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="7" cy="7" r="4.25" />
