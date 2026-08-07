@@ -73,7 +73,30 @@ export function UploadDialog({ open, onClose }: UploadDialogProps) {
         });
 
         if (!put.ok) {
-          setJob(file.name, { status: 'error', message: 'Upload failed' });
+          // Surfacing the real response body here, not just "Upload failed"
+          // — Vercel Blob returns a small JSON error body naming the exact
+          // reason (expired token, store mismatch, etc.), and Chrome's
+          // Network panel has proven unreliable at holding onto that body
+          // long enough to inspect it after the fact ("Request content was
+          // evicted from inspector cache", reliably, on repeat attempts).
+          // Reading it directly in code sidesteps that entirely — and a
+          // specific reason is more useful to any future user hitting this
+          // than "Upload failed" ever was.
+          const detail = await put
+            .text()
+            .then((text) => {
+              try {
+                const parsed = JSON.parse(text) as { error?: string; message?: string };
+                return parsed.error ?? parsed.message ?? text;
+              } catch {
+                return text;
+              }
+            })
+            .catch(() => '');
+          setJob(file.name, {
+            status: 'error',
+            message: detail ? `Upload failed (${put.status}): ${detail}` : `Upload failed (${put.status})`,
+          });
           return;
         }
 

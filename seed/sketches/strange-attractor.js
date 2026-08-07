@@ -18,16 +18,16 @@
  */
 
 export const params = {
-  system: { kind: 'select', label: 'System', default: 'aizawa', options: [
+  system: { kind: 'select', label: 'System', default: 'lorenz', options: [
     { value: 'lorenz', label: 'Lorenz' },
     { value: 'thomas', label: 'Thomas' },
     { value: 'halvorsen', label: 'Halvorsen' },
     { value: 'aizawa', label: 'Aizawa' },
   ] },
 
-  lorenzSigma: { kind: 'slider', label: 'Sigma', min: 1, max: 30, step: 0.1, default: 10, modulatable: true, showIf: { equals: ['system', 'lorenz'] } },
-  lorenzRho: { kind: 'slider', label: 'Rho', min: 1, max: 50, step: 0.1, default: 28, modulatable: true, showIf: { equals: ['system', 'lorenz'] } },
-  lorenzBeta: { kind: 'slider', label: 'Beta', min: 0.5, max: 8, step: 0.05, default: 2.667, showIf: { equals: ['system', 'lorenz'] } },
+  lorenzSigma: { kind: 'slider', label: 'Sigma', min: 1, max: 30, step: 0.1, default: 5.8, modulatable: true, showIf: { equals: ['system', 'lorenz'] } },
+  lorenzRho: { kind: 'slider', label: 'Rho', min: 1, max: 50, step: 0.1, default: 36.4, modulatable: true, showIf: { equals: ['system', 'lorenz'] } },
+  lorenzBeta: { kind: 'slider', label: 'Beta', min: 0.5, max: 8, step: 0.05, default: 5.25, showIf: { equals: ['system', 'lorenz'] } },
 
   thomasB: { kind: 'slider', label: 'Damping', min: 0.05, max: 1, step: 0.005, default: 0.19, modulatable: true, hint: 'Below ~0.32 the system is chaotic; above it, motion settles.', showIf: { equals: ['system', 'thomas'] } },
 
@@ -38,22 +38,22 @@ export const params = {
   aizawaC: { kind: 'slider', label: 'C', min: 0.1, max: 1.2, step: 0.01, default: 0.6, showIf: { equals: ['system', 'aizawa'] } },
   aizawaD: { kind: 'slider', label: 'D', min: 1.5, max: 5.5, step: 0.05, default: 3.5, modulatable: true, showIf: { equals: ['system', 'aizawa'] } },
 
-  steps: { kind: 'slider', label: 'Points per frame', min: 200, max: 12000, step: 100, default: 3200, scale: 'log' },
-  dt: { kind: 'slider', label: 'Step size', min: 0.0005, max: 0.02, step: 0.0005, default: 0.006, hint: 'Smaller is smoother but advances more slowly.' },
-  zoom: { kind: 'slider', label: 'Zoom', min: 0.5, max: 30, step: 0.1, default: 9, scale: 'log' },
-  spin: { kind: 'slider', label: 'Auto spin', min: -1, max: 1, step: 0.005, default: 0.09 },
-  tilt: { kind: 'slider', label: 'Tilt', min: -90, max: 90, step: 1, default: -18, unit: 'deg' },
-  fade: { kind: 'slider', label: 'Fade', min: 0, max: 0.3, step: 0.002, default: 0.05, hint: 'Zero accumulates forever into a dense solid.' },
-  pointSize: { kind: 'slider', label: 'Point size', min: 0.5, max: 6, step: 0.1, default: 1.6 },
-  alpha: { kind: 'slider', label: 'Point alpha', min: 0.02, max: 1, step: 0.01, default: 0.4 },
-  glow: { kind: 'slider', label: 'Glow', min: 0, max: 1, step: 0.01, default: 0.5, hint: 'Additive halo — the previous version had none, which read as flat next to Particle Cube.' },
+  steps: { kind: 'slider', label: 'Points per frame', min: 200, max: 12000, step: 100, default: 7400, scale: 'log' },
+  dt: { kind: 'slider', label: 'Step size', min: 0.0005, max: 0.02, step: 0.0005, default: 0.0145, hint: 'Smaller is smoother but advances more slowly.' },
+  zoom: { kind: 'slider', label: 'Zoom', min: 0.5, max: 30, step: 0.1, default: 8.7, scale: 'log' },
+  spin: { kind: 'slider', label: 'Auto spin', min: -1, max: 1, step: 0.005, default: -0.44 },
+  tilt: { kind: 'slider', label: 'Tilt', min: -90, max: 90, step: 1, default: -68, unit: 'deg' },
+  fade: { kind: 'slider', label: 'Fade', min: 0, max: 0.3, step: 0.002, default: 0.016, hint: 'Zero accumulates forever into a dense solid.' },
+  pointSize: { kind: 'slider', label: 'Point size', min: 0.5, max: 6, step: 0.1, default: 1.1 },
+  alpha: { kind: 'slider', label: 'Point alpha', min: 0.02, max: 1, step: 0.01, default: 0.79 },
+  glow: { kind: 'slider', label: 'Glow', min: 0, max: 1, step: 0.01, default: 0.23, hint: 'Additive halo — the previous version had none, which read as flat next to Particle Cube.' },
   colorMode: { kind: 'select', label: 'Colour by', default: 'depth', options: [
     { value: 'depth', label: 'Depth' },
     { value: 'velocity', label: 'Velocity' },
     { value: 'time', label: 'Age' },
   ] },
-  near: { kind: 'color', label: 'Near', default: { r: 0, g: 0.83, b: 1, a: 1 } },
-  far: { kind: 'color', label: 'Far', default: { r: 0.75, g: 0.15, b: 0.85, a: 1 } },
+  near: { kind: 'color', label: 'Near', default: { r: 0, g: 0.831, b: 1, a: 1 } },
+  far: { kind: 'color', label: 'Far', default: { r: 0.349, g: 0.059, b: 0.549, a: 1 } },
   interactive: { kind: 'toggle', label: 'Drag to orbit', default: true },
   reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed' },
 };
