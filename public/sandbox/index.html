@@ -35,6 +35,15 @@
   var fps = 0;
   var paused = false;
   var quality = 'preview';
+  // Set at the top of every run() and never anywhere else — the one thing
+  // webglcontextrestored needs to fully recreate the sketch from scratch.
+  var lastSource = '';
+  // True between a context-loss event and successful recovery. draw()
+  // checks this so it doesn't keep calling into a dead WebGL context every
+  // frame while waiting — that would either throw repeatedly or silently
+  // no-op depending on the browser, neither of which is better than just
+  // pausing until restoration actually happens.
+  var contextLost = false;
 
   /*
    * Pixel density is the difference between a smooth thumbnail and a
@@ -87,6 +96,8 @@
     teardown();
     clearError();
     frame = 0;
+    lastSource = source;
+    contextLost = false;
 
     var factory, declared;
 
@@ -145,7 +156,7 @@
         }
 
         p.draw = function () {
-          if (paused) return;
+          if (paused || contextLost) return;
           userDraw.call(p);
           frame++;
           fpsFrames++;
@@ -160,6 +171,46 @@
     } catch (e) {
       showError('Sketch threw during setup: ' + e.message, e.stack);
       return;
+    }
+
+    /*
+     * WebGL context-loss recovery. Only relevant to WEBGL-mode sketches —
+     * a 2D canvas has no GL context to lose, so these listeners simply
+     * never fire for one. Attached fresh after every run() rather than
+     * once at load, since teardown() removes the canvas element entirely
+     * and p5 creates a brand new one on each run.
+     *
+     * A resize that changes an iframe's dimensions drastically and near-
+     * instantly — which is exactly what a fullscreen transition does — is
+     * a real, observed trigger for CONTEXT_LOST_WEBGL on some GPU drivers.
+     * Before this, that was unrecoverable: the sandbox had no listener, so
+     * the next draw call (or, worse, the browser's own attempt to hand the
+     * sketch a canvas again) just threw "Error creating webgl context"
+     * forever, until the whole focused view was closed and reopened.
+     *
+     * The fix mirrors lib/gl/context-pool.ts's own established pattern for
+     * the shared shader context — "restores from source hash" — because a
+     * lost WEBGL context can't just resume where it left off. Every buffer,
+     * shader, and piece of GL state is gone; the only correct recovery is
+     * running setup() again from scratch, which is what run(lastSource)
+     * does here.
+     */
+    var canvas = document.querySelector('canvas');
+    if (canvas) {
+      canvas.addEventListener('webglcontextlost', function (ev) {
+        // preventDefault() is not optional — without it the browser
+        // assumes the page has no recovery story and will never fire
+        // webglcontextrestored at all, per the WebGL spec.
+        ev.preventDefault();
+        contextLost = true;
+        if (instance && instance.noLoop) {
+          try { instance.noLoop(); } catch (e) { /* already gone */ }
+        }
+      }, false);
+
+      canvas.addEventListener('webglcontextrestored', function () {
+        run(lastSource);
+      }, false);
     }
 
     post({ type: 'ready' });
