@@ -44,6 +44,10 @@
   // no-op depending on the browser, neither of which is better than just
   // pausing until restoration actually happens.
   var contextLost = false;
+  // Backoff bookkeeping for webglcontextrestored — see the comment at that
+  // listener for why unconditional recreation on every loss is unsafe.
+  var lastRecoveryAt = 0;
+  var recoveryStreak = 0;
 
   /*
    * Pixel density is the difference between a smooth thumbnail and a
@@ -209,6 +213,36 @@
       }, false);
 
       canvas.addEventListener('webglcontextrestored', function () {
+        var now = performance.now();
+        // A genuine one-off loss (a fullscreen transition, a GPU driver
+        // hiccup) recovers here cleanly. But each live WEBGL-mode p5
+        // sketch holds its OWN browser-level WebGL context, entirely
+        // separate from and uncounted by the app's shared shader context
+        // pool — if several such sketches are live on the board at once,
+        // the browser's hard cap on total contexts (most browsers allow
+        // roughly 8-16 before silently killing the oldest) can genuinely
+        // be at or past capacity. Recreating unconditionally in THAT case
+        // doesn't fix anything — the total count never drops, so the new
+        // context (or a neighboring sketch's) just gets evicted again
+        // immediately, and unconditional recreation turns a quiet, isolated
+        // one-time failure into an active thrash competing for the same
+        // scarce resource. Two recoveries within 3s of each other is
+        // treated as that thrash, not a transition — stop retrying and
+        // surface it plainly instead of stuttering forever.
+        if (now - lastRecoveryAt < 3000) {
+          recoveryStreak++;
+          if (recoveryStreak >= 2) {
+            showError(
+              'WebGL context kept getting lost and could not stay recovered ' +
+              '— likely too many live 3D views open at once. Close some ' +
+              'other cards, then reopen this one.'
+            );
+            return;
+          }
+        } else {
+          recoveryStreak = 0;
+        }
+        lastRecoveryAt = now;
         run(lastSource);
       }, false);
     }

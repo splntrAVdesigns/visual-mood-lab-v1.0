@@ -86,8 +86,18 @@ export function UploadDialog({ open, onClose }: UploadDialogProps) {
             .text()
             .then((text) => {
               try {
-                const parsed = JSON.parse(text) as { error?: string; message?: string };
-                return parsed.error ?? parsed.message ?? text;
+                const parsed = JSON.parse(text) as { error?: unknown; message?: string };
+                const raw = parsed.error ?? parsed.message ?? text;
+                // Vercel Blob's error body nests an object here
+                // ({ error: { code, message } }), not a flat string — the
+                // first version of this assumed a string and got literal
+                // "[object Object]" from the template interpolation below.
+                if (typeof raw === 'string') return raw;
+                if (raw && typeof raw === 'object') {
+                  const nested = raw as { message?: string; code?: string };
+                  return nested.message ?? nested.code ?? JSON.stringify(raw);
+                }
+                return text;
               } catch {
                 return text;
               }
