@@ -64,11 +64,12 @@ export function UploadDialog({ open, onClose }: UploadDialogProps) {
           assetId: string;
           uploadUrl: string;
           publicUrl: string;
+          headers?: Record<string, string>;
         };
 
         const put = await fetch(signed.uploadUrl, {
           method: 'PUT',
-          headers: { 'Content-Type': file.type },
+          headers: { 'Content-Type': file.type, ...(signed.headers ?? {}) },
           body: file,
         });
 

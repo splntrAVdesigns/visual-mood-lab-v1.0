@@ -242,8 +242,26 @@
      * does here.
      */
     var canvas = document.querySelector('canvas');
+    // DIAGNOSTIC — temporary, paired with the two logs above.
+    console.warn('[diag] canvas after run()', {
+      exists: !!canvas,
+      w: canvas ? canvas.width : null,
+      h: canvas ? canvas.height : null,
+    });
     if (canvas) {
       canvas.addEventListener('webglcontextlost', function (ev) {
+        // DIAGNOSTIC — temporary. The resize debounce alone didn't resolve
+        // the fullscreen render failure, so rather than guess again, log
+        // directly on the events themselves to see what's actually
+        // happening: does loss fire at all, and at what canvas size?
+        console.warn('[diag] webglcontextlost', {
+          canvasW: canvas.width,
+          canvasH: canvas.height,
+          clientW: canvas.clientWidth,
+          clientH: canvas.clientHeight,
+          fullscreenElement: !!document.fullscreenElement,
+          t: performance.now(),
+        });
         // preventDefault() is not optional — without it the browser
         // assumes the page has no recovery story and will never fire
         // webglcontextrestored at all, per the WebGL spec.
@@ -255,6 +273,8 @@
       }, false);
 
       canvas.addEventListener('webglcontextrestored', function () {
+        // DIAGNOSTIC — temporary, paired with the log above.
+        console.warn('[diag] webglcontextrestored', { t: performance.now() });
         var now = performance.now();
         // A genuine one-off loss (a fullscreen transition, a GPU driver
         // hiccup) recovers here cleanly. But each live WEBGL-mode p5

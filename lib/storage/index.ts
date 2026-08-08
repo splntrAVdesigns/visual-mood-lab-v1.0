@@ -29,6 +29,14 @@ export interface SignedUpload {
   pathname: string;
   /** Epoch ms. Clients should not cache these. */
   expiresAt: number;
+  /**
+   * Extra headers the client must send on the PUT. Vercel Blob's client
+   * token is a bearer credential — it belongs in Authorization, not baked
+   * into the URL as a query string, which its storage backend silently
+   * rejects with "Cannot get token from authorization header or cookie".
+   * Undefined for providers (local dev) that need no auth at all.
+   */
+  headers?: Record<string, string>;
 }
 
 export interface StorageAdapter {
@@ -74,10 +82,11 @@ class VercelBlobStorage implements StorageAdapter {
     });
 
     return {
-      uploadUrl: `https://blob.vercel-storage.com/${pathname}?token=${token}`,
+      uploadUrl: `https://blob.vercel-storage.com/${pathname}`,
       publicUrl: `${process.env.BLOB_PUBLIC_BASE ?? 'https://blob.vercel-storage.com'}/${pathname}`,
       pathname,
       expiresAt,
+      headers: { authorization: `Bearer ${token}` },
     };
   }
 
