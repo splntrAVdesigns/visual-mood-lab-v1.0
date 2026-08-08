@@ -233,9 +233,7 @@
           recoveryStreak++;
           if (recoveryStreak >= 2) {
             showError(
-              'WebGL context kept getting lost and could not stay recovered ' +
-              '— likely too many live 3D views open at once. Close some ' +
-              'other cards, then reopen this one.'
+              'Too many live 3D views open at once. Protip: refresh the app.'
             );
             return;
           }
