@@ -48,14 +48,13 @@ export class P5Renderer implements AssetRenderer {
   }
 
   async mount(el: HTMLElement, asset: Asset, signal: AbortSignal): Promise<void> {
-    // DIAGNOSTIC — temporary, remove once the fullscreen investigation is
-    // resolved. Counts how many times THIS APP creates a sandbox iframe for
-    // a given asset. If this climbs during a single fullscreen toggle, the
-    // remount is coming from our own code. If the Network tab still shows
-    // repeated index.html/p5.min.js loads WITHOUT this count climbing, the
-    // browser is tearing down and recreating the iframe's browsing context
-    // on its own, outside anything this file controls.
-    console.count(`[diag] P5Renderer.mount ${asset.id}`);
+    // DIAGNOSTIC — round 2. console.count told us mount() IS being called
+    // repeatedly (1→5) during a single fullscreen toggle on Strange
+    // Attractor specifically. console.trace prints the actual call stack
+    // instead of just a number, so we can see exactly which caller is
+    // re-invoking promote()/mount() rather than continuing to guess file
+    // by file. Remove once the fullscreen investigation is resolved.
+    console.trace(`[diag] P5Renderer.mount ${asset.id}`);
 
     if (!asset.source) {
       this.error = 'Sketch has no source';
