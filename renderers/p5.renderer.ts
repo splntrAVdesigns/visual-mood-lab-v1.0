@@ -48,13 +48,6 @@ export class P5Renderer implements AssetRenderer {
   }
 
   async mount(el: HTMLElement, asset: Asset, signal: AbortSignal): Promise<void> {
-    // DIAGNOSTIC — round 2. console.count told us mount() IS being called
-    // repeatedly (1→5) during a single fullscreen toggle on Strange
-    // Attractor specifically. console.trace prints the actual call stack
-    // instead of just a number, so we can see exactly which caller is
-    // re-invoking promote()/mount() rather than continuing to guess file
-    // by file. Remove once the fullscreen investigation is resolved.
-    console.trace(`[diag] P5Renderer.mount ${asset.id}`);
 
     if (!asset.source) {
       this.error = 'Sketch has no source';

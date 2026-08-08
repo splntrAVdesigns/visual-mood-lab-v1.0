@@ -48,6 +48,11 @@
   // listener for why unconditional recreation on every loss is unsafe.
   var lastRecoveryAt = 0;
   var recoveryStreak = 0;
+  // Debounce handle for the windowResized guard below. Module-scoped (not
+  // local to run()'s p5 closure) so teardown() can always cancel a pending
+  // call regardless of which run() scheduled it — otherwise a timer from a
+  // just-torn-down instance could fire into a disposed `p` afterwards.
+  var resizeDebounceTimer = null;
 
   /*
    * Pixel density is the difference between a smooth thumbnail and a
@@ -88,6 +93,10 @@
   }
 
   function teardown() {
+    if (resizeDebounceTimer) {
+      clearTimeout(resizeDebounceTimer);
+      resizeDebounceTimer = null;
+    }
     if (instance && instance.remove) {
       try { instance.remove(); } catch (e) { /* already gone */ }
     }
@@ -157,6 +166,39 @@
         if (!userDraw) {
           showError('Sketch defines no draw() function.');
           return;
+        }
+
+        /*
+         * A native fullscreen transition fires several resize events on
+         * the iframe's own window in quick succession as it animates from
+         * card-size to full-viewport and back — confirmed directly by a
+         * captured stack trace: p5's internal _onresize calling the
+         * sketch's windowResized, calling resizeCanvas, on a live WEBGL
+         * context, mid-transition. That is a known, real trigger for
+         * CONTEXT_LOST_WEBGL on some GPU drivers, and unlike a genuine
+         * one-off loss elsewhere, this one is entirely avoidable: the
+         * intermediate sizes during an animated transition are never
+         * where the sketch should actually end up, so there is nothing
+         * lost by waiting for them to stop before resizing at all.
+         *
+         * Debouncing here — rather than only recovering after the fact via
+         * webglcontextlost/restored below — fixes this at the source for
+         * the common case (a deliberate fullscreen toggle) rather than
+         * leaning entirely on recovery, which the browser is not obligated
+         * to grant: a lost WEBGL context has no guaranteed restoration.
+         */
+        var userWindowResized = typeof p.windowResized === 'function' ? p.windowResized : null;
+        if (userWindowResized) {
+          p.windowResized = function () {
+            if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
+            resizeDebounceTimer = setTimeout(function () {
+              resizeDebounceTimer = null;
+              // The context may already be gone by the time this fires;
+              // don't resize into it and trigger a second, pointless loss.
+              if (contextLost) return;
+              userWindowResized.call(p);
+            }, 220);
+          };
         }
 
         p.draw = function () {

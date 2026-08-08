@@ -87,7 +87,29 @@ export function FocusedAssetOverlay() {
     setShowCode(false);
     setShowMod(false);
     requestAnimationFrame(() => {
-      void panelRef.current?.requestFullscreen().catch(() => {});
+      const el = panelRef.current;
+      if (!el) return;
+      el.requestFullscreen()
+        .then(() => {
+          // A rejected/settled promise is the normal signal, but the
+          // observed failure mode here is worse: fullscreen genuinely
+          // engages at the browser level (this resolves) while the WEBGL
+          // canvas inside dies from the transition's resize storm. That
+          // leaves nothing wrong for fullscreenchange to report — the
+          // browser IS fullscreen — so isFullscreen syncing only off that
+          // event is correct here; nothing extra to do on success beyond
+          // making sure keyboard input still reaches this panel and not a
+          // sandboxed iframe that may have stolen focus by interaction.
+          el.focus({ preventScroll: true });
+        })
+        .catch(() => {
+          // The request was rejected outright (blocked, interrupted by a
+          // second call, etc.) — nothing engaged, so don't leave the UI
+          // believing otherwise. Without this, a failed request left
+          // isFullscreen stuck true with no matching fullscreenchange ever
+          // coming to correct it, hiding every header action permanently.
+          setIsFullscreen(false);
+        });
     });
   };
 
@@ -115,6 +137,8 @@ export function FocusedAssetOverlay() {
       if (active) {
         setShowCode(false);
         setShowMod(false);
+      } else {
+        panelRef.current?.focus({ preventScroll: true });
       }
     };
     document.addEventListener('fullscreenchange', onChange);
@@ -198,6 +222,7 @@ export function FocusedAssetOverlay() {
         role="dialog"
         aria-modal="true"
         aria-label={asset.title}
+        tabIndex={-1}
       >
         <header className={s.focusHeader}>
           <span className={s.focusTitle}>{asset.title}</span>
