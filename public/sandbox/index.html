@@ -60,9 +60,37 @@
    * screen every sketch was rendering at 2x — four times the pixels — even
    * for a 220px card. Preview cards are forced to 1x; only the focused
    * view pays for the sharper buffer.
+   *
+   * That flat "2x on retina, always" rule broke down at fullscreen size.
+   * A confirmed A/B test (same sketches, same GPU, retina vs. non-retina
+   * display) showed WEBGL sketches losing context specifically on retina
+   * fullscreen and nowhere else — the drawing buffer at native fullscreen
+   * resolution * 2x density is a real, large one-shot GPU allocation, and
+   * that combination is what a driver actually chokes on, not the resize
+   * event timing. The same 2x-everywhere rule is also the leading
+   * suspect for the general stutter on retina, independent of fullscreen:
+   * every WEBGL sketch pushes 4x the pixels per frame at "full" quality
+   * whenever a retina display is involved, all the time.
+   *
+   * Budgeting by total framebuffer pixel count rather than a flat
+   * multiplier keeps both costs bounded: a small enlarged-tile card still
+   * gets the full 2x sharpness (its pixel count is nowhere near the
+   * budget), while fullscreen on retina scales density back down rather
+   * than compounding a large canvas with a large multiplier.
    */
-  function densityFor(q) {
-    return q === 'full' ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+  var MAX_FRAMEBUFFER_PIXELS = 4000000; // ~2000x2000 at 1x — tune against real profiling, not guessed once and left
+  function densityFor(q, targetW, targetH) {
+    if (q !== 'full') return 1;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var w = targetW || window.innerWidth;
+    var h = targetH || window.innerHeight;
+    var logicalPixels = w * h;
+    if (logicalPixels <= 0) return dpr;
+    var wouldBePixels = logicalPixels * dpr * dpr;
+    if (wouldBePixels <= MAX_FRAMEBUFFER_PIXELS) return dpr;
+    // Scale density down so total framebuffer pixels stay under budget,
+    // never below 1 — a canvas this large already costs plenty at 1x.
+    return Math.max(1, Math.sqrt(MAX_FRAMEBUFFER_PIXELS / logicalPixels));
   }
 
   function post(msg) { parent.postMessage(msg, '*'); }
@@ -156,7 +184,7 @@
         var userSetup = typeof p.setup === 'function' ? p.setup : null;
         if (userSetup) {
           p.setup = function () {
-            try { p.pixelDensity(densityFor(quality)); } catch (e) { /* pre-1.x */ }
+            try { p.pixelDensity(densityFor(quality, window.innerWidth, window.innerHeight)); } catch (e) { /* pre-1.x */ }
             userSetup.call(p);
           };
         }
@@ -196,6 +224,16 @@
               // The context may already be gone by the time this fires;
               // don't resize into it and trigger a second, pointless loss.
               if (contextLost) return;
+              // Recompute density against the SIZE THE CANVAS IS ABOUT TO
+              // BECOME, before resizing into it — density was only ever
+              // set once at initial setup, at whatever size the sketch
+              // started at. Without this, entering fullscreen kept the
+              // small-canvas density (safely under budget) instead of the
+              // fullscreen one (the actual risk), leaving the budget fix
+              // above dead code for the one case it exists to handle.
+              try {
+                p.pixelDensity(densityFor(quality, window.innerWidth, window.innerHeight));
+              } catch (e) { /* pre-1.x */ }
               userWindowResized.call(p);
             }, 220);
           };
@@ -331,7 +369,7 @@
       case 'quality':
         quality = msg.quality || 'preview';
         if (instance && instance.pixelDensity) {
-          try { instance.pixelDensity(densityFor(quality)); } catch (e) { /* ignore */ }
+          try { instance.pixelDensity(densityFor(quality, window.innerWidth, window.innerHeight)); } catch (e) { /* ignore */ }
         }
         break;
       case 'play': paused = false; if (instance && instance.loop) instance.loop(); break;
