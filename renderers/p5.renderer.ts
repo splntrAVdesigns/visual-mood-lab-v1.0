@@ -42,6 +42,8 @@ export class P5Renderer implements AssetRenderer {
   private captureTimers = new Map<number, ReturnType<typeof setTimeout>>();
   private nextRequestId = 1;
   private onMessage: ((e: MessageEvent) => void) | null = null;
+  private resizeObserver: ResizeObserver | null = null;
+  private resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(assetId: string) {
     this.assetId = assetId;
@@ -72,6 +74,32 @@ export class P5Renderer implements AssetRenderer {
       this.handle(e.data as SandboxToHost);
     };
     window.addEventListener('message', this.onMessage);
+
+    // Debounced on top of ResizeObserver's own batching because a fullscreen
+    // transition can still report several intermediate sizes as it animates
+    // — but ResizeObserver only fires on the host's ACTUAL layout box
+    // changing, which is a real settle signal in a way the iframe's own
+    // internal resize events were not. This is what drives the sandbox's
+    // explicit 'resize' message now, rather than the sandbox inferring
+    // "done resizing" from its own noisy event stream.
+    this.resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      if (width <= 0 || height <= 0) return;
+
+      if (this.resizeDebounceTimer) clearTimeout(this.resizeDebounceTimer);
+      this.resizeDebounceTimer = setTimeout(() => {
+        this.resizeDebounceTimer = null;
+        this.send({
+          type: 'resize',
+          width: Math.round(width),
+          height: Math.round(height),
+          pixelRatio: window.devicePixelRatio || 1,
+        });
+      }, 200);
+    });
+    this.resizeObserver.observe(el);
 
     if (signal.aborted) return;
     el.appendChild(frame);
@@ -232,6 +260,10 @@ export class P5Renderer implements AssetRenderer {
     this.disposed = true;
     if (this.onMessage) window.removeEventListener('message', this.onMessage);
     this.onMessage = null;
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    if (this.resizeDebounceTimer) clearTimeout(this.resizeDebounceTimer);
+    this.resizeDebounceTimer = null;
     this.frameEl?.remove();
     this.frameEl = null;
     for (const timer of this.captureTimers.values()) clearTimeout(timer);

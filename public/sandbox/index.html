@@ -53,6 +53,10 @@
   // call regardless of which run() scheduled it — otherwise a timer from a
   // just-torn-down instance could fire into a disposed `p` afterwards.
   var resizeDebounceTimer = null;
+  // Set inside run(), for the outer message handler below to call directly
+  // when the host sends an explicit 'resize' message — see the comment at
+  // that handler for why this exists alongside the internal debounce.
+  var applyResize = null;
 
   /*
    * Pixel density is the difference between a smooth thumbnail and a
@@ -125,6 +129,7 @@
       clearTimeout(resizeDebounceTimer);
       resizeDebounceTimer = null;
     }
+    applyResize = null;
     if (instance && instance.remove) {
       try { instance.remove(); } catch (e) { /* already gone */ }
     }
@@ -216,25 +221,42 @@
          * to grant: a lost WEBGL context has no guaranteed restoration.
          */
         var userWindowResized = typeof p.windowResized === 'function' ? p.windowResized : null;
+
+        applyResize = function (w, h) {
+          if (contextLost) return;
+          // Recompute density against the size the canvas is about to
+          // become, before resizing into it — density was only ever set
+          // once at initial setup, at whatever size the sketch started at.
+          try {
+            p.pixelDensity(densityFor(quality, w, h));
+          } catch (e) { /* pre-1.x */ }
+          // NOTE: userWindowResized's own resizeCanvas call reads
+          // p.windowWidth/p.windowHeight internally (every sketch writes
+          // it that way, not parameterized) — not the w/h passed in here.
+          // That's fine as long as this iframe's own layout has already
+          // caught up to its new CSS size by the time this runs, which it
+          // has: the host's ResizeObserver only fires after the browser
+          // has finished layout, and postMessage is asynchronous on top of
+          // that, so p.windowWidth/windowHeight are reliably current by
+          // the time this executes. Called out explicitly because it's an
+          // assumption, not a guarantee enforced anywhere in code.
+          if (userWindowResized) userWindowResized.call(p);
+        };
+
         if (userWindowResized) {
           p.windowResized = function () {
+            // Fallback path only. The host's explicit 'resize' message
+            // (driven by a ResizeObserver on the actual container, handled
+            // in the outer message listener below) is the primary trigger
+            // now — it's a real "layout has settled" signal, unlike this
+            // iframe's own internal resize events, which is what made a
+            // pure debounce-on-resize approach unreliable during animated
+            // fullscreen transitions in the first place. This still fires
+            // for any resize the host didn't explicitly announce.
             if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
             resizeDebounceTimer = setTimeout(function () {
               resizeDebounceTimer = null;
-              // The context may already be gone by the time this fires;
-              // don't resize into it and trigger a second, pointless loss.
-              if (contextLost) return;
-              // Recompute density against the SIZE THE CANVAS IS ABOUT TO
-              // BECOME, before resizing into it — density was only ever
-              // set once at initial setup, at whatever size the sketch
-              // started at. Without this, entering fullscreen kept the
-              // small-canvas density (safely under budget) instead of the
-              // fullscreen one (the actual risk), leaving the budget fix
-              // above dead code for the one case it exists to handle.
-              try {
-                p.pixelDensity(densityFor(quality, window.innerWidth, window.innerHeight));
-              } catch (e) { /* pre-1.x */ }
-              userWindowResized.call(p);
+              applyResize(window.innerWidth, window.innerHeight);
             }, 220);
           };
         }
@@ -364,6 +386,18 @@
       case 'event':
         if (instance && instance.onEvent) {
           try { instance.onEvent(msg.event); } catch (err) { showError(String(err)); }
+        }
+        break;
+      case 'resize':
+        // The host's ResizeObserver-driven signal that the container has
+        // actually settled at a new size — see applyResize's definition
+        // in run() for why this is preferred over the internal fallback.
+        if (resizeDebounceTimer) {
+          clearTimeout(resizeDebounceTimer);
+          resizeDebounceTimer = null;
+        }
+        if (applyResize && typeof msg.width === 'number' && typeof msg.height === 'number') {
+          applyResize(msg.width, msg.height);
         }
         break;
       case 'quality':
