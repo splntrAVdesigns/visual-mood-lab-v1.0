@@ -77,7 +77,6 @@ class VercelBlobStorage implements StorageAdapter {
 
     const token = await generateClientTokenFromReadWriteToken({
       pathname,
-      access: 'public',
       validUntil: expiresAt,
       allowedContentTypes: [contentType],
     });

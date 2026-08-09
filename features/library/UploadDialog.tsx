@@ -111,6 +111,18 @@ export function UploadDialog({ open, onClose }: UploadDialogProps) {
           return;
         }
 
+        // Vercel Blob's real URL is store-specific
+        // (https://<storeId>.public.blob.vercel-storage.com/<pathname>) —
+        // not something a generically constructed URL can predict. The PUT
+        // response itself returns the authoritative blob metadata, so read
+        // the URL from there rather than trusting the guess made at sign
+        // time. Falls back to the guess only if the body is unreadable, so
+        // local dev (which has no such response shape) still works.
+        const realUrl = await put
+          .json()
+          .then((body: { url?: string }) => body.url)
+          .catch(() => undefined);
+
         setJob(file.name, { status: 'ingesting' });
 
         const ingest = await fetch('/api/assets', {
@@ -120,7 +132,7 @@ export function UploadDialog({ open, onClose }: UploadDialogProps) {
             assetId: signed.assetId,
             title: file.name.replace(/\.[^.]+$/, ''),
             contentType: file.type,
-            srcUrl: signed.publicUrl,
+            srcUrl: realUrl ?? signed.publicUrl,
           }),
         });
 
