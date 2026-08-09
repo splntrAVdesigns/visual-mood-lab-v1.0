@@ -15,7 +15,34 @@
  * sliders while Aizawa was selected did nothing at all, which is exactly
  * the "sliders don't meaningfully change the visual" complaint. Each system
  * now owns its real constants, shown only when that system is selected.
+ *
+ * PERFORMANCE REWORK — this is the important one.
+ *
+ * The version before this drew every point with its own `p.point()` call,
+ * and wrapped the glow pass in `p.push()`/`p.pop()` per point. In p5's
+ * WEBGL mode each `point()` is a separate GPU draw call, so at the shipped
+ * default of 7400 steps that was ~7400 draw calls plus ~1200 more for the
+ * glow — roughly 8,600 draw calls and 2,400 matrix push/pops EVERY FRAME.
+ * At 60fps that is over half a million draw calls a second. No GPU renders
+ * that smoothly; it was the direct cause of the stuttering, frame-skipping
+ * motion, and it got materially worse when the glow pass was added for
+ * looks without measuring the cost.
+ *
+ * The fix is batching, with one wrinkle: p5's `beginShape(POINTS)` ignores
+ * per-vertex `stroke()` (processing/p5.js#7839, still open) — the whole
+ * batch takes one colour. Since every colour mode here is a smooth lerp
+ * between two colours, quantising that lerp into a fixed number of buckets
+ * and emitting one batched shape per bucket is visually indistinguishable
+ * from per-point colour at this density, and collapses ~8,600 draw calls
+ * into ~56. The bucket arrays are allocated once and reused, so the hot
+ * loop also stops generating garbage for the collector to chase.
  */
+
+// Enough steps in the near→far gradient that banding is invisible at this
+// point density, few enough that the draw-call count stays trivial. If a
+// future colour mode ever needs a sharper ramp, raise this — the cost is
+// linear in buckets, not in points, so it stays cheap.
+const COLOR_BUCKETS = 28;
 
 export const params = {
   system: { kind: 'select', label: 'System', default: 'lorenz', options: [
@@ -61,6 +88,14 @@ export const params = {
 export default function sketch(p, get) {
   let state = { x: 0.1, y: 0, z: 0 };
   let age = 0;
+
+  // One flat array per colour bucket, holding x,y,z triples. Allocated once
+  // and truncated (not reallocated) each frame: at up to 12,000 points a
+  // frame, allocating fresh arrays would hand the garbage collector several
+  // hundred thousand short-lived objects a second, which shows up as
+  // periodic hitching independent of GPU cost.
+  const buckets = [];
+  for (let i = 0; i < COLOR_BUCKETS; i++) buckets.push([]);
 
   function reseed() {
     state = { x: p.random(-0.5, 0.5) + 0.1, y: p.random(-0.5, 0.5), z: p.random(-0.5, 0.5) };
@@ -146,9 +181,11 @@ export default function sketch(p, get) {
     const size = get('pointSize');
     const glow = get('glow');
 
-    p.blendMode(p.ADD);
-    p.strokeWeight(size);
+    for (let i = 0; i < COLOR_BUCKETS; i++) buckets[i].length = 0;
 
+    // Integration pass. This loop now only advances the system and sorts
+    // each resulting point into a colour bucket — no GPU work at all
+    // happens in here, which is what makes 7400 steps affordable.
     for (let i = 0; i < steps; i++) {
       const d = derivative(state);
       state.x += d.dx * dt;
@@ -167,28 +204,48 @@ export default function sketch(p, get) {
         f = p.constrain((state.z * zoom * 0.02) + 0.5, 0, 1);
       }
 
+      let bucket = Math.floor(f * COLOR_BUCKETS);
+      if (bucket < 0) bucket = 0;
+      else if (bucket >= COLOR_BUCKETS) bucket = COLOR_BUCKETS - 1;
+
+      const arr = buckets[bucket];
+      arr.push(state.x * zoom, state.y * zoom, (state.z - 25) * zoom * 0.6);
+    }
+
+    p.blendMode(p.ADD);
+    p.noFill();
+
+    // Draw pass: one batched shape per non-empty bucket. Up to 28 draw
+    // calls for the body, plus up to 28 more for the halo, replacing the
+    // ~8,600 individual point() calls this used to issue.
+    for (let b = 0; b < COLOR_BUCKETS; b++) {
+      const arr = buckets[b];
+      if (arr.length === 0) continue;
+
+      // Sample the gradient at the middle of the bucket rather than its
+      // edge, so quantising doesn't visibly shift the whole ramp toward
+      // the near colour.
+      const f = (b + 0.5) / COLOR_BUCKETS;
       const cr = p.lerp(near.r, far.r, f);
       const cg = p.lerp(near.g, far.g, f);
       const cb = p.lerp(near.b, far.b, f);
-      const px = state.x * zoom;
-      const py = state.y * zoom;
-      const pz = (state.z - 25) * zoom * 0.6;
 
-      // point() is a single GPU point sprite — orders of magnitude cheaper
-      // than circle(), which matters at up to 12,000 calls a frame. Additive
-      // blending alone already builds real brightness where the trajectory
-      // revisits the same region often, which is most of what "vibrant"
-      // needs. A sparse, larger, low-alpha second pass over every 6th point
-      // adds a soft halo without doubling the draw-call count.
+      p.strokeWeight(size);
       p.stroke(cr, cg, cb, alpha);
-      p.point(px, py, pz);
+      p.beginShape(p.POINTS);
+      for (let i = 0; i < arr.length; i += 3) p.vertex(arr[i], arr[i + 1], arr[i + 2]);
+      p.endShape();
 
-      if (glow > 0 && i % 6 === 0) {
-        p.push();
+      if (glow > 0) {
+        // Same sparse every-6th-point halo as before — a larger, dimmer
+        // second pass — but batched, and without the per-point push/pop
+        // that made the original version's glow so disproportionately
+        // expensive. Stride is 18 (6 points x 3 components).
         p.strokeWeight(size * 4);
         p.stroke(cr, cg, cb, alpha * glow * 0.25);
-        p.point(px, py, pz);
-        p.pop();
+        p.beginShape(p.POINTS);
+        for (let i = 0; i < arr.length; i += 18) p.vertex(arr[i], arr[i + 1], arr[i + 2]);
+        p.endShape();
       }
     }
 

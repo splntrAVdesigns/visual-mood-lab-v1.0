@@ -149,6 +149,19 @@ export class P5Renderer implements AssetRenderer {
         this.fps = msg.fps ?? 0;
         break;
 
+      case 'key': {
+        // Re-dispatch as a genuine host-level keydown. Doing it here rather
+        // than wiring every shortcut owner up to the sandbox protocol means
+        // existing listeners (FocusedAssetOverlay's F handler, Escape to
+        // close) keep working with no knowledge that a sandboxed iframe was
+        // ever involved.
+        if (!msg.key) break;
+        window.dispatchEvent(
+          new KeyboardEvent('keydown', { key: msg.key, bubbles: true, cancelable: true }),
+        );
+        break;
+      }
+
       case 'captured': {
         const waiter = msg.requestId ? this.captureWaiters.get(msg.requestId) : undefined;
         if (waiter && msg.requestId) {

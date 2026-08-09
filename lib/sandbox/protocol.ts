@@ -21,7 +21,7 @@ export interface HostToSandbox {
 }
 
 export interface SandboxToHost {
-  type: 'ready' | 'schema' | 'error' | 'heartbeat' | 'captured';
+  type: 'ready' | 'schema' | 'error' | 'heartbeat' | 'captured' | 'key';
   params?: unknown;
   message?: string;
   stack?: string;
@@ -29,6 +29,14 @@ export interface SandboxToHost {
   frame?: number;
   dataUrl?: string;
   requestId?: number;
+  /**
+   * A keydown the sandbox saw while it held focus. Cross-origin iframe key
+   * events never bubble to the host document, so once a person interacts
+   * with a sketch (dragging to orbit, clicking the canvas) every subsequent
+   * shortcut — F for fullscreen, Escape to close — went nowhere. The
+   * sandbox forwards the few keys the host cares about instead.
+   */
+  key?: string;
 }
 
 /** Missed heartbeats past this and the host tears the frame down. */

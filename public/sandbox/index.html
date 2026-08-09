@@ -370,6 +370,21 @@
     post({ type: 'ready' });
   }
 
+  /*
+   * Forward the host's shortcut keys back up. This iframe is cross-origin
+   * (sandbox="allow-scripts", null origin), so its key events never bubble
+   * to the host document. Once a person clicks or drags inside a sketch,
+   * focus lives in here and every host shortcut silently stopped working
+   * until they clicked back out — the "F key sometimes does nothing" bug.
+   * Only the keys the host actually binds are forwarded; everything else
+   * stays local so sketches keep their own keyboard behaviour.
+   */
+  var FORWARDED_KEYS = { f: true, F: true, Escape: true };
+  window.addEventListener('keydown', function (e) {
+    if (!FORWARDED_KEYS[e.key]) return;
+    post({ type: 'key', key: e.key });
+  });
+
   window.addEventListener('message', function (e) {
     var msg = e.data;
     if (!msg || typeof msg !== 'object') return;
