@@ -50,6 +50,13 @@ export function FocusedAssetOverlay() {
     setShowCode(false);
     setShowMod(false);
     setSavedNote(null);
+    // Carries over otherwise: this component instance persists across
+    // different assets (it isn't remounted per-open), so a previous
+    // asset's fullscreen state — including a stuck `true` left behind by
+    // a failed transition — would otherwise leak into the next asset,
+    // hiding its header actions until fullscreen was toggled once to
+    // force a resync via the fullscreenchange listener below.
+    setIsFullscreen(false);
   }, [asset?.itemId]);
 
   useEffect(() => {
@@ -204,6 +211,27 @@ export function FocusedAssetOverlay() {
     closeAsset();
   };
 
+  // Uploaded media only. The seed library never ships image/svg/video
+  // assets — those types only ever exist as user uploads (see the seed
+  // authoring conventions: 10 shaders + 10 sketches, media added by hand)
+  // — so gating on type here can't accidentally offer to delete shared
+  // library content, without needing a separate ownership flag threaded
+  // through just for this button.
+  const isDeletableUpload =
+    !asset.isSnapshot && (asset.type === 'image' || asset.type === 'svg' || asset.type === 'video');
+
+  const removeUpload = async () => {
+    if (!isDeletableUpload) return;
+    if (!window.confirm(`Delete "${asset.title}"? This can't be undone.`)) return;
+    const res = await fetch(`/api/assets/${asset.id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      setSavedNote('Delete failed');
+      return;
+    }
+    useBoardStore.getState().removeAsset(asset.itemId);
+    closeAsset();
+  };
+
   return (
     <div
       className={s.focusScrim}
@@ -277,6 +305,12 @@ export function FocusedAssetOverlay() {
 
               {asset.isSnapshot && (
                 <Button variant="danger" onClick={removeSnapshot}>
+                  Delete
+                </Button>
+              )}
+
+              {isDeletableUpload && (
+                <Button variant="danger" onClick={removeUpload}>
                   Delete
                 </Button>
               )}

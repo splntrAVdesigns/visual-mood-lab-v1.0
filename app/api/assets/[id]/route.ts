@@ -86,3 +86,44 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     return NextResponse.json({ error: 'Failed to store poster' }, { status: 500 });
   }
 }
+
+/**
+ * DELETE /api/assets/:id
+ *
+ * Removes a library upload entirely — the DB row and, best-effort, its
+ * backing blob(s). Storage cleanup is deliberately non-fatal: an orphaned
+ * blob left behind by a failed delete is a cheap, recoverable cost, but a
+ * delete that silently no-ops because storage errored is exactly the "no
+ * way to get rid of this" state this route exists to fix.
+ */
+export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string }> }) {
+  const { id } = await ctx.params;
+
+  try {
+    const owned = await loadOwned(id);
+    if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+    const storage = getStorage();
+    const urls = [owned.row.srcUrl, owned.row.posterUrl].filter(
+      (u): u is string => typeof u === 'string' && u.length > 0,
+    );
+
+    await Promise.allSettled(
+      urls.map(async (url) => {
+        try {
+          const pathname = new URL(url).pathname.replace(/^\//, '');
+          if (pathname) await storage.delete(pathname);
+        } catch (err) {
+          console.error('[api/assets/:id DELETE] storage cleanup failed for', url, err);
+        }
+      }),
+    );
+
+    await owned.db.delete(schema.assets).where(eq(schema.assets.id, id));
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error('[api/assets/:id DELETE]', err);
+    return NextResponse.json({ error: 'Failed to delete asset' }, { status: 500 });
+  }
+}
