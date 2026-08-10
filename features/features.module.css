@@ -241,19 +241,6 @@
   border-bottom: 1px solid var(--border);
 }
 
-/* Pinned account footer. `position: sticky; bottom: 0` keys off the
-   Drawer's own scrollable body (its nearest overflow:auto ancestor) —
-   no change to Drawer's internals needed. Opaque background so scrolled
-   nav content doesn't show through underneath it. */
-.navDrawerFooter {
-  position: sticky;
-  bottom: 0;
-  margin-top: var(--space-2);
-  padding: var(--space-3);
-  background: var(--bg-surface);
-  border-top: 1px solid var(--border);
-}
-
 /* ------------------------------------------------------------------ *
  * Board
  * ------------------------------------------------------------------ */
@@ -695,6 +682,23 @@
   }
   .focusPanel {
     width: min(94vw, 94vh);
+  }
+}
+
+/* Composition switch between FocusedAssetOverlay (desktop) and
+   MobileFocusedView (below ~820px) — see AppShell.tsx. Same 820px
+   breakpoint the rest of the mobile board layout already uses. A 1px gap
+   between the two queries (820 / 821) avoids both ever matching at once
+   at the exact boundary width. */
+@media (max-width: 820px) {
+  .focusScrim {
+    display: none;
+  }
+}
+
+@media (min-width: 821px) {
+  .mobileFocus {
+    display: none;
   }
 }
 

@@ -25,7 +25,7 @@
   margin: 0;
   font-size: var(--step-2);
   font-weight: 500;
-  color: var(--text);
+  color: var(--accent);
 }
 
 .body {

@@ -55,9 +55,31 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
   const countOf = (type: AssetType) => assets.filter((a) => a.type === type).length;
   const filtersActive = typeFilter.size > 0 || tagFilter.size > 0;
 
+  const accountFooter = user ? (
+    <div className={s.drawerAccountRow}>
+      <button type="button" className={s.drawerAccountName} title={user.name} onClick={onOpenAccount}>
+        <span className={s.drawerAccountAvatar} aria-hidden="true">
+          {user.name.charAt(0).toUpperCase()}
+        </span>
+        <span className={s.drawerAccountNameText}>{user.name}</span>
+      </button>
+      <form action={logoutAction}>
+        <Button type="submit" variant="ghost">
+          Log out
+        </Button>
+      </form>
+    </div>
+  ) : undefined;
+
   return (
     <>
-    <Drawer open={open} side="left" title="Visual Mood Lab" onClose={() => setNavOpen(false)}>
+    <Drawer
+      open={open}
+      side="left"
+      title="Visual Mood Lab"
+      onClose={() => setNavOpen(false)}
+      footer={accountFooter}
+    >
       {/*
         Ungrouped, no SectionLabel — this is a static destination, not a
         filter or an action, so it doesn't belong in the Board/Type/Tags
@@ -183,37 +205,11 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
       </nav>
 
       {/*
-        Account UI lives here — drawer-only, deliberately not in the header
-        — so the header stays clean on mobile and the account/logout
-        actions live in the same place as everything else the person can
-        do from this menu. Pinned via .navDrawerFooter (position: sticky;
-        bottom: 0) inside the Drawer's own scroll region, so it stays
-        reachable without scrolling however long the type/tag lists above
-        it get. Name and Log out share one row rather than stacking,
-        matching the header's AccountMenu layout one level up.
+        Account row lives in Drawer's own `footer` slot (see `accountFooter`
+        above) — rendered outside .drawerBody, so it's a real pinned footer
+        via flex layout (.drawerBody is flex:1/overflow-y:auto, .drawerFooter
+        is flex:none) rather than sticky-positioned inside the scroll region.
       */}
-      {user && (
-        <div className={s.navDrawerFooter}>
-          <div className={s.drawerAccountRow}>
-            <button
-              type="button"
-              className={s.drawerAccountName}
-              title={user.name}
-              onClick={onOpenAccount}
-            >
-              <span className={s.drawerAccountAvatar} aria-hidden="true">
-                {user.name.charAt(0).toUpperCase()}
-              </span>
-              <span className={s.drawerAccountNameText}>{user.name}</span>
-            </button>
-            <form action={logoutAction}>
-              <Button type="submit" variant="ghost">
-                Log out
-              </Button>
-            </form>
-          </div>
-        </div>
-      )}
     </Drawer>
     <UploadDialog open={uploadOpen} onClose={() => setUploadOpen(false)} />
     </>

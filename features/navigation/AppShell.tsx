@@ -1,19 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Button, Dialog, Field, Select, Toggle } from '@/components/ui';
+import { useEffect } from 'react';
 import { BoardGrid } from '@/features/board/BoardGrid';
 import { Hero } from '@/features/board/Hero';
 import { InspectorDrawer } from '@/features/inspector/InspectorDrawer';
 import { FocusedAssetOverlay } from '@/features/board/FocusedAssetOverlay';
+import { MobileFocusedView } from '@/features/board/MobileFocusedView';
 import { openAssetById, closeAsset } from '@/features/board/openAsset';
-import { CommandPalette } from './CommandPalette';
-import { useBoardStore, useInspectorStore, usePlaybackStore, MAX_LIVE_RENDERERS } from '@/stores';
+import { useInspectorStore, usePlaybackStore } from '@/stores';
 import type { Asset } from '@/types/asset';
 import type { User } from '@/lib/auth';
-import { AppHeader } from './AppHeader';
-import { NavDrawer } from './NavDrawer';
-import { AccountDialog } from './AccountDialog';
+import { AppChrome } from './AppChrome';
 import s from '../features.module.css';
 
 interface AppShellProps {
@@ -27,21 +24,8 @@ interface AppShellProps {
 }
 
 export function AppShell({ assets, needsSeed = false, focusItemId, user = null }: AppShellProps) {
-  /* Hydrate synchronously on first render so SSR and the client agree —
-     doing this in an effect would paint the empty state first and flash. */
-  const [hydrated] = useState(() => {
-    useBoardStore.setState({ assets });
-    return true;
-  });
-  void hydrated;
-
   const inspectorOpen = useInspectorStore((st) => st.open);
-  const setNavOpen = useInspectorStore((st) => st.setNavOpen);
   const togglePaused = usePlaybackStore((st) => st.togglePaused);
-  const setReducedMotion = usePlaybackStore((st) => st.setReducedMotion);
-
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
 
   /* Open the deep-linked card once, on mount. Not pushUrl — the URL that got
      us here is already correct. */
@@ -64,37 +48,26 @@ export function AppShell({ assets, needsSeed = false, focusItemId, user = null }
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setReducedMotion(mq.matches);
-    const onChange = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
-    mq.addEventListener('change', onChange);
-    return () => mq.removeEventListener('change', onChange);
-  }, [setReducedMotion]);
-
+  // Board-only shortcut — AppChrome owns '[' (nav toggle) for every route;
+  // Space (pause all live renderers) only means something where renderers
+  // exist, so it stays local to the board shell.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') return; // command palette owns this
-
       if (e.key === ' ') {
         e.preventDefault();
         togglePaused();
-      } else if (e.key === '[') {
-        setNavOpen(!useInspectorStore.getState().navOpen);
       }
     };
-
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [togglePaused, setNavOpen]);
+  }, [togglePaused]);
 
   return (
     <>
-      <AppHeader onOpenSettings={() => setSettingsOpen(true)} needsSeed={needsSeed} />
-      <NavDrawer user={user} onOpenAccount={() => setAccountOpen(true)} />
-      <CommandPalette />
+      <AppChrome assets={assets} needsSeed={needsSeed} user={user} />
 
       <main className={s.main} data-inspector-open={inspectorOpen ? 'true' : 'false'}>
         <Hero />
@@ -102,122 +75,18 @@ export function AppShell({ assets, needsSeed = false, focusItemId, user = null }
       </main>
 
       <InspectorDrawer />
+      {/*
+        Two different compositions for the same "asset is focused" state,
+        picked by a CSS breakpoint (see .focusScrim / .mobileFocus in
+        features.module.css) rather than a JS viewport check — no
+        hydration-mismatch risk, consistent with how the rest of the
+        board's mobile layout already switches (.wordmark, .accountMenu,
+        etc). MobileFocusedView was fully built but never mounted anywhere
+        before this; FocusedAssetOverlay was covering every width, including
+        the ones its own two-panel layout doesn't fit.
+      */}
       <FocusedAssetOverlay />
-      <FooterCredit />
-
-      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <AccountDialog open={accountOpen} onClose={() => setAccountOpen(false)} />
+      <MobileFocusedView />
     </>
-  );
-}
-
-/**
- * Small credit line, fixed to the bottom-left corner.
- *
- * Deliberately NOT positioned relative to the round "N" badge that sits in
- * this same corner during `next dev` — that badge is Next.js's own dev-mode
- * build indicator and does not exist in a production build. Anchoring to it
- * would put this in the wrong place the moment it's deployed.
- */
-function FooterCredit() {
-  return (
-    <a
-      href="https://splntr-microtools.com"
-      target="_blank"
-      rel="noopener noreferrer"
-      className={s.footerCredit}
-    >
-      Made by SPLNTR Micro Tools — splntr-microtools.com
-    </a>
-  );
-}
-
-function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const quality = usePlaybackStore((st) => st.quality);
-  const setQuality = usePlaybackStore((st) => st.setQuality);
-  const audioEnabled = usePlaybackStore((st) => st.audioEnabled);
-  const setAudioEnabled = usePlaybackStore((st) => st.setAudioEnabled);
-  const reducedMotion = usePlaybackStore((st) => st.reducedMotion);
-
-  return (
-    <Dialog
-      open={open}
-      title="Settings"
-      onClose={onClose}
-      footer={
-        <Button variant="accent" onClick={onClose}>
-          Done
-        </Button>
-      }
-    >
-      <Field label="Render quality" hint="Auto drops to preview quality when the pool is full.">
-        <Select
-          label="Render quality"
-          value={quality}
-          options={[
-            { value: 'auto', label: 'Auto' },
-            { value: 'preview', label: 'Preview only' },
-            { value: 'full', label: 'Full' },
-          ]}
-          onChange={(v) => setQuality(v as typeof quality)}
-        />
-      </Field>
-
-      <Field
-        label="Audio reactivity"
-        hint="Feeds one shared analyser to every live renderer. Phase 4."
-      >
-        <Toggle
-          label="Audio reactivity"
-          checked={audioEnabled}
-          disabled
-          onChange={setAudioEnabled}
-        />
-      </Field>
-
-      <Field
-        label="Reduced motion"
-        hint="Follows your system preference. Pauses all animation when on."
-      >
-        <Toggle label="Reduced motion" checked={reducedMotion} disabled onChange={() => {}} />
-      </Field>
-
-      <div style={{ marginTop: 'var(--space-4)' }}>
-        <span className={s.snapshotLabel}>
-          Keyboard{' '}
-          <span
-            style={{
-              fontSize: 'var(--step--1)',
-              color: 'var(--text-dim)',
-              fontWeight: 'normal',
-              marginLeft: 'var(--space-2)',
-            }}
-          >
-            Desktop only
-          </span>
-        </span>
-        <div className={s.shortcutList}>
-          {[
-            ['Space', 'Pause / play all'],
-            ['⌘K / Ctrl+K', 'Jump to an asset'],
-            ['[', 'Toggle the menu'],
-            ['F', 'Fullscreen (while an asset is open)'],
-            ['Esc', 'Close the open panel'],
-            ['← →', 'Nudge a focused slider (⇧ for coarse)'],
-            ['Right-click', 'Modulate a control'],
-          ].map(([key, what]) => (
-            <div key={key} className={s.shortcutRow}>
-              <span>{what}</span>
-              <span className={s.shortcutKey}>{key}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <p className={s.notice} style={{ marginTop: 'var(--space-3)' }}>
-        <span className={s.noticeStrong}>Live renderer budget:</span> {MAX_LIVE_RENDERERS}.
-        Cards beyond this fall back to posters automatically.
-      </p>
-    </Dialog>
   );
 }
