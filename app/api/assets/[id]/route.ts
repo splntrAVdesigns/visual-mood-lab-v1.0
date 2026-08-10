@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import { getDb, schema } from '@/lib/db/client';
 import { getStorage } from '@/lib/storage';
 import { requireUser } from '@/lib/auth';
+import { LIBRARY_OWNER_ID } from '@/lib/data/assets';
 import type { ParamState } from '@/renderers/control-schema';
 
 export const runtime = 'nodejs';
@@ -29,6 +30,23 @@ async function loadOwned(id: string) {
   const rows = await db.select().from(schema.assets).where(eq(schema.assets.id, id)).limit(1);
   const row = rows[0];
   if (!row || row.ownerId !== user.id) return null;
+  return { db, row };
+}
+
+/**
+ * Same lookup, wider ownership check — used only by the poster capture
+ * path below. A real captured frame replacing a generated placeholder
+ * benefits every account looking at that library asset, not just whoever
+ * happened to be the one with it open when it animated first; params and
+ * deletion stay strictly own-only via loadOwned, this is deliberately not
+ * the general-purpose write check.
+ */
+async function loadPosterWritable(id: string) {
+  const user = await requireUser();
+  const db = await getDb();
+  const rows = await db.select().from(schema.assets).where(eq(schema.assets.id, id)).limit(1);
+  const row = rows[0];
+  if (!row || (row.ownerId !== user.id && row.ownerId !== LIBRARY_OWNER_ID)) return null;
   return { db, row };
 }
 
@@ -61,7 +79,7 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
 
   try {
-    const owned = await loadOwned(id);
+    const owned = await loadPosterWritable(id);
     if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
     const bytes = new Uint8Array(await req.arrayBuffer());
