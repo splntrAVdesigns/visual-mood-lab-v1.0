@@ -687,18 +687,24 @@
 
 /* Composition switch between FocusedAssetOverlay (desktop) and
    MobileFocusedView (below ~820px) — see AppShell.tsx. Same 820px
-   breakpoint the rest of the mobile board layout already uses. A 1px gap
-   between the two queries (820 / 821) avoids both ever matching at once
-   at the exact boundary width. */
+   breakpoint the rest of the mobile board layout already uses.
+   !important is deliberate, not laziness: .mobileFocus's own base rule
+   (further down this file, near the mobile-focused-view section) sets
+   display:flex unconditionally. Two rules at equal specificity targeting
+   the same property resolve by SOURCE ORDER, not by which one is inside
+   a media query — so without !important, that later base rule wins
+   regardless of viewport width, which is exactly what made this render
+   on desktop the first time. Same fix already applied elsewhere in this
+   file for the identical reason (see .wordmark / .accountMenu above). */
 @media (max-width: 820px) {
   .focusScrim {
-    display: none;
+    display: none !important;
   }
 }
 
 @media (min-width: 821px) {
   .mobileFocus {
-    display: none;
+    display: none !important;
   }
 }
 
