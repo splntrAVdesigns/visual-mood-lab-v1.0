@@ -10,8 +10,10 @@ import { openAssetById, closeAsset } from '@/features/board/openAsset';
 import { CommandPalette } from './CommandPalette';
 import { useBoardStore, useInspectorStore, usePlaybackStore, MAX_LIVE_RENDERERS } from '@/stores';
 import type { Asset } from '@/types/asset';
+import type { User } from '@/lib/auth';
 import { AppHeader } from './AppHeader';
 import { NavDrawer } from './NavDrawer';
+import { AccountDialog } from './AccountDialog';
 import s from '../features.module.css';
 
 interface AppShellProps {
@@ -20,9 +22,11 @@ interface AppShellProps {
   needsSeed?: boolean;
   /** Set by /asset/[id]: open this card as soon as the shell mounts. */
   focusItemId?: string;
+  /** Signed-in user, threaded down to AppHeader/AccountMenu/AccountDialog. */
+  user?: User | null;
 }
 
-export function AppShell({ assets, needsSeed = false, focusItemId }: AppShellProps) {
+export function AppShell({ assets, needsSeed = false, focusItemId, user = null }: AppShellProps) {
   /* Hydrate synchronously on first render so SSR and the client agree —
      doing this in an effect would paint the empty state first and flash. */
   const [hydrated] = useState(() => {
@@ -37,6 +41,7 @@ export function AppShell({ assets, needsSeed = false, focusItemId }: AppShellPro
   const setReducedMotion = usePlaybackStore((st) => st.setReducedMotion);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
 
   /* Open the deep-linked card once, on mount. Not pushUrl — the URL that got
      us here is already correct. */
@@ -87,7 +92,12 @@ export function AppShell({ assets, needsSeed = false, focusItemId }: AppShellPro
 
   return (
     <>
-      <AppHeader onOpenSettings={() => setSettingsOpen(true)} needsSeed={needsSeed} />
+      <AppHeader
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenAccount={() => setAccountOpen(true)}
+        needsSeed={needsSeed}
+        user={user}
+      />
       <NavDrawer />
       <CommandPalette />
 
@@ -101,6 +111,7 @@ export function AppShell({ assets, needsSeed = false, focusItemId }: AppShellPro
       <FooterCredit />
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <AccountDialog open={accountOpen} onClose={() => setAccountOpen(false)} />
     </>
   );
 }
