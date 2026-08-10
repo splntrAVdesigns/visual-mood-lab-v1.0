@@ -92,13 +92,8 @@ export function AppShell({ assets, needsSeed = false, focusItemId, user = null }
 
   return (
     <>
-      <AppHeader
-        onOpenSettings={() => setSettingsOpen(true)}
-        onOpenAccount={() => setAccountOpen(true)}
-        needsSeed={needsSeed}
-        user={user}
-      />
-      <NavDrawer />
+      <AppHeader onOpenSettings={() => setSettingsOpen(true)} needsSeed={needsSeed} />
+      <NavDrawer user={user} onOpenAccount={() => setAccountOpen(true)} />
       <CommandPalette />
 
       <main className={s.main} data-inspector-open={inspectorOpen ? 'true' : 'false'}>

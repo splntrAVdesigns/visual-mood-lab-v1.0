@@ -3,8 +3,11 @@
 import { useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { UploadDialog } from '@/features/library/UploadDialog';
+import { logoutAction } from '@/features/auth/actions';
+import type { User } from '@/lib/auth';
 
 import {
+  Button,
   Drawer,
   SectionLabel,
   CodeIcon,
@@ -26,7 +29,12 @@ import s from '../features.module.css';
 
 const TYPES: AssetType[] = ['shader', 'p5', 'svg', 'image', 'video'];
 
-export function NavDrawer() {
+interface NavDrawerProps {
+  user?: User | null;
+  onOpenAccount?: () => void;
+}
+
+export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
   const [uploadOpen, setUploadOpen] = useState(false);
   const open = useInspectorStore((st) => st.navOpen);
   const setNavOpen = useInspectorStore((st) => st.setNavOpen);
@@ -141,8 +149,8 @@ export function NavDrawer() {
         mutates the DOM directly with no awareness of React — embedding it
         inside a component that mounts/unmounts with the drawer risks
         duplicate or stale injected buttons. A styled link achieves the same
-        outcome without that risk. Positioned last, above wherever account
-        UI eventually lands (nothing exists there yet as of this pass).
+        outcome without that risk. Positioned above the account section
+        below, per the original placement request.
       */}
       <nav className={s.navSection}>
         <div className={s.navList}>
@@ -159,6 +167,36 @@ export function NavDrawer() {
           </a>
         </div>
       </nav>
+
+      {/*
+        Account UI lives here — drawer-only, deliberately not in the header
+        — so the header stays clean on mobile and the account/logout
+        actions live in the same place as everything else the person can
+        do from this menu.
+      */}
+      {user && (
+        <nav className={s.navSection}>
+          <SectionLabel>Account</SectionLabel>
+          <div className={s.navList}>
+            <button
+              type="button"
+              className={s.navItem}
+              title={user.name}
+              onClick={onOpenAccount}
+            >
+              <span className={s.navItemIcon} aria-hidden="true" style={{ fontSize: '1em' }}>
+                👤
+              </span>
+              {user.name}
+            </button>
+            <form action={logoutAction}>
+              <Button type="submit" variant="ghost" style={{ width: '100%' }}>
+                Log out
+              </Button>
+            </form>
+          </div>
+        </nav>
+      )}
     </Drawer>
     <UploadDialog open={uploadOpen} onClose={() => setUploadOpen(false)} />
     </>
