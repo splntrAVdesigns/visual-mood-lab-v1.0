@@ -6,16 +6,12 @@ import { BoardGrid } from '@/features/board/BoardGrid';
 import { Hero } from '@/features/board/Hero';
 import { InspectorDrawer } from '@/features/inspector/InspectorDrawer';
 import { FocusedAssetOverlay } from '@/features/board/FocusedAssetOverlay';
-import { MobileFocusedView } from '@/features/board/MobileFocusedView';
-import { useIsMobile } from '@/lib/hooks/useIsMobile';
 import { openAssetById, closeAsset } from '@/features/board/openAsset';
 import { CommandPalette } from './CommandPalette';
 import { useBoardStore, useInspectorStore, usePlaybackStore, MAX_LIVE_RENDERERS } from '@/stores';
-import { getPool } from '@/lib/render/pool';
 import type { Asset } from '@/types/asset';
 import { AppHeader } from './AppHeader';
 import { NavDrawer } from './NavDrawer';
-import { AccountDialog } from './AccountDialog';
 import s from '../features.module.css';
 
 interface AppShellProps {
@@ -24,11 +20,9 @@ interface AppShellProps {
   needsSeed?: boolean;
   /** Set by /asset/[id]: open this card as soon as the shell mounts. */
   focusItemId?: string;
-  /** The signed-in account, for the header's account menu. */
-  user?: { id: string; name: string } | null;
 }
 
-export function AppShell({ assets, needsSeed = false, focusItemId, user = null }: AppShellProps) {
+export function AppShell({ assets, needsSeed = false, focusItemId }: AppShellProps) {
   /* Hydrate synchronously on first render so SSR and the client agree —
      doing this in an effect would paint the empty state first and flash. */
   const [hydrated] = useState(() => {
@@ -43,25 +37,6 @@ export function AppShell({ assets, needsSeed = false, focusItemId, user = null }
   const setReducedMotion = usePlaybackStore((st) => st.setReducedMotion);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
-  const isMobile = useIsMobile();
-
-  /*
-   * Publish asset id -> poster URL so texture controls can resolve what
-   * they point at. Subscribed rather than set once: posters are captured
-   * lazily after a card first renders, so this map genuinely fills in over
-   * the first few seconds of a session rather than being complete at mount.
-   */
-  useEffect(() => {
-    const publish = (list: Asset[]) => {
-      const sources: Record<string, string> = {};
-      for (const a of list) if (a.posterUrl) sources[a.id] = a.posterUrl;
-      getPool().setTextureSources(sources);
-    };
-
-    publish(useBoardStore.getState().assets);
-    return useBoardStore.subscribe((state) => publish(state.assets));
-  }, []);
 
   /* Open the deep-linked card once, on mount. Not pushUrl — the URL that got
      us here is already correct. */
@@ -112,13 +87,8 @@ export function AppShell({ assets, needsSeed = false, focusItemId, user = null }
 
   return (
     <>
-      <AppHeader
-        onOpenSettings={() => setSettingsOpen(true)}
-        onOpenAccount={() => setAccountOpen(true)}
-        needsSeed={needsSeed}
-        user={user}
-      />
-      <NavDrawer user={user} onOpenAccount={() => setAccountOpen(true)} />
+      <AppHeader onOpenSettings={() => setSettingsOpen(true)} needsSeed={needsSeed} />
+      <NavDrawer />
       <CommandPalette />
 
       <main className={s.main} data-inspector-open={inspectorOpen ? 'true' : 'false'}>
@@ -126,25 +96,11 @@ export function AppShell({ assets, needsSeed = false, focusItemId, user = null }
         <BoardGrid />
       </main>
 
-      {/*
-        Two genuinely different compositions, not one squeezed. On desktop
-        the inspector is a fixed drawer beside a centred graphic; on mobile
-        the controls live inside the focused view itself, in one scrolling
-        column beneath a pinned canvas. Rendering the desktop drawer as well
-        would put a second, redundant control surface behind the sheet.
-      */}
-      {isMobile ? (
-        <MobileFocusedView />
-      ) : (
-        <>
-          <InspectorDrawer />
-          <FocusedAssetOverlay />
-        </>
-      )}
+      <InspectorDrawer />
+      <FocusedAssetOverlay />
       <FooterCredit />
 
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <AccountDialog open={accountOpen} onClose={() => setAccountOpen(false)} />
     </>
   );
 }
@@ -221,7 +177,19 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
       </Field>
 
       <div style={{ marginTop: 'var(--space-4)' }}>
-        <span className={s.snapshotLabel}>Keyboard</span>
+        <span className={s.snapshotLabel}>
+          Keyboard{' '}
+          <span
+            style={{
+              fontSize: 'var(--step--1)',
+              color: 'var(--text-dim)',
+              fontWeight: 'normal',
+              marginLeft: 'var(--space-2)',
+            }}
+          >
+            Desktop only
+          </span>
+        </span>
         <div className={s.shortcutList}>
           {[
             ['Space', 'Pause / play all'],

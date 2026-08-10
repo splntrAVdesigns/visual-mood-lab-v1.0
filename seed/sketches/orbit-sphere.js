@@ -14,7 +14,9 @@ export const params = {
   ] },
   weight: { kind: 'slider', label: 'Stroke weight', min: 0.25, max: 4, step: 0.05, default: 0.8 },
   stroke: { kind: 'color', label: 'Stroke', default: { r: 0, g: 0.83, b: 1, a: 1 } },
-  fillColor: { kind: 'color', label: 'Fill', default: { r: 0.06, g: 0.06, b: 0.09, a: 1 }, showIf: { equals: ['render', 'solid'] } },
+  // Was near-black (0.06, 0.06, 0.09) with only 0.12 ambient — invisible
+  // against this app's pure-black canvas rather than actually broken.
+  fillColor: { kind: 'color', label: 'Fill', default: { r: 0.12, g: 0.15, b: 0.22, a: 1 }, showIf: { equals: ['render', 'solid'] } },
   lightAngle: { kind: 'slider', label: 'Light angle', min: -180, max: 180, step: 1, default: 45, unit: 'deg', showIf: { equals: ['render', 'solid'] } },
 };
 
@@ -44,7 +46,7 @@ export default function sketch(p, get) {
       p.fill(f.r, f.g, f.b, f.a);
       p.noStroke();
       const a = p.radians(get('lightAngle'));
-      p.ambientLight(0.12);
+      p.ambientLight(0.28);
       p.directionalLight(st.r, st.g, st.b, Math.cos(a), Math.sin(a), -0.6);
     } else {
       p.noFill();

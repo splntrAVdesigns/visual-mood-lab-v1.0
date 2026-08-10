@@ -13,7 +13,6 @@ import {
   SlidersIcon,
   TagIcon,
   UploadIcon,
-  Button,
 } from '@/components/ui';
 import {
   selectAllTags,
@@ -23,17 +22,11 @@ import {
   useInspectorStore,
 } from '@/stores';
 import { ASSET_TYPE_LABEL, type AssetType } from '@/types/asset';
-import { logoutAction } from '@/features/auth/actions';
 import s from '../features.module.css';
 
 const TYPES: AssetType[] = ['shader', 'p5', 'svg', 'image', 'video'];
 
-interface NavDrawerProps {
-  user?: { id: string; name: string } | null;
-  onOpenAccount: () => void;
-}
-
-export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
+export function NavDrawer() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const open = useInspectorStore((st) => st.navOpen);
   const setNavOpen = useInspectorStore((st) => st.setNavOpen);
@@ -54,29 +47,7 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
 
   return (
     <>
-    <Drawer
-      open={open}
-      side="left"
-      title="Visual Mood Lab"
-      onClose={() => setNavOpen(false)}
-      footer={
-        user && (
-          <div className={s.drawerAccountRow}>
-            <button type="button" className={s.drawerAccountName} onClick={onOpenAccount}>
-              <span className={s.drawerAccountAvatar} aria-hidden="true">
-                {user.name.charAt(0).toUpperCase()}
-              </span>
-              <span className={s.drawerAccountNameText}>{user.name}</span>
-            </button>
-            <form action={logoutAction}>
-              <Button type="submit" variant="ghost">
-                Log out
-              </Button>
-            </form>
-          </div>
-        )
-      }
-    >
+    <Drawer open={open} side="left" title="Visual Mood Lab" onClose={() => setNavOpen(false)}>
       <nav className={s.navSection}>
         <SectionLabel>Board</SectionLabel>
         <div className={s.navList}>
@@ -156,17 +127,36 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
             <UploadIcon className={s.navItemIcon} />
             Upload
           </button>
-          <button
-            type="button"
-            className={s.navItem}
-            disabled
-            aria-disabled="true"
-            title="Playground is coming in a future update"
-          >
+          <button type="button" className={s.navItem} disabled>
             <CodeIcon className={s.navItemIcon} />
             Playground
-            <span className={s.navCount}>Coming Soon</span>
+            <span className={s.navCount}>P5</span>
           </button>
+        </div>
+      </nav>
+
+      {/*
+        Plain link rather than BuyMeACoffee's own auto-inject widget script.
+        That script drops a fixed-position floating button globally and
+        mutates the DOM directly with no awareness of React — embedding it
+        inside a component that mounts/unmounts with the drawer risks
+        duplicate or stale injected buttons. A styled link achieves the same
+        outcome without that risk. Positioned last, above wherever account
+        UI eventually lands (nothing exists there yet as of this pass).
+      */}
+      <nav className={s.navSection}>
+        <div className={s.navList}>
+          <a
+            href="https://www.buymeacoffee.com/splntr_microtools"
+            target="_blank"
+            rel="noopener noreferrer"
+            className={s.navItem}
+          >
+            <span className={s.navItemIcon} aria-hidden="true" style={{ fontSize: '1em' }}>
+              ☕
+            </span>
+            Buy me a coffee
+          </a>
         </div>
       </nav>
     </Drawer>

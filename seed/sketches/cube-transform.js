@@ -42,7 +42,12 @@ export const params = {
   weight: { kind: 'slider', label: 'Edge weight', min: 0.25, max: 5, step: 0.05, default: 1 },
   detail: { kind: 'stepper', label: 'Detail', min: 3, max: 48, step: 1, default: 24, hint: 'Segments for sphere / torus / cone / cylinder. No effect on cube.', showIf: { notEquals: ['shape', 'cube'] } },
   stroke: { kind: 'color', label: 'Edges', default: { r: 0, g: 0.83, b: 1, a: 1 } },
-  fillColor: { kind: 'color', label: 'Faces', default: { r: 0.04, g: 0.05, b: 0.08, a: 1 } },
+  // Was near-black (0.04, 0.05, 0.08) with only 0.15 ambient light — against
+  // this app's pure-black canvas background, that rendered Solid mode
+  // effectively invisible rather than broken. A dim slate blue reads as an
+  // actual filled surface while staying dark enough not to fight the
+  // cyan/wireframe accent the rest of the app uses.
+  fillColor: { kind: 'color', label: 'Faces', default: { r: 0.12, g: 0.15, b: 0.22, a: 1 } },
   lightAngle: { kind: 'slider', label: 'Light angle', min: -180, max: 180, step: 1, default: 40, unit: 'deg' },
   interactive: { kind: 'toggle', label: 'Drag to orbit', default: true },
   reset: { kind: 'trigger', label: 'Reset view', default: null, event: 'reset' },
@@ -98,12 +103,23 @@ export default function sketch(p, get) {
     const base = Math.min(p.width, p.height);
     const R = base * get('radius');
     const breathe = 1 + Math.sin(t * get('breatheRate') * 6.28) * get('breathe');
-    const size = base * get('size') * breathe;
+    // Safety margin against the rotated silhouette exceeding the frame.
+    // `size` bounds the shape only in its own rest orientation — a
+    // cylinder or cone has real extent along its height axis, and once
+    // spinX/spinY carries that axis toward the camera-facing plane, the
+    // shape's on-screen silhouette is measurably larger than `size`
+    // itself. 0.82 keeps the worst-case rotated diagonal inside frame at
+    // the slider's default and through most of its range without visibly
+    // shrinking the shape at rest.
+    const size = base * get('size') * breathe * 0.82;
     const stagger = get('stagger');
 
     if (mode !== 'wire') {
       const a = p.radians(get('lightAngle'));
-      p.ambientLight(0.15);
+      // Raised from 0.15 — paired with the darker original fill default,
+      // ambient this dim left faces reading as flat black regardless of
+      // fill colour.
+      p.ambientLight(0.28);
       p.directionalLight(st.r, st.g, st.b, Math.cos(a), Math.sin(a), -0.7);
     }
 
