@@ -57,6 +57,11 @@
   // when the host sends an explicit 'resize' message — see the comment at
   // that handler for why this exists alongside the internal debounce.
   var applyResize = null;
+  // Set whenever the host's explicit 'resize' message is handled — lets
+  // the internal fallback below tell "the host already covered this" from
+  // "the host never sent anything," instead of firing unconditionally and
+  // racing it. See the case 'resize' handler for the full story.
+  var lastHostResizeAt = 0;
 
   /*
    * Pixel density is the difference between a smooth thumbnail and a
@@ -253,6 +258,22 @@
             // pure debounce-on-resize approach unreliable during animated
             // fullscreen transitions in the first place. This still fires
             // for any resize the host didn't explicitly announce.
+            //
+            // BUG THAT WAS HERE: this timer and the host's message timer
+            // run on independent clocks (~220ms vs ~200ms + a postMessage
+            // round-trip). If this one fired first, cancelling it on
+            // message arrival did nothing — it had already run. Both paths
+            // then called applyResize() for the SAME resize, each doing a
+            // full resizeCanvas(). Confirmed directly in a console capture:
+            // repeated 'message' handler violations at 300-800ms each,
+            // stacking past the 2000ms heartbeat timeout and causing the
+            // host to tear the iframe down as a hung sketch — the "renders
+            // in fullscreen but comes back blank" failure. The guard below
+            // makes this an actual fallback instead of a second guaranteed
+            // trigger: skip if the host visibly handled a resize recently.
+            var recentlyHandledByHost = performance.now() - lastHostResizeAt < 600;
+            if (recentlyHandledByHost) return;
+
             if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
             resizeDebounceTimer = setTimeout(function () {
               resizeDebounceTimer = null;
@@ -407,6 +428,7 @@
         // The host's ResizeObserver-driven signal that the container has
         // actually settled at a new size — see applyResize's definition
         // in run() for why this is preferred over the internal fallback.
+        lastHostResizeAt = performance.now();
         if (resizeDebounceTimer) {
           clearTimeout(resizeDebounceTimer);
           resizeDebounceTimer = null;
