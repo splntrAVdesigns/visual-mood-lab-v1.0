@@ -1,0 +1,38 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  border-top: 1px solid var(--border);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 7rem 1fr auto;
+  align-items: baseline;
+  gap: var(--gap);
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+}
+
+.key {
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.detail {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.status {
+  color: var(--text-mute);
+  white-space: nowrap;
+}
+
+.statusLive {
+  color: var(--accent);
+}

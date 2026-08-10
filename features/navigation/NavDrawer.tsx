@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useShallow } from 'zustand/react/shallow';
 import { UploadDialog } from '@/features/library/UploadDialog';
 import { logoutAction } from '@/features/auth/actions';
@@ -17,6 +18,7 @@ import {
   TagIcon,
   UploadIcon,
 } from '@/components/ui';
+import { QuadrantMark } from '@/components/ui/QuadrantMark';
 import {
   selectAllTags,
   selectUploads,
@@ -56,6 +58,18 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
   return (
     <>
     <Drawer open={open} side="left" title="Visual Mood Lab" onClose={() => setNavOpen(false)}>
+      {/*
+        Ungrouped, no SectionLabel — this is a static destination, not a
+        filter or an action, so it doesn't belong in the Board/Type/Tags
+        hierarchy below. The bottom border marks it as its own category.
+      */}
+      <nav className={`${s.navSection} ${s.navAbout}`}>
+        <Link href="/about" className={s.navItem} onClick={() => setNavOpen(false)}>
+          <QuadrantMark tone="accent" size={12} className={s.navItemIcon} />
+          About
+        </Link>
+      </nav>
+
       <nav className={s.navSection}>
         <SectionLabel>Board</SectionLabel>
         <div className={s.navList}>
@@ -172,30 +186,33 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
         Account UI lives here — drawer-only, deliberately not in the header
         — so the header stays clean on mobile and the account/logout
         actions live in the same place as everything else the person can
-        do from this menu.
+        do from this menu. Pinned via .navDrawerFooter (position: sticky;
+        bottom: 0) inside the Drawer's own scroll region, so it stays
+        reachable without scrolling however long the type/tag lists above
+        it get. Name and Log out share one row rather than stacking,
+        matching the header's AccountMenu layout one level up.
       */}
       {user && (
-        <nav className={s.navSection}>
-          <SectionLabel>Account</SectionLabel>
-          <div className={s.navList}>
+        <div className={s.navDrawerFooter}>
+          <div className={s.drawerAccountRow}>
             <button
               type="button"
-              className={s.navItem}
+              className={s.drawerAccountName}
               title={user.name}
               onClick={onOpenAccount}
             >
-              <span className={s.navItemIcon} aria-hidden="true" style={{ fontSize: '1em' }}>
-                👤
+              <span className={s.drawerAccountAvatar} aria-hidden="true">
+                {user.name.charAt(0).toUpperCase()}
               </span>
-              {user.name}
+              <span className={s.drawerAccountNameText}>{user.name}</span>
             </button>
             <form action={logoutAction}>
-              <Button type="submit" variant="ghost" style={{ width: '100%' }}>
+              <Button type="submit" variant="ghost">
                 Log out
               </Button>
             </form>
           </div>
-        </nav>
+        </div>
       )}
     </Drawer>
     <UploadDialog open={uploadOpen} onClose={() => setUploadOpen(false)} />

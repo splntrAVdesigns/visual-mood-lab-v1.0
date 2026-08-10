@@ -233,6 +233,27 @@
   background: var(--accent-faint);
 }
 
+/* About entry — sits above .navSection's Board/Type/Tags hierarchy with
+   its own bottom rule, marking it as a static destination rather than a
+   filter. No SectionLabel of its own (see NavDrawer). */
+.navAbout {
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Pinned account footer. `position: sticky; bottom: 0` keys off the
+   Drawer's own scrollable body (its nearest overflow:auto ancestor) —
+   no change to Drawer's internals needed. Opaque background so scrolled
+   nav content doesn't show through underneath it. */
+.navDrawerFooter {
+  position: sticky;
+  bottom: 0;
+  margin-top: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+}
+
 /* ------------------------------------------------------------------ *
  * Board
  * ------------------------------------------------------------------ */

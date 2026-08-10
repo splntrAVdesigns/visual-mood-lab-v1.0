@@ -1,0 +1,107 @@
+.hero {
+  position: relative;
+  min-height: 40vh;
+  display: flex;
+  align-items: center;
+  padding: 4rem 3rem;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+.content {
+  position: relative;
+  z-index: 1;
+  max-width: 40rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--text-dim);
+  letter-spacing: 0.02em;
+}
+
+.title {
+  margin: 0 0 1rem;
+  font-size: clamp(2.5rem, 6vw, 4rem);
+  font-weight: 500;
+  color: var(--text);
+}
+
+.body {
+  margin: 0;
+  max-width: 32rem;
+  font-size: var(--step-1);
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+.blocks {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.block {
+  position: absolute;
+  border: 1px solid var(--border-hi);
+  background: transparent;
+  animation: drift 40s ease-in-out infinite;
+}
+
+.blockA {
+  width: 22vw;
+  height: 22vw;
+  top: -6%;
+  right: 8%;
+  animation-duration: 46s;
+}
+
+.blockB {
+  width: 14vw;
+  height: 14vw;
+  bottom: -10%;
+  right: 28%;
+  animation-duration: 38s;
+  animation-delay: -6s;
+}
+
+.blockC {
+  width: 9vw;
+  height: 9vw;
+  top: 30%;
+  right: 4%;
+  animation-duration: 34s;
+  animation-delay: -18s;
+}
+
+.blockAccent {
+  width: 4vw;
+  height: 4vw;
+  bottom: 18%;
+  right: 40%;
+  border-color: var(--accent);
+  background: var(--accent-dim);
+  animation-duration: 30s;
+  animation-delay: -12s;
+}
+
+@keyframes drift {
+  0%   { transform: translate(0, 0); }
+  50%  { transform: translate(-2.5vw, 3vw); }
+  100% { transform: translate(0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .block {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero {
+    padding: 3rem 1.25rem;
+    min-height: 32vh;
+  }
+}
