@@ -47,10 +47,9 @@ export const params = {
   // effectively invisible rather than broken. A dim slate blue (0.12, 0.15,
   // 0.22) fixed the visibility problem but still read as flat and safe next
   // to the cyan wireframe default — switching to Solid barely registered as
-  // a different mode. Coral sits opposite cyan on the wheel, so the two
-  // render modes now read as genuinely distinct looks rather than one dim
-  // variant of the other.
-  fillColor: { kind: 'color', label: 'Faces', default: { r: 1, g: 0.5, b: 0.31, a: 1 } },
+  // a different mode. Magenta (#FB00FF) reads as an unmistakably different
+  // look next to the cyan edges, rather than a dim variant of the same one.
+  fillColor: { kind: 'color', label: 'Faces', default: { r: 0.98, g: 0, b: 1, a: 1 } },
   lightAngle: { kind: 'slider', label: 'Light angle', min: -180, max: 180, step: 1, default: 40, unit: 'deg' },
   interactive: { kind: 'toggle', label: 'Drag to orbit', default: true },
   reset: { kind: 'trigger', label: 'Reset view', default: null, event: 'reset' },
