@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
 import { useShallow } from 'zustand/react/shallow';
 import { UploadDialog } from '@/features/library/UploadDialog';
 import { logoutAction } from '@/features/auth/actions';
@@ -41,6 +42,10 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
   const open = useInspectorStore((st) => st.navOpen);
   const setNavOpen = useInspectorStore((st) => st.setNavOpen);
 
+  const pathname = usePathname();
+  const router = useRouter();
+  const onBoard = pathname === '/';
+
   const assets = useBoardStore((st) => st.assets);
   const typeFilter = useBoardStore((st) => st.typeFilter);
   const tagFilter = useBoardStore((st) => st.tagFilter);
@@ -54,6 +59,19 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
 
   const countOf = (type: AssetType) => assets.filter((a) => a.type === type).length;
   const filtersActive = typeFilter.size > 0 || tagFilter.size > 0;
+
+  /* Board/Type/Tag items mutate board-store filters, which only means
+     anything while BoardGrid is mounted — i.e. on `/`. NavDrawer now
+     renders on other routes too (see AppChrome), so every one of those
+     actions has to get back to the board first if it isn't already
+     there. Applying the filter and closing the drawer only happen on the
+     actual navigation, not on every click while already on the board —
+     staying open there is what lets you see the filter take effect. */
+  const goToBoard = () => {
+    if (onBoard) return;
+    router.push('/');
+    setNavOpen(false);
+  };
 
   const accountFooter = user ? (
     <div className={s.drawerAccountRow}>
@@ -86,7 +104,12 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
         hierarchy below. The bottom border marks it as its own category.
       */}
       <nav className={`${s.navSection} ${s.navAbout}`}>
-        <Link href="/about" className={s.navItem} onClick={() => setNavOpen(false)}>
+        <Link
+          href="/about"
+          className={s.navItem}
+          data-active={pathname === '/about' ? 'true' : undefined}
+          onClick={() => setNavOpen(false)}
+        >
           <QuadrantMark tone="accent" size={12} className={s.navItemIcon} />
           About
         </Link>
@@ -95,7 +118,12 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
       <nav className={s.navSection}>
         <SectionLabel>Board</SectionLabel>
         <div className={s.navList}>
-          <button type="button" className={s.navItem} data-active="true">
+          <button
+            type="button"
+            className={s.navItem}
+            data-active={onBoard ? 'true' : undefined}
+            onClick={goToBoard}
+          >
             <GridIcon className={s.navItemIcon} />
             All assets
             <span className={s.navCount}>{visible.length}</span>
@@ -103,9 +131,12 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
           <button
             type="button"
             className={s.navItem}
-            data-active={tagFilter.has('upload') ? 'true' : undefined}
+            data-active={onBoard && tagFilter.has('upload') ? 'true' : undefined}
             aria-pressed={tagFilter.has('upload')}
-            onClick={() => toggleTag('upload')}
+            onClick={() => {
+              toggleTag('upload');
+              goToBoard();
+            }}
           >
             <LayersIcon className={s.navItemIcon} />
             Library uploads
@@ -122,9 +153,12 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
               key={t}
               type="button"
               className={s.navItem}
-              data-active={typeFilter.has(t) ? 'true' : undefined}
+              data-active={onBoard && typeFilter.has(t) ? 'true' : undefined}
               aria-pressed={typeFilter.has(t)}
-              onClick={() => toggleType(t)}
+              onClick={() => {
+                toggleType(t);
+                goToBoard();
+              }}
             >
               <SlidersIcon className={s.navItemIcon} />
               {ASSET_TYPE_LABEL[t]}
@@ -145,9 +179,12 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
                 key={tag}
                 type="button"
                 className={s.tag}
-                data-active={tagFilter.has(tag) ? 'true' : undefined}
+                data-active={onBoard && tagFilter.has(tag) ? 'true' : undefined}
                 aria-pressed={tagFilter.has(tag)}
-                onClick={() => toggleTag(tag)}
+                onClick={() => {
+                  toggleTag(tag);
+                  goToBoard();
+                }}
               >
                 {tag}
               </button>
@@ -158,7 +195,14 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
 
       {filtersActive && (
         <nav className={s.navSection}>
-          <button type="button" className={s.navItem} onClick={clearFilters}>
+          <button
+            type="button"
+            className={s.navItem}
+            onClick={() => {
+              clearFilters();
+              goToBoard();
+            }}
+          >
             Clear filters
           </button>
         </nav>

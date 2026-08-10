@@ -44,10 +44,13 @@ export const params = {
   stroke: { kind: 'color', label: 'Edges', default: { r: 0, g: 0.83, b: 1, a: 1 } },
   // Was near-black (0.04, 0.05, 0.08) with only 0.15 ambient light — against
   // this app's pure-black canvas background, that rendered Solid mode
-  // effectively invisible rather than broken. A dim slate blue reads as an
-  // actual filled surface while staying dark enough not to fight the
-  // cyan/wireframe accent the rest of the app uses.
-  fillColor: { kind: 'color', label: 'Faces', default: { r: 0.12, g: 0.15, b: 0.22, a: 1 } },
+  // effectively invisible rather than broken. A dim slate blue (0.12, 0.15,
+  // 0.22) fixed the visibility problem but still read as flat and safe next
+  // to the cyan wireframe default — switching to Solid barely registered as
+  // a different mode. Coral sits opposite cyan on the wheel, so the two
+  // render modes now read as genuinely distinct looks rather than one dim
+  // variant of the other.
+  fillColor: { kind: 'color', label: 'Faces', default: { r: 1, g: 0.5, b: 0.31, a: 1 } },
   lightAngle: { kind: 'slider', label: 'Light angle', min: -180, max: 180, step: 1, default: 40, unit: 'deg' },
   interactive: { kind: 'toggle', label: 'Drag to orbit', default: true },
   reset: { kind: 'trigger', label: 'Reset view', default: null, event: 'reset' },
