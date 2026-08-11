@@ -8,6 +8,7 @@ export { TextInput } from './TextInput';
 export { Drawer, useDismissable } from './Drawer';
 export { Dialog } from './Dialog';
 export { Tooltip } from './Tooltip';
+export { useTooltipsEnabled } from './useTooltipsEnabled';
 export { Field } from './Field';
 export { Badge, SectionLabel, Divider } from './Badge';
 export * from './Icon';

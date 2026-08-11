@@ -84,6 +84,21 @@ const FOCUSABLE =
  * Escape to close, focus moved in on open and restored on close, and a focus
  * trap while a modal overlay is up. Also locks body scroll so the board
  * behind does not scroll under the drawer on touch.
+ *
+ * The focus-steal-in and focus-restore-out steps are gated behind an actual
+ * closed->open / open->closed transition (tracked via `wasOpen`), not just
+ * "the effect re-ran". This effect's dependency array includes `onClose`,
+ * which needs to be current inside the Escape-key handler — but if a
+ * caller passes an inline `onClose` that isn't wrapped in `useCallback`
+ * (a new function identity on every render), the effect re-runs on every
+ * unrelated re-render while the drawer is already open, and without this
+ * guard it would re-steal focus to the first focusable element on every
+ * one of those re-runs. That's exactly what was happening to the Inspector
+ * drawer's text controls: typing a character updates param state, which
+ * re-renders InspectorDrawer, which recreates its inline `onClose`, which
+ * re-fired this effect and yanked focus to the header's restore button
+ * every keystroke. Prefer a memoized `onClose` at the call site too — this
+ * guard is defense-in-depth so a future caller can't reintroduce the bug.
  */
 export function useDismissable(
   open: boolean,
@@ -92,15 +107,31 @@ export function useDismissable(
   modal: boolean,
 ) {
   const restoreRef = useRef<HTMLElement | null>(null);
+  const wasOpen = useRef(false);
 
   useEffect(() => {
-    if (!open) return;
-
-    restoreRef.current = document.activeElement as HTMLElement | null;
+    if (!open) {
+      // This branch runs on the open->closed transition itself, so it's
+      // the one place that can tell a real close apart from a cleanup
+      // caused by some other dependency changing while still open — the
+      // returned cleanup below can't do that reliably, since React runs
+      // it with variables closed over from the run that's being replaced,
+      // which for the run that was open still has `open === true` in its
+      // closure even on the render where the drawer is closing.
+      if (wasOpen.current) restoreRef.current?.focus?.();
+      wasOpen.current = false;
+      return;
+    }
 
     const panel = panelRef.current;
-    const first = panel?.querySelector<HTMLElement>(FOCUSABLE);
-    first?.focus();
+    const justOpened = !wasOpen.current;
+    wasOpen.current = true;
+
+    if (justOpened) {
+      restoreRef.current = document.activeElement as HTMLElement | null;
+      const first = panel?.querySelector<HTMLElement>(FOCUSABLE);
+      first?.focus();
+    }
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -137,7 +168,6 @@ export function useDismissable(
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = prevOverflow;
-      restoreRef.current?.focus?.();
     };
   }, [open, onClose, panelRef, modal]);
 }

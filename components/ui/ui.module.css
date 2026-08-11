@@ -504,8 +504,26 @@
   border-radius: var(--radius);
   font-size: var(--step--2);
   color: var(--text);
-  white-space: nowrap;
+  white-space: normal;
+  max-width: min(220px, 90vw);
+  width: max-content;
   pointer-events: none;
+}
+
+/* Default is centered under the trigger. 'end' grows leftward from the
+   trigger's right edge — for a trigger sitting at the right edge of its
+   container (e.g. a drawer header's top-right corner), so the tooltip
+   never has to render past the viewport edge to get there. 'start' is
+   the mirror case for a left-edge trigger. */
+.tooltip[data-align='end'] {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.tooltip[data-align='start'] {
+  left: 0;
+  transform: none;
 }
 
 .tooltipShortcut {

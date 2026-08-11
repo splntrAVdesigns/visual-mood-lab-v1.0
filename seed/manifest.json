@@ -695,8 +695,8 @@
     },
     {
       "slug": "field-lines",
-      "type": "shader",
-      "file": "shaders/field-lines.frag",
+      "type": "p5",
+      "file": "sketches/field-lines.js",
       "title": "Field Lines",
       "tags": [
         "interactive",
@@ -707,8 +707,8 @@
     },
     {
       "slug": "ink-trail",
-      "type": "shader",
-      "file": "shaders/ink-trail.frag",
+      "type": "p5",
+      "file": "sketches/ink-trail.js",
       "title": "Ink Trail",
       "tags": [
         "interactive",

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   Badge,
   Button,
@@ -33,10 +33,19 @@ export function InspectorDrawer() {
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  const onClose = () => {
+  // Memoized so its identity survives the re-renders that happen on every
+  // keystroke in a text control (params changing re-renders this whole
+  // component). Drawer's useDismissable effect lists onClose as a
+  // dependency for its Escape-key handler, so an unstable reference here
+  // was re-firing that effect — and its focus-steal-on-open logic — every
+  // time a character was typed. See Drawer.tsx's useDismissable comment
+  // for the fuller root-cause writeup; that effect is now also guarded
+  // against this, but fixing it here too means the bug can't come back
+  // just because Drawer's guard was bypassed some other way.
+  const onClose = useCallback(() => {
     close();
     select(null);
-  };
+  }, [close, select]);
 
   const toggleGroup = (id: string) =>
     setCollapsed((prev) => {
@@ -56,7 +65,7 @@ export function InspectorDrawer() {
       onClose={onClose}
       modal={false}
       actions={
-        <Tooltip content="Restore this asset's library defaults">
+        <Tooltip content="Restore this asset's library defaults" align="end">
           <IconButton label="Restore defaults" icon={<ResetIcon />} onClick={resetAll} />
         </Tooltip>
       }
