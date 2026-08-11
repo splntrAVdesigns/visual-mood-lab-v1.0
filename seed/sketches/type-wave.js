@@ -1,11 +1,5 @@
 export const params = {
-  phrase:     { kind: 'select', label: 'Phrase', options: [
-                  { label: 'Mood', value: 'MOOD' },
-                  { label: 'Flux', value: 'FLUX' },
-                  { label: 'Glitch', value: 'GLTCH' },
-                  { label: 'Shift', value: 'SHIFT' },
-                  { label: 'Echo', value: 'ECHO' },
-                ], default: 'FLUX' },
+  text:       { kind: 'text', label: 'Text', default: 'FLUX', maxLength: 12, monospace: false, hint: 'Up to 12 characters.' },
   amplitude:  { kind: 'slider', label: 'Amplitude', min: 0, max: 120, step: 1, default: 40, modulatable: true },
   frequency:  { kind: 'slider', label: 'Frequency', min: 0.05, max: 2, step: 0.01, default: 0.35, modulatable: true },
   noiseAmt:   { kind: 'slider', label: 'Noise Amount', min: 0, max: 80, step: 1, default: 18 },
@@ -38,7 +32,8 @@ export default function sketch(p, get) {
       p.background(0);
     }
 
-    const phrase = String(get('phrase'));
+    const rawText = String(get('text') || '').trim();
+    const phrase = (rawText.slice(0, 12) || 'FLUX').toUpperCase();
     const amplitude = get('amplitude');
     const frequency = get('frequency');
     const noiseAmt = get('noiseAmt');
@@ -49,9 +44,19 @@ export default function sketch(p, get) {
 
     t += speed * 0.02;
 
-    const fontSize = Math.min(p.width, p.height) * 0.18;
+    let fontSize = Math.min(p.width, p.height) * 0.18;
     p.textSize(fontSize);
     p.textStyle(weight >= 700 ? p.BOLD : p.NORMAL);
+
+    // Custom text can run much longer than the original 4-5 letter presets —
+    // scale down if it would overflow the canvas width.
+    const maxWidth = p.width * 0.92;
+    const measuredWidth = p.textWidth(phrase);
+    if (measuredWidth > maxWidth) {
+      fontSize *= maxWidth / measuredWidth;
+      p.textSize(fontSize);
+    }
+
     p.fill(c);
 
     const totalWidth = p.textWidth(phrase);

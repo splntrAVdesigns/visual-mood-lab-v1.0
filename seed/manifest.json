@@ -6,91 +6,148 @@
       "type": "p5",
       "file": "sketches/type-wave.js",
       "title": "Type Wave",
-      "tags": ["typography", "kinetic", "text"]
+      "tags": [
+        "typography",
+        "kinetic",
+        "text"
+      ]
     },
     {
       "slug": "glyph-swarm",
       "type": "p5",
       "file": "sketches/glyph-swarm.js",
       "title": "Glyph Swarm",
-      "tags": ["typography", "kinetic", "particles", "text"]
+      "tags": [
+        "typography",
+        "kinetic",
+        "particles",
+        "text"
+      ]
     },
     {
       "slug": "digital-matrix",
-      "type": "shader",
-      "file": "shaders/digital-matrix.frag",
+      "type": "p5",
+      "file": "sketches/digital-matrix.js",
       "title": "Digital Matrix",
-      "tags": ["glyph", "columns", "generative"]
+      "tags": [
+        "glyph",
+        "columns",
+        "generative"
+      ]
     },
     {
       "slug": "acid-melt",
       "type": "shader",
       "file": "shaders/acid-melt.frag",
       "title": "Acid Melt",
-      "tags": ["psychedelic", "hue-shift", "kaleidoscope", "warp"]
+      "tags": [
+        "psychedelic",
+        "hue-shift",
+        "kaleidoscope",
+        "warp"
+      ]
     },
     {
       "slug": "hue-vortex",
       "type": "shader",
       "file": "shaders/hue-vortex.frag",
       "title": "Hue Vortex",
-      "tags": ["psychedelic", "hue-shift", "spiral", "glow"]
+      "tags": [
+        "psychedelic",
+        "hue-shift",
+        "spiral",
+        "glow"
+      ]
     },
     {
       "slug": "liquid-glass",
       "type": "shader",
       "file": "shaders/liquid-glass.frag",
-      "title": "Liquid Glass",
-      "tags": ["glass", "refraction", "fractal", "metaball"]
+      "title": "Liquid Blobs",
+      "tags": [
+        "glass",
+        "refraction",
+        "fractal",
+        "metaball",
+        "morph"
+      ]
     },
     {
       "slug": "cursor-ripple",
       "type": "p5",
       "file": "sketches/cursor-ripple.js",
       "title": "Cursor Ripple",
-      "tags": ["interactive", "particles", "motion"]
+      "tags": [
+        "interactive",
+        "particles",
+        "motion"
+      ]
     },
     {
       "slug": "gravity-lens-ascii",
       "type": "shader",
       "file": "shaders/gravity-lens-ascii.frag",
       "title": "Gravity Lens ASCII",
-      "tags": ["ascii", "glyph", "3d"]
+      "tags": [
+        "ascii",
+        "glyph",
+        "3d"
+      ]
     },
     {
       "slug": "language-decay",
       "type": "shader",
       "file": "shaders/language-decay.frag",
       "title": "Language Decay",
-      "tags": ["glyph", "generative", "organic"]
+      "tags": [
+        "glyph",
+        "generative",
+        "organic"
+      ]
     },
     {
       "slug": "chorus-of-eyes",
       "type": "p5",
       "file": "sketches/chorus-of-eyes.js",
       "title": "Chorus of Eyes",
-      "tags": ["interactive", "organic", "particles"]
+      "tags": [
+        "interactive",
+        "organic",
+        "particles"
+      ]
     },
     {
       "slug": "wound-thread",
-      "type": "shader",
-      "file": "shaders/wound-thread.frag",
+      "type": "p5",
+      "file": "sketches/wound-thread.js",
       "title": "Wound Thread",
-      "tags": ["organic", "generative", "minimal"]
+      "tags": [
+        "organic",
+        "generative",
+        "minimal"
+      ]
     },
     {
       "slug": "static-choir",
       "type": "p5",
       "file": "sketches/static-choir.js",
       "title": "Static Choir",
-      "tags": ["glow", "chaos", "motion"]
+      "tags": [
+        "glow",
+        "chaos",
+        "motion"
+      ]
     },
     {
       "slug": "orbit-debris",
       "type": "shader",
       "file": "shaders/orbit-debris.frag",
       "title": "Orbit Debris",
-      "tags": ["3d", "raymarch", "motion"]
+      "tags": [
+        "3d",
+        "raymarch",
+        "motion"
+      ]
     },
     {
       "slug": "gradient-grid",
@@ -634,6 +691,30 @@
         "minimal",
         "geometric",
         "motion"
+      ]
+    },
+    {
+      "slug": "field-lines",
+      "type": "shader",
+      "file": "shaders/field-lines.frag",
+      "title": "Field Lines",
+      "tags": [
+        "interactive",
+        "pointer",
+        "geometric",
+        "minimal"
+      ]
+    },
+    {
+      "slug": "ink-trail",
+      "type": "shader",
+      "file": "shaders/ink-trail.frag",
+      "title": "Ink Trail",
+      "tags": [
+        "interactive",
+        "pointer",
+        "feedback",
+        "fluid"
       ]
     }
   ]

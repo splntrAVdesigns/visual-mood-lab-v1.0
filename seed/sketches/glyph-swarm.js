@@ -1,23 +1,52 @@
 export const params = {
-  word:          { kind: 'select', label: 'Word', options: [
-                     { label: 'Drift', value: 'DRIFT' },
-                     { label: 'Bloom', value: 'BLOOM' },
-                     { label: 'Orbit', value: 'ORBIT' },
-                     { label: 'Split', value: 'SPLIT' },
-                   ], default: 'DRIFT' },
-  particleCount: { kind: 'stepper', label: 'Particle Count', min: 400, max: 3000, step: 100, default: 1400 },
-  cohesion:      { kind: 'slider', label: 'Cohesion', min: 0.01, max: 0.3, step: 0.005, default: 0.08, modulatable: true },
-  scatterForce:  { kind: 'slider', label: 'Scatter Force', min: 0, max: 8, step: 0.1, default: 2.5 },
+  text:          { kind: 'text', label: 'Word', default: 'BLOOM', maxLength: 12, hint: 'Up to 12 characters.' },
+  charSet:       { kind: 'select', label: 'Particle Glyph', options: [
+                     { label: 'Dot', value: 'DOT' },
+                     { label: 'Letters', value: 'LETTERS' },
+                     { label: 'Numbers', value: 'NUMBERS' },
+                     { label: 'Symbols', value: 'SYMBOLS' },
+                     { label: 'Mixed', value: 'MIXED' },
+                   ], default: 'DOT' },
+  particleCount: { kind: 'stepper', label: 'Particle Count', min: 400, max: 2500, step: 100, default: 1400 },
+  cohesion:      { kind: 'slider', label: 'Cohesion', min: 0.05, max: 1, step: 0.01, default: 0.4, modulatable: true, hint: 'How strongly particles pull toward the word shape.' },
+  scatterForce:  { kind: 'slider', label: 'Scatter Force', min: 0, max: 8, step: 0.1, default: 2.5, hint: 'Click and drag on the canvas to push particles apart.' },
   reformDelay:   { kind: 'slider', label: 'Reform Delay (s)', min: 0, max: 3, step: 0.1, default: 0.6 },
+  drift:         { kind: 'slider', label: 'Drift', min: 0, max: 1, step: 0.01, default: 0.15, hint: 'Constant small wobble once settled, so the word never goes fully static.' },
   tint:          { kind: 'color', label: 'Tint', default: { r: 1, g: 1, b: 1, a: 1 } },
 };
+
+const LETTER_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const NUMBER_CHARS = '0123456789';
+const SYMBOL_CHARS = '!@#$%&*+=<>/\\?';
+
+function glyphFor(charSet, particleSeed) {
+  if (charSet === 'DOT') return null;
+  let pool;
+  if (charSet === 'LETTERS') pool = LETTER_CHARS;
+  else if (charSet === 'NUMBERS') pool = NUMBER_CHARS;
+  else if (charSet === 'SYMBOLS') pool = SYMBOL_CHARS;
+  else pool = LETTER_CHARS + NUMBER_CHARS + SYMBOL_CHARS; // MIXED
+  return pool[Math.floor(particleSeed * pool.length) % pool.length];
+}
 
 export default function sketch(p, get) {
   let targets = [];
   let particles = [];
-  let lastDisturbTime = -999;
   let currentWord = '';
   let mask;
+
+  // Click-and-drag state — replaces the old "any mouse movement" disturb
+  // trigger, which misread ambient inspector interaction as a scatter
+  // gesture and kept the swarm from ever settling. See sprint notes.
+  let dragging = false;
+  let lastDisturbTime = -999;
+
+  // Debounces the particle-count rebuild so an in-progress slider drag
+  // (which can emit intermediate values before settling on a step) doesn't
+  // tear down and re-scatter the whole formation on every intermediate frame.
+  let pendingCount = null;
+  let pendingCountSince = 0;
+  const REBUILD_DEBOUNCE_MS = 220;
 
   function buildTargets(word) {
     const w = p.width;
@@ -27,9 +56,16 @@ export default function sketch(p, get) {
     mask.fill(255);
     mask.noStroke();
     mask.textAlign(p.CENTER, p.CENTER);
-    const fontSize = Math.min(w, h) * 0.22;
+    let fontSize = Math.min(w, h) * 0.22;
     mask.textSize(fontSize);
     mask.textStyle(p.BOLD);
+
+    const maxWidth = w * 0.9;
+    if (mask.textWidth(word) > maxWidth) {
+      fontSize *= maxWidth / mask.textWidth(word);
+      mask.textSize(fontSize);
+    }
+
     mask.text(word, w / 2, h / 2);
     mask.loadPixels();
 
@@ -53,6 +89,8 @@ export default function sketch(p, get) {
         vx: 0,
         vy: 0,
         targetIdx: targets.length ? Math.floor(p.random(targets.length)) : 0,
+        seed: Math.random(),
+        driftPhase: p.random(p.TWO_PI),
       });
     }
     return arr;
@@ -61,7 +99,8 @@ export default function sketch(p, get) {
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
     p.noStroke();
-    currentWord = String(get('word'));
+    p.textAlign(p.CENTER, p.CENTER);
+    currentWord = (String(get('text') || 'BLOOM').trim().slice(0, 12) || 'BLOOM').toUpperCase();
     targets = buildTargets(currentWord);
     particles = initParticles(get('particleCount'));
   };
@@ -71,41 +110,53 @@ export default function sketch(p, get) {
     targets = buildTargets(currentWord);
   };
 
-  p.mouseMoved = () => {
-    lastDisturbTime = p.millis() / 1000;
-  };
-  p.touchMoved = () => {
-    lastDisturbTime = p.millis() / 1000;
-    return false;
-  };
+  p.mousePressed = () => { dragging = true; };
+  p.mouseReleased = () => { dragging = false; };
+  p.mouseDragged = () => { lastDisturbTime = p.millis() / 1000; };
+  p.touchStarted = () => { dragging = true; lastDisturbTime = p.millis() / 1000; return false; };
+  p.touchEnded = () => { dragging = false; return false; };
+  p.touchMoved = () => { lastDisturbTime = p.millis() / 1000; return false; };
 
   p.draw = () => {
-    const word = String(get('word'));
+    const rawText = String(get('text') || 'BLOOM').trim();
+    const word = (rawText.slice(0, 12) || 'BLOOM').toUpperCase();
     if (word !== currentWord) {
       currentWord = word;
       targets = buildTargets(currentWord);
     }
 
-    const wantCount = get('particleCount');
-    if (particles.length !== wantCount) {
-      particles = initParticles(wantCount);
+    const wantCount = Math.round(get('particleCount') / 100) * 100;
+    if (wantCount !== particles.length) {
+      const now = p.millis();
+      if (pendingCount !== wantCount) {
+        pendingCount = wantCount;
+        pendingCountSince = now;
+      } else if (now - pendingCountSince > REBUILD_DEBOUNCE_MS) {
+        particles = initParticles(wantCount);
+        pendingCount = null;
+      }
+    } else {
+      pendingCount = null;
     }
 
+    const charSet = get('charSet');
     const cohesion = get('cohesion');
     const scatterForce = get('scatterForce');
     const reformDelay = get('reformDelay');
+    const drift = get('drift');
     const tint = get('tint');
     const c = p.color(tint.r * 255, tint.g * 255, tint.b * 255, 255);
 
     p.background(0);
 
     const nowSec = p.millis() / 1000;
-    const disturbedRecently = nowSec - lastDisturbTime < reformDelay;
+    const disturbedRecently = dragging || (nowSec - lastDisturbTime < reformDelay);
 
     const px = p.touches.length ? p.touches[0].x : p.mouseX;
     const py = p.touches.length ? p.touches[0].y : p.mouseY;
 
     p.fill(c);
+
     for (const particle of particles) {
       if (targets.length) {
         const target = targets[particle.targetIdx];
@@ -118,8 +169,20 @@ export default function sketch(p, get) {
           particle.vx += (dx / Math.sqrt(distSq)) * force * 0.02;
           particle.vy += (dy / Math.sqrt(distSq)) * force * 0.02;
         } else {
-          particle.vx += (target.x - particle.x) * cohesion * 0.1;
-          particle.vy += (target.y - particle.y) * cohesion * 0.1;
+          // No hidden internal multiplier on cohesion any more — the old
+          // 0.01-0.3 slider range times an internal *0.1 compressed almost
+          // the whole range into visually indistinguishable territory.
+          particle.vx += (target.x - particle.x) * cohesion * 0.02;
+          particle.vy += (target.y - particle.y) * cohesion * 0.02;
+
+          if (drift > 0) {
+            const settled = Math.hypot(target.x - particle.x, target.y - particle.y) < 6;
+            if (settled) {
+              particle.driftPhase += 0.03 + particle.seed * 0.02;
+              particle.vx += Math.cos(particle.driftPhase) * drift * 0.15;
+              particle.vy += Math.sin(particle.driftPhase * 1.3) * drift * 0.15;
+            }
+          }
         }
       }
 
@@ -128,7 +191,15 @@ export default function sketch(p, get) {
       particle.x += particle.vx;
       particle.y += particle.vy;
 
-      p.circle(particle.x, particle.y, 2.2);
+      if (charSet === 'DOT') {
+        p.circle(particle.x, particle.y, 2.2);
+      } else {
+        const glyph = glyphFor(charSet, particle.seed);
+        p.push();
+        p.textSize(7);
+        p.text(glyph, particle.x, particle.y);
+        p.pop();
+      }
     }
   };
 }

@@ -10,6 +10,7 @@ uniform int u_pieces;         // @label(Debris Pieces) @range(2, 8) @default(5)
 uniform float u_orbitRadius;  // @label(Orbit Radius) @range(0.5, 3) @default(1.6)
 uniform float u_decayRate;    // @label(Decay Rate) @range(0, 1) @default(0.06) @mod
 uniform float u_tumbleSpeed;  // @label(Tumble Speed) @range(0, 2) @default(0.7) @mod
+uniform int u_debrisType;     // @label(Debris Type) @select(Boxes=0 | Shards=1 | Rings=2 | Mixed=3) @default(0)
 uniform vec3 u_debrisColor;   // @label(Debris Color) @color @default(0.55, 0.6, 0.65)
 
 out vec4 fragColor;
@@ -26,6 +27,16 @@ mat3 rotY(float a) {
 float sdBox(vec3 p, vec3 b) {
   vec3 q = abs(p) - b;
   return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+}
+
+// A thin, elongated box — reads as a jagged shard rather than a block.
+float sdShard(vec3 p, vec3 b) {
+  return sdBox(p, vec3(b.x * 2.2, b.y * 0.35, b.z * 0.35));
+}
+
+float sdTorus(vec3 p, float r1, float r2) {
+  vec2 q = vec2(length(p.xz) - r1, p.y);
+  return length(q) - r2;
 }
 
 float hash11(float p) {
@@ -51,7 +62,22 @@ float map(vec3 p) {
     vec3 size = vec3(0.12 + 0.06 * hash11(fi + 1.0),
                       0.08 + 0.05 * hash11(fi + 2.0),
                       0.1 + 0.04 * hash11(fi + 3.0));
-    d = min(d, sdBox(lp, size));
+
+    int shapeType = u_debrisType;
+    if (u_debrisType == 3) { // Mixed — pick per piece
+      float r = hash11(fi + 9.0);
+      shapeType = r < 0.34 ? 0 : (r < 0.67 ? 1 : 2);
+    }
+
+    float pieceDist;
+    if (shapeType == 1) {
+      pieceDist = sdShard(lp, size);
+    } else if (shapeType == 2) {
+      pieceDist = sdTorus(lp, size.x * 1.1, size.y * 0.5);
+    } else {
+      pieceDist = sdBox(lp, size);
+    }
+    d = min(d, pieceDist);
   }
   return d;
 }

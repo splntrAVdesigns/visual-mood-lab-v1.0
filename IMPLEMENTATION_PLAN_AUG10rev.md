@@ -1,7 +1,7 @@
 # Visual Mood Lab — Implementation Plan
 
-**Status:** Phases 0–4 shipped and stabilized; app chrome unified across routes and an About page added (§7 Phase 4.5) — Phase 5 (Playground) is next, see rationale in §7
-**Last updated:** 2026-08-10 (rev 5 — Phase 0–4 checklists reconciled with actual shipped state; §7 Phase 4.5 added; Phase 5 rationale added; §8 revision note; §15 auth-pivot and mobile-snapshot-priority entries added)
+**Status:** Phases 0–4 shipped and stabilized; app chrome unified across routes and an About page added (§7 Phase 4.5); seed library expanded to 63 assets and a board-sync gap found and fixed (§7 Phase 4.6) — Phase 5 (Playground) is next, see rationale in §7
+**Last updated:** 2026-08-10 (rev 6 — §7 Phase 4.6 added: seed library 50→63, board-item backfill bug found and fixed; §8 real uniform annotation syntax, GLSL→control-kind mapping, reserved-uniform list, and corrected `manifest.json` schema documented for the first time, plus the rev 6 asset batch itemized; §15 data-layer entry added)
 
 ---
 
@@ -270,6 +270,15 @@ Not on the original roadmap — surfaced from actually using the app on a phone 
 
 **Why this matters for what's next:** the chrome is no longer board-specific. Playground, whenever it lands as its own route, gets the same header/drawer/hero for free instead of needing its own copy — this phase is partly what makes Phase 5 cheaper to ship correctly the first time.
 
+### Phase 4.6 — Seed library expansion & board-sync fix (unplanned, completed 2026-08-10)
+
+Prep work ahead of Phase 5, prompted directly by early user feedback: the library needed more range before Playground's "fork an existing asset" flow inherits it as the starting fixture set.
+
+- [x] Seed library grown 50 → 63 — 8 new shaders, 5 new p5 sketches. See §8 for the full list, and for the uniform-annotation syntax, GLSL→control-kind mapping, and `manifest.json` schema, all documented in full for the first time.
+- [x] Found and fixed a real data-layer bug surfaced by the expansion: new library assets weren't reaching existing accounts' boards. See §15 for the full root-cause writeup.
+
+**Why this matters for what's next:** Playground's "fork an existing asset" and "live-parsed uniform annotations → controls appear as you type" both depend on §8's syntax and mapping tables being accurate — this phase is what makes them a reliable reference instead of something to reverse-engineer from `parse-uniforms.ts` mid-build. It also means the next seed batch (there will be one) shouldn't need this same debugging cycle again.
+
 ### Phase 5 — Playground (est. 1.5 weeks) ← **next**
 
 > **Why this is next, not Canvas mode or Export:**
@@ -305,7 +314,7 @@ Not on the original roadmap — surfaced from actually using the app on a phone 
 
 Twenty hand-authored assets were originally planned: 10 GLSL shaders and 10 p5.js sketches. Image and video assets are uploaded manually by the owner.
 
-> **Revision note (rev 5):** the shipped library grew well past this — 21 shaders / 29 sketches, 50 total. The tables below are the original planning set only; the additional ~30 assets aren't itemized here since their concepts and control coverage weren't tracked in this document as they were added. Worth backfilling if this doc is going to keep being the source of truth for what the seed set actually exercises.
+> **Revision note (rev 6):** now at 29 shaders / 34 sketches, 63 total. The Shader set / Sketch set tables below are still the original 20-asset planning set only; the ~43 assets added since aren't fully itemized here, except the 13 from the most recent batch (see "Assets added in the rev 6 batch" below), since that batch's authoring conventions are documented in full for the first time in this revision. Worth backfilling the rest if this doc is going to keep being the source of truth for what the seed set actually exercises.
 
 ### Why this is not a Phase 6 nice-to-have
 
@@ -351,7 +360,105 @@ export default function sketch(p, get) {
 
 A plain JS object, not a comment DSL — it is real code, type-checkable against `Control`, and requires no second parser to write and test.
 
-### Shader set (original 10 — see revision note above for the full 21)
+### Uniform annotation syntax & control mapping (documented in full, rev 6)
+
+Not previously written down anywhere outside `lib/gl/parse-uniforms.ts` itself — the gap that caused the rev 6 batch's first draft to invent a different, non-functional syntax. Real syntax, confirmed against the parser and the existing `kaleidoscope-wire.frag` / `mandelbrot.frag` assets:
+
+```glsl
+uniform float u_density;   // @label(Density) @range(1, 64) @default(12) @log
+uniform vec3  u_tint;      // @label(Tint) @color @default(0.0, 0.83, 1.0)
+uniform int   u_mode;      // @label(Mode) @select(Grid=0 | Halftone=1 | Dither=2) @default(0)
+uniform vec2  u_center;    // @label(Centre) @range(-1, 1) @default(0.0, 0.0) @group(Composition)
+uniform bool  u_invert;    // @label(Invert) @default(true)
+uniform sampler2D u_src;   // @label(Source)
+```
+
+| Tag | Meaning |
+|---|---|
+| `@label(Text)` | display name |
+| `@group(Text)` | drawer section |
+| `@hint(Text)` | help text |
+| `@unit(px)` | suffix on the numeric readout |
+| `@range(min, max)` | numeric bounds |
+| `@default(a[, b, c])` | initial value |
+| `@step(n)` | slider increment |
+| `@select(A=0 \| B=1)` | dropdown — only valid on `int`/`float`/`uint` |
+| `@color` | force vec3/vec4 to a color picker |
+| `@log` | logarithmic slider |
+| `@advanced` | hide behind the Advanced disclosure |
+| `@hidden` | parse but don't expose a control |
+| `@mod` / `@nomod` | force modulation eligibility on/off |
+
+**GLSL type → control kind:**
+
+| GLSL type | Control kind | Note |
+|---|---|---|
+| `float` | slider | |
+| `int` / `uint` | stepper | **Not `float`** — declaring a stepper-intended param as `float` silently becomes a slider instead |
+| `bool` | toggle | |
+| `vec2` | xy | |
+| `vec3` | color or vec3 | color if the name matches `/color\|colour\|tint\|rgb\|albedo\|hue\|palette\|ink\|paint/i` or `@color` is given, else a raw 3-axis control |
+| `vec4` | color (always, alpha included) | |
+| `sampler2D` | texture | supports `allowSelf` for feedback (see `feedback-trails`) |
+| `mat*`, `sampler3D`, `samplerCube`, arrays, `bvec*` | unsupported | parser warns and skips |
+
+**Reserved uniforms** (`DEFAULT_RESERVED` — host-driven, never annotate, never name-collide):
+
+```
+u_time, u_delta, u_frame, u_resolution, u_mouse, u_pointer, u_seed,
+u_pixelRatio, u_aspect, u_hasSource, u_prevFrame, u_backbuffer,
+u_audio, u_audioTexture, u_bass, u_mid, u_high, u_rms, u_fft,
+iTime, iTimeDelta, iFrame, iResolution, iMouse, iDate,
+iChannel0, iChannel1, iChannel2, iChannel3, iChannelTime,
+time, resolution, mouse
+```
+
+A control-annotated uniform that collides with one of these is silently swallowed at runtime with no error surfaced anywhere — this is the Noise Field `u_mid`/`u_high` failure mode already noted in the parser's own source comments. `verify-seed.ts` catches it as a warning; never ignore that warning.
+
+Worth knowing and not previously written down: `u_pointer` and `u_mouse` are already host-fed. A shader gets live pointer/touch position for free — no renderer-contract work required to add pointer-following effects.
+
+**p5 `select` params** need `{label, value}` option objects, not plain strings — `options: ['MOOD', 'FLUX']` fails `verify-seed.ts` with "default X is not among its options" even when the default is visibly in the array, because there's no `.value` for the check to match against on a bare string:
+
+```js
+phrase: { kind: 'select', options: [
+  { label: 'Mood', value: 'MOOD' },
+  { label: 'Flux', value: 'FLUX' },
+], default: 'FLUX' }
+```
+
+**`manifest.json` schema, corrected** — the `# title, tags, poster hints, default params` comment in the directory tree above (§8, "Where they live") is inaccurate. The real shape:
+
+```json
+{
+  "slug": "digital-matrix",
+  "type": "shader",
+  "file": "shaders/digital-matrix.frag",
+  "title": "Digital Matrix",
+  "tags": ["glyph", "columns", "generative"]
+}
+```
+
+`type` is `"shader"` or `"p5"` — not `"sketch"`. `file` is relative to `seed/`. There is no `posterHint` or `defaultParams` field; posters are generated at ingest, not manifest-declared.
+
+### Assets added in the rev 6 batch
+
+| Slug | Type | Concept |
+|---|---|---|
+| `digital-matrix` | shader | Matrix-style code rain — procedural glyph cells, per-column scroll and character churn |
+| `acid-melt` | shader | Domain-warped fbm, kaleidoscope fold, continuous hue rotation |
+| `hue-vortex` | shader | Spiral hue rotation with banded, glow-like radial trails |
+| `liquid-glass` | shader | Self-animating metaball blob refracted through a glass surface, fractal reflections via domain fold |
+| `gravity-lens-ascii` | shader | Procedural-glyph starfield, gravitationally lensed around a moving singularity |
+| `language-decay` | shader | Time-varying fbm banding read as alien glyphs eroding and reforming |
+| `wound-thread` | shader | Branching SDF vein/thread growth, slow heartbeat-like pulse |
+| `orbit-debris` | shader | Raymarched tumbling box fragments in slow orbital decay |
+| `type-wave` | p5 | Kinetic typography — text baseline distorted along an animated sine/noise field |
+| `glyph-swarm` | p5 | Particle swarm that scatters and reforms into a word, pointer-disturbed |
+| `cursor-ripple` | p5 | Expanding ripple rings following pointer/touch |
+| `chorus-of-eyes` | p5 | Field of eyes tracking the pointer, blinking asynchronously |
+| `static-choir` | p5 | CRT static bands merged with an LFO-driven abstract waveform |
+
+### Shader set (original 10 — see revision note above for the full 29)
 
 | # | Slug | Concept | Control kinds exercised |
 |---|---|---|---|
@@ -548,6 +655,10 @@ A cluster of regressions surfaced after the auth work landed — fullscreen, upl
 - **Uploads succeeding but the resulting URL failing to load:** the app was guessing the public URL's domain (`blob.vercel-storage.com`) rather than reading Vercel's actual store-specific URL (`<storeId>.public.blob.vercel-storage.com`) from the PUT response body. Fixed by reading the real URL from the response instead of constructing one.
 - **No way to delete an uploaded asset:** `DELETE /api/assets/:id` didn't exist (405). Added, with best-effort non-fatal storage cleanup and a delete affordance in the focused-asset header, gated to `image`/`svg`/`video` types (never a seed asset, so this can't target shared library content without a separate ownership flag).
 - **Library-asset poster capture always 404ing:** the poster-capture route required exact ownership match, but shared library assets (e.g. `strange-attractor`) are owned by a fixed library account, not the viewer. Real captured posters are meant to be a shared upgrade. Added `loadPosterWritable()` in `app/api/assets/[id]/route.ts`, used only by the `POST` (poster) handler — `PATCH` (params) and `DELETE` remain strictly own-only.
+
+### Data layer — seed/board sync (rev 6 addition)
+
+- **New library assets invisible on existing accounts' boards after a seed run:** `assets` and `board_items` are two separate tables (see `lib/data/assets.ts`'s own header comment). `npm run seed` / `/api/seed` only upserts into `assets`, owned by the fixed `LIBRARY_OWNER_ID`. A brand-new account's board clones the full library into `board_items` exactly once, on its first `getOrCreateDefaultBoard()` call — an account that already existed before a seed batch landed never re-triggers that clone, so newly seeded assets are real, correctly-seeded rows that are simply never linked into that account's board. Confirmed before touching any code: `SELECT count(*) FROM assets` matched the new total (63); `SELECT count(*) FROM board_items WHERE board_id = '<affected board>'` was still stuck at the old total (50). **Fix:** `getOrCreateDefaultBoard` now diffs the library's item set against the current board's item set on every call — rather than only backfilling when the board has zero items — and inserts whatever's missing. Since this function already runs on every board page load, an existing board now self-heals to match the library the next time that account simply opens the app, with no manual step required going forward. A one-time manual backfill (`INSERT ... ON CONFLICT DO NOTHING` copying every row from `board_items` where `board_id = 'default:library'` into every other board missing it) was used to unblock already-affected accounts immediately, ahead of the code fix reaching production — worth keeping as a documented fallback if the self-heal path is ever found not to fire (e.g. a board reached through some path that bypasses `getOrCreateDefaultBoard`).
 
 ### Sketch defaults
 

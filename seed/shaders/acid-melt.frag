@@ -11,6 +11,7 @@ uniform float u_hueSpeed;    // @label(Hue Speed) @range(-2, 2) @default(0.35) @
 uniform int u_segments;      // @label(Kaleidoscope Segments) @range(2, 16) @default(6)
 uniform float u_scale;       // @label(Scale) @range(0.5, 6) @default(2.2)
 uniform vec3 u_baseColor;    // @label(Base Color) @color @default(1.0, 0.2, 0.8)
+uniform vec3 u_secondaryColor; // @label(Secondary Color) @color @default(0.1, 0.6, 1.0)
 
 out vec4 fragColor;
 
@@ -71,7 +72,8 @@ void main() {
 
   float hue = fract(field + u_time * u_hueSpeed + rad * 0.3);
   vec3 hsvColor = hsv2rgb(vec3(hue, 0.85, 1.0));
-  vec3 col = mix(hsvColor, u_baseColor, 0.15) * hsvColor;
+  vec3 duotone = mix(u_baseColor, u_secondaryColor, smoothstep(0.0, 1.0, field));
+  vec3 col = mix(hsvColor, duotone, 0.5) * (0.6 + 0.4 * hsvColor);
 
   fragColor = vec4(col, 1.0);
 }
