@@ -129,33 +129,36 @@ export async function getOrCreateDefaultBoard(ownerId: string): Promise<string> 
     await db.insert(schema.boards).values({ id, ownerId, title: 'My Board' });
   }
 
-  // Backfill condition is "this board currently has zero items", not "this
-  // board row didn't exist yet". A real account's board can end up created-
-  // but-empty if sign-in ever happened before the library was seeded (which
-  // is exactly what happened in dev: the auth bug got fixed and tested
-  // against accounts that had already had `getOrCreateDefaultBoard` called
-  // against them pre-seed). Checking item count instead of row existence
-  // makes this self-healing for that case instead of leaving a permanently
-  // empty board behind. Skipped for the library's own board, same as
-  // before — it can't clone into itself before it has any items.
+  // Backfill compares the library's item set against this board's item
+  // set and inserts whatever's missing, rather than only checking "does
+  // this board have zero items". A real account's board can end up
+  // created-but-empty if sign-in ever happened before the library was
+  // seeded (which is exactly what happened in dev: the auth bug got fixed
+  // and tested against accounts that had already had
+  // `getOrCreateDefaultBoard` called against them pre-seed) — the diff
+  // approach still covers that case (empty board == everything missing)
+  // but also covers a board that already has some items and the library
+  // later gains more (a seed batch after the account already existed).
+  // Skipped for the library's own board, same as before — it can't clone
+  // into itself before it has any items.
   if (ownerId !== LIBRARY_OWNER_ID) {
-    const currentItems = await db
-      .select({ id: schema.boardItems.id })
+    const libraryBoardId = `${DEFAULT_BOARD_ID}:${LIBRARY_OWNER_ID}`;
+    const libraryItems = await db
+      .select()
       .from(schema.boardItems)
-      .where(eq(schema.boardItems.boardId, id))
-      .limit(1);
+      .where(eq(schema.boardItems.boardId, libraryBoardId))
+      .orderBy(asc(schema.boardItems.order));
 
-    if (!currentItems.length) {
-      const libraryBoardId = `${DEFAULT_BOARD_ID}:${LIBRARY_OWNER_ID}`;
-      const libraryItems = await db
-        .select()
-        .from(schema.boardItems)
-        .where(eq(schema.boardItems.boardId, libraryBoardId))
-        .orderBy(asc(schema.boardItems.order));
+    const currentItems = await db
+      .select({ assetId: schema.boardItems.assetId })
+      .from(schema.boardItems)
+      .where(eq(schema.boardItems.boardId, id));
+    const ownedAssetIds = new Set(currentItems.map((i) => i.assetId));
 
-      for (const item of libraryItems) {
-        await ensureCanonicalBoardItem(id, item.assetId, item.order);
-      }
+    let nextOrder = currentItems.length;
+    for (const item of libraryItems) {
+      if (ownedAssetIds.has(item.assetId)) continue;
+      await ensureCanonicalBoardItem(id, item.assetId, nextOrder++);
     }
   }
 
