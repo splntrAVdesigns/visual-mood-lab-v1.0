@@ -34,6 +34,8 @@ export default function sketch(p, get) {
   let particles = [];
   let currentWord = '';
   let mask;
+  let lastW = 0;
+  let lastH = 0;
 
   // Click-and-drag state — replaces the old "any mouse movement" disturb
   // trigger, which misread ambient inspector interaction as a scatter
@@ -102,20 +104,17 @@ export default function sketch(p, get) {
     p.noStroke();
     p.textAlign(p.CENTER, p.CENTER);
     currentWord = (String(get('text') || 'BLOOM').trim().slice(0, 12) || 'BLOOM').toUpperCase();
+    lastW = p.width;
+    lastH = p.height;
     targets = buildTargets(currentWord);
     particles = initParticles(get('particleCount'));
   };
 
+  // Kept as a fast-path for genuine browser window resizes, but this is no
+  // longer the only way a size change gets picked up — see the per-frame
+  // check in draw() below.
   p.windowResized = () => {
     p.resizeCanvas(p.windowWidth, p.windowHeight);
-    targets = buildTargets(currentWord);
-    // Rebuilding only `targets` and leaving `particles` alone left every
-    // particle's targetIdx pointing at a position computed for the old
-    // canvas size — on any resize (including the Inspector drawer opening
-    // and resizing the board viewport under a focused sketch) that showed
-    // up as the whole word looking scattered/broken until the next word
-    // change happened to trigger a real rebuild.
-    particles = initParticles(get('particleCount'));
   };
 
   p.mousePressed = () => { dragging = true; };
@@ -126,6 +125,22 @@ export default function sketch(p, get) {
   p.touchMoved = () => { lastDisturbTime = p.millis() / 1000; return false; };
 
   p.draw = () => {
+    // p.windowResized only fires on a genuine browser `window resize`
+    // event. Entering Fullscreen apparently resizes this sketch's canvas
+    // through the host/sandbox bridge directly (a postMessage-driven call
+    // rather than a native resize event), which never triggers that
+    // callback — so `targets`/`particles`, computed for the old canvas
+    // size, went stale and the word rendered stretched across the new,
+    // much larger canvas. Checking the actual dimensions every frame
+    // instead of trusting the callback makes this correct regardless of
+    // which mechanism actually changed the size.
+    if (p.width !== lastW || p.height !== lastH) {
+      lastW = p.width;
+      lastH = p.height;
+      targets = buildTargets(currentWord);
+      particles = initParticles(get('particleCount'));
+    }
+
     const rawText = String(get('text') || 'BLOOM').trim();
     const word = (rawText.slice(0, 12) || 'BLOOM').toUpperCase();
     if (word !== currentWord) {

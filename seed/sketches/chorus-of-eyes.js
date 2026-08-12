@@ -8,6 +8,8 @@ export const params = {
 
 export default function sketch(p, get) {
   let eyes = [];
+  let lastW = 0;
+  let lastH = 0;
 
   function buildEyes(density) {
     const arr = [];
@@ -37,15 +39,24 @@ export default function sketch(p, get) {
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
     p.noStroke();
+    lastW = p.width;
+    lastH = p.height;
     eyes = buildEyes(get('gridDensity'));
   };
 
+  // Kept as a fast-path for genuine browser window resizes — see
+  // glyph-swarm.js for why this can't be the only trigger.
   p.windowResized = () => {
     p.resizeCanvas(p.windowWidth, p.windowHeight);
-    eyes = buildEyes(get('gridDensity'));
   };
 
   p.draw = () => {
+    if (p.width !== lastW || p.height !== lastH) {
+      lastW = p.width;
+      lastH = p.height;
+      eyes = buildEyes(get('gridDensity'));
+    }
+
     const density = get('gridDensity');
     if (eyes.length && Math.abs(Math.sqrt(eyes.length) - density) > 1) {
       eyes = buildEyes(density);

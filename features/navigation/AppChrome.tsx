@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Dialog, Field, Select, Toggle } from '@/components/ui';
+import { Button, Dialog, Field, Select, Toggle, useTooltipsEnabled } from '@/components/ui';
 import { useBoardStore, useInspectorStore, usePlaybackStore, MAX_LIVE_RENDERERS } from '@/stores';
 import type { Asset } from '@/types/asset';
 import type { User } from '@/lib/auth';
@@ -108,6 +108,7 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
   const audioEnabled = usePlaybackStore((st) => st.audioEnabled);
   const setAudioEnabled = usePlaybackStore((st) => st.setAudioEnabled);
   const reducedMotion = usePlaybackStore((st) => st.reducedMotion);
+  const [tooltipsEnabled, setTooltipsEnabled] = useTooltipsEnabled();
 
   return (
     <Dialog
@@ -150,6 +151,13 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
         hint="Follows your system preference. Pauses all animation when on."
       >
         <Toggle label="Reduced motion" checked={reducedMotion} disabled onChange={() => {}} />
+      </Field>
+
+      <Field
+        label="Tooltips"
+        hint="Hover hints on icon buttons across the app. Off by default on every platform."
+      >
+        <Toggle label="Tooltips" checked={tooltipsEnabled} onChange={setTooltipsEnabled} />
       </Field>
 
       <div style={{ marginTop: 'var(--space-4)' }}>

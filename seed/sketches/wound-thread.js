@@ -140,6 +140,8 @@ export default function sketch(p, get) {
   let targets = [];
   let currentShape = '';
   let currentCount = 0;
+  let lastW = 0;
+  let lastH = 0;
 
   function buildTargets(shape, count, w, h) {
     if (shape === 'FREE') return null;
@@ -168,16 +170,29 @@ export default function sketch(p, get) {
     p.noFill();
     currentShape = get('shape');
     currentCount = Math.round(get('pointCount'));
+    lastW = p.width;
+    lastH = p.height;
     targets = buildTargets(currentShape, currentCount, p.width, p.height);
     points = buildPoints(currentCount, targets, p.width, p.height);
   };
 
+  // Kept as a fast-path for genuine browser window resizes — see the
+  // per-frame check in draw() for why it can't be the only trigger
+  // (Fullscreen apparently resizes this canvas through a path that
+  // doesn't fire this callback; see glyph-swarm.js for the fuller
+  // writeup of the same bug).
   p.windowResized = () => {
     p.resizeCanvas(p.windowWidth, p.windowHeight);
-    targets = buildTargets(currentShape, currentCount, p.width, p.height);
   };
 
   p.draw = () => {
+    if (p.width !== lastW || p.height !== lastH) {
+      lastW = p.width;
+      lastH = p.height;
+      targets = buildTargets(currentShape, currentCount, p.width, p.height);
+      points = buildPoints(currentCount, targets, p.width, p.height);
+    }
+
     const shape = get('shape');
     const wantCount = Math.round(get('pointCount'));
 
