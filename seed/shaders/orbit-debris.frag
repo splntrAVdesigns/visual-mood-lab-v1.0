@@ -71,9 +71,9 @@ float sdPeace(vec3 p, float scale) {
   float vert = sdSegment2D(p.xy, vec2(0.0, -scale), vec2(0.0, scale)) - scale * 0.1;
   float diagA = sdSegment2D(p.xy, vec2(0.0, 0.0), vec2(-scale * 0.75, -scale * 0.65)) - scale * 0.1;
   float diagB = sdSegment2D(p.xy, vec2(0.0, 0.0), vec2(scale * 0.75, -scale * 0.65)) - scale * 0.1;
-  float flat = min(ring, min(vert, min(diagA, diagB)));
+  float flatDist = min(ring, min(vert, min(diagA, diagB)));
   float zSlab = abs(p.z) - scale * 0.16;
-  return max(flat, zSlab);
+  return max(flatDist, zSlab);
 }
 
 // Three small spheres in a triangular arrangement — reads as a futuristic

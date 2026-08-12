@@ -16,12 +16,16 @@ export const params = {
 
 export default function sketch(p, get) {
   let lastX = null, lastY = null;
-  let lastMoveTime = 0;
   let curlPhase = 0;
 
-  function inside() {
-    return p.mouseX > 0 && p.mouseX < p.width && p.mouseY > 0 && p.mouseY < p.height;
-  }
+  // Native DOM events on the canvas element rather than polling p.mouseX/
+  // p.mouseY boundary checks every frame — reliable regardless of exactly
+  // how the pointer leaves the canvas (e.g. moving straight into the
+  // Inspector drawer sitting right next to it), which is what caused the
+  // ink to visibly stick at the last real cursor position instead of
+  // handing off to the idle drift.
+  let overCanvas = false;
+  let driftBlend = 0; // 0 = following the real cursor, 1 = fully on the idle path
 
   function dab(x, y, size, dispersion, color) {
     const rings = 4;
@@ -40,6 +44,8 @@ export default function sketch(p, get) {
     p.createCanvas(p.windowWidth, p.windowHeight);
     p.noStroke();
     p.background(0);
+    p.canvas.addEventListener('pointerenter', () => { overCanvas = true; });
+    p.canvas.addEventListener('pointerleave', () => { overCanvas = false; });
   };
 
   p.windowResized = () => {
@@ -61,20 +67,28 @@ export default function sketch(p, get) {
     p.rect(0, 0, p.width, p.height);
 
     const t = p.millis() * 0.001;
-    let tx, ty;
-    const idleFor = p.millis() - lastMoveTime;
 
-    if (inside() || (!autoDrift && idleFor < 400)) {
+    const idleX = p.width / 2 + Math.cos(t * 0.3) * p.width * 0.22;
+    const idleY = p.height / 2 + Math.sin(t * 0.42) * p.height * 0.2;
+
+    let tx, ty;
+    if (!autoDrift) {
+      tx = overCanvas ? p.mouseX : p.width / 2;
+      ty = overCanvas ? p.mouseY : p.height / 2;
+      driftBlend = 0;
+    } else if (overCanvas) {
       tx = p.mouseX;
       ty = p.mouseY;
-      lastMoveTime = p.millis();
-    } else if (autoDrift) {
-      // Never fully dead as a thumbnail — drifts a gentle curling loop.
-      tx = p.width / 2 + Math.cos(t * 0.3) * p.width * 0.22;
-      ty = p.height / 2 + Math.sin(t * 0.42) * p.height * 0.2;
+      driftBlend = 0;
     } else {
-      tx = p.width / 2;
-      ty = p.height / 2;
+      // Ramp smoothly onto the idle path over ~0.8s instead of snapping —
+      // this is the actual fix for the "sticks at the last spot" report.
+      // lastX/lastY (the real last cursor position) is always where the
+      // blend starts from, so there's never a jump.
+      driftBlend = Math.min(1, driftBlend + 1 / 48);
+      const eased = driftBlend * driftBlend * (3 - 2 * driftBlend); // smoothstep
+      tx = p.lerp(lastX ?? idleX, idleX, eased);
+      ty = p.lerp(lastY ?? idleY, idleY, eased);
     }
 
     curlPhase += 0.02 + flowSpeed * 0.03;

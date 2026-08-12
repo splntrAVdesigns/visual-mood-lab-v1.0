@@ -38,7 +38,7 @@ export const capabilitiesCopy = {
     { key: 'code assets', detail: 'shaders & sketches saved as real, editable text \u2014 not baked into an image', status: 'live' },
     { key: 'snapshots', detail: 'save a param state as a new board item', status: 'live' },
     { key: 'modulation', detail: 'LFO bank + live audio input (coming soon), routed per control', status: 'live' },
-    { key: 'library', detail: '21 shaders \u00b7 29 sketches, seeded', status: 'live' },
+    { key: 'library', detail: 'Over 50+ shaders & sketches, seeded, to explore', status: 'live' },
     { key: 'auth', detail: 'accounts, saved boards', status: 'live' },
     { key: 'deep-links', detail: '/asset/[id] \u2014 share one tuned look', status: 'live' },
   ] satisfies ManifestRow[],

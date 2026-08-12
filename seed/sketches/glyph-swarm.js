@@ -40,6 +40,7 @@ export default function sketch(p, get) {
   // gesture and kept the swarm from ever settling. See sprint notes.
   let dragging = false;
   let lastDisturbTime = -999;
+  let lastCharSet = null;
 
   // Debounces the particle-count rebuild so an in-progress slider drag
   // (which can emit intermediate values before settling on a step) doesn't
@@ -108,6 +109,13 @@ export default function sketch(p, get) {
   p.windowResized = () => {
     p.resizeCanvas(p.windowWidth, p.windowHeight);
     targets = buildTargets(currentWord);
+    // Rebuilding only `targets` and leaving `particles` alone left every
+    // particle's targetIdx pointing at a position computed for the old
+    // canvas size — on any resize (including the Inspector drawer opening
+    // and resizing the board viewport under a focused sketch) that showed
+    // up as the whole word looking scattered/broken until the next word
+    // change happened to trigger a real rebuild.
+    particles = initParticles(get('particleCount'));
   };
 
   p.mousePressed = () => { dragging = true; };
@@ -140,6 +148,14 @@ export default function sketch(p, get) {
     }
 
     const charSet = get('charSet');
+    if (lastCharSet !== null && charSet !== lastCharSet) {
+      // Reuse the same scatter/reform mechanism a word change already
+      // gets, so switching glyph style visibly reforms instead of just
+      // silently swapping every particle's rendered character in place.
+      lastDisturbTime = p.millis() / 1000;
+    }
+    lastCharSet = charSet;
+
     const cohesion = get('cohesion');
     const scatterForce = get('scatterForce');
     const reformDelay = get('reformDelay');
