@@ -50,6 +50,7 @@
  */
 
 import { getAudioContext, getMasterGain, unlockAudio } from './context';
+import { BandAutoGain } from './autoGain';
 
 /* ------------------------------------------------------------------ *
  * Limits
@@ -150,20 +151,14 @@ interface TrackHandle {
   /** Held peak-with-decay for getTrackLevel(), mirroring meter.ts's own
       algorithm for the synth engine — see that function's doc. */
   level: number;
-  /** Held peak-with-decay PER BAND, for getTrackBand()'s auto-gain — see
-      that function's doc for why this exists. Independent of `level`
-      above: `level` is a single whole-signal meter reading, this tracks
-      each band's own recent loudness so bass/mid/high normalize against
-      their own dynamics rather than one shared ceiling (bass is
-      naturally much louder in raw magnitude than high, for most music —
-      a single shared peak would leave high permanently reading near-
-      zero). */
-  bandPeaks: Record<TrackBand, number>;
-  /** Wall-clock ms this band's peak was last updated — per band, not
-      shared, so getTrackBand() calls for different bands on the same
-      frame (or skipped frames for a band nobody's currently routed to)
-      each decay against their own true elapsed time. */
-  bandPeakTick: Record<TrackBand, number>;
+  /** Auto-gain state for getTrackBand() — see lib/sound/autoGain.ts's
+      doc for why this exists and why it's one instance per card rather
+      than shared: each card's track has its own dynamics, so each needs
+      its own peak history (bass is naturally much louder in raw
+      magnitude than high, for most music — a single shared peak across
+      bands, or across cards, would leave the quieter ones permanently
+      reading near-zero). */
+  bandGain: BandAutoGain<TrackBand>;
   source: AudioBufferSourceNode | null; // null while paused/stopped
   playing: boolean;
   loop: boolean;
@@ -353,7 +348,6 @@ export async function loadTrack(
   tapGain.connect(waveAnalyser);
 
   const title = titleFromFilename(file.name);
-  const now = performance.now();
   const handle: TrackHandle = {
     buffer,
     title,
@@ -364,8 +358,7 @@ export async function loadTrack(
     waveAnalyser,
     waveBuffer: new Float32Array(waveAnalyser.fftSize) as Float32Array<ArrayBuffer>,
     level: 0,
-    bandPeaks: { rms: 0, bass: 0, mid: 0, high: 0 },
-    bandPeakTick: { rms: now, bass: now, mid: now, high: now },
+    bandGain: new BandAutoGain<TrackBand>(),
     source: null,
     playing: false,
     loop: true, // a board tile's track is a bed, not a one-shot — loop by default
@@ -622,48 +615,20 @@ function refresh(handle: TrackHandle): Float32Array<ArrayBuffer> {
   return handle.freqData;
 }
 
-/** How fast a band's auto-gain peak falls back toward 0, in units per
-    second — deliberately much slower than LEVEL_DECAY_PER_SECOND below.
-    That constant holds a peak for a visual meter, where a quick decay
-    reads as responsive; this one sets the CEILING that modulation depth
-    is measured against, and a ceiling that resets every beat would chase
-    the music's own dynamics rather than exposing them — every note would
-    briefly clip to "loudest thing ever," flattening exactly the swings
-    modulation is supposed to make visible. Slow enough to track a song's
-    verse/chorus loudness change, not its individual transients. */
-const BAND_PEAK_DECAY_PER_SECOND = 0.15;
-
-/** Auto-gain floor. Without this, a genuinely quiet passage (peak near 0)
-    divides a small `raw` by an equally small `peak`, and the ratio comes
-    out noisy and close to 1 — silence would read as "fully modulated"
-    the instant literally anything registers above the noise floor. This
-    keeps quiet material reading as quiet, and only lets true loudness
-    fully collapse the ceiling toward 1. Same 0..1 normalized units as
-    the band values themselves (see refresh()'s /255 normalization). */
-const BAND_PEAK_FLOOR = 0.05;
-
-function clamp01(n: number): number {
-  return n < 0 ? 0 : n > 1 ? 1 : n;
-}
-
 /**
  * 0..1 scalar for one band, read by lib/modulation/bus.ts. Returns null
  * for a card with no track loaded (NOT 0) so the caller can fall back to
  * the existing neutral-0.5 "no modulation" behavior rather than reading
  * an audio source as permanently silent.
  *
- * Auto-gained against this band's own recent peak (see BAND_PEAK_DECAY_
- * PER_SECOND / BAND_PEAK_FLOOR above) before returning. Without this, the
- * raw byte-frequency average for typical music sits low and fairly flat
- * — nowhere near the 0..1 swing an LFO source produces — so a control
- * routed to Audio and cranked to max Amount still barely visibly moved,
- * even though applyModulation() in control-schema.ts applies the exact
- * same math to every source. The signal itself needed the dynamic range,
- * not the application of it. Rescaling per-band, per-card, against a
- * slow-decaying peak means a track's own quiet-to-loud dynamics stretch
- * back out toward the full range regardless of the track's absolute
- * loudness, without a fixed multiplier that would either do nothing for
- * a quiet recording or clip constantly on a loud one.
+ * Auto-gained against this band's own recent peak before returning — see
+ * lib/sound/autoGain.ts's doc for why. Without this, the raw byte-
+ * frequency average for typical music sits low and fairly flat — nowhere
+ * near the 0..1 swing an LFO source produces — so a control routed to
+ * Audio and cranked to max Amount still barely visibly moved, even
+ * though applyModulation() in control-schema.ts applies the exact same
+ * math to every source. The signal itself needed the dynamic range, not
+ * the application of it.
  */
 export function getTrackBand(cardId: string, band: TrackBand): number | null {
   const handle = tracks.get(cardId);
@@ -675,14 +640,7 @@ export function getTrackBand(cardId: string, band: TrackBand): number | null {
   for (let i = from; i < end; i++) sum += data[i];
   const raw = sum / Math.max(end - from, 1);
 
-  const now = performance.now();
-  const dt = Math.max(0, (now - handle.bandPeakTick[band]) / 1000);
-  handle.bandPeakTick[band] = now;
-  const decayed = handle.bandPeaks[band] * Math.max(0, 1 - BAND_PEAK_DECAY_PER_SECOND * dt);
-  const peak = Math.max(raw, decayed, BAND_PEAK_FLOOR);
-  handle.bandPeaks[band] = peak;
-
-  return clamp01(raw / peak);
+  return handle.bandGain.apply(band, raw);
 }
 
 /** The full 64-bin array, in the shape renderers/types.ts's

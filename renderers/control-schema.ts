@@ -49,6 +49,7 @@ export type GlslType =
 export type ModSource =
   | 'time'
   | 'audio.rms' | 'audio.bass' | 'audio.mid' | 'audio.high'
+  | 'mic.rms' | 'mic.bass' | 'mic.mid' | 'mic.high'
   | 'lfo.sine' | 'lfo.triangle' | 'lfo.saw' | 'lfo.noise'
   | 'pointer.x' | 'pointer.y'
   | 'midi.cc';

@@ -13,6 +13,7 @@ import type { AssetRenderer, CaptureOpts, Quality, RenderContext } from './types
 import { setTileHovering, pluckTileAudio, setTileEnergy, isTileAudioActive } from '@/lib/sound/engine';
 import { getWaveform } from '@/lib/sound/meter';
 import { hasTrack, getTrackWaveform } from '@/lib/sound/track';
+import { isMicEnabled, getMicWaveform } from '@/lib/sound/mic';
 
 /**
  * Runs a p5 sketch inside a sandboxed iframe.
@@ -265,17 +266,24 @@ export class P5Renderer implements AssetRenderer {
     // Forward this card's own live audio, if anything is actually driving
     // it — generic plumbing any sketch can opt into via
     // p.getAudioWaveform() in the sandbox, not something specific to any
-    // one sketch. Two possible sources as of Phase 4.9: an uploaded track
-    // (lib/sound/track.ts) or the tile's own synth preset
-    // (lib/sound/meter.ts's shared analyser tap) — a track takes priority
-    // when both are present, same as pool.ts's per-card ctx.audio
-    // resolution, since loading a track is the more deliberate, more
-    // recent choice. `enabled` is sent explicitly rather than inferred
+    // one sketch. Three possible sources as of Phase 4.9.2: an uploaded
+    // track (lib/sound/track.ts), the shared mic input (lib/sound/mic.ts),
+    // or the tile's own synth preset (lib/sound/meter.ts's shared
+    // analyser tap) — Track > Mic > synth preset, same priority order
+    // pool.ts's per-card ctx.audio resolution uses, since loading a track
+    // is the most deliberate, most recent choice, mic is "react to
+    // whatever's happening right now," and the synth preset is the
+    // ambient default. `enabled` is sent explicitly rather than inferred
     // from the buffer, per the protocol doc.
     const trackActive = hasTrack(this.cardId);
-    const synthActive = isTileAudioActive(this.cardId);
-    if (trackActive || synthActive) {
-      const waveform = trackActive ? getTrackWaveform(this.cardId) : getWaveform(this.cardId);
+    const micActive = !trackActive && isMicEnabled(this.cardId);
+    const synthActive = !trackActive && !micActive && isTileAudioActive(this.cardId);
+    if (trackActive || micActive || synthActive) {
+      const waveform = trackActive
+        ? getTrackWaveform(this.cardId)
+        : micActive
+          ? getMicWaveform()
+          : getWaveform(this.cardId);
       this.send({ type: 'audioWaveform', enabled: true, waveform: waveform ?? undefined });
       this.lastAudioActiveSent = true;
     } else if (this.lastAudioActiveSent !== false) {

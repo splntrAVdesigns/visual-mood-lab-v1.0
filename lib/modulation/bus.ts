@@ -1,5 +1,6 @@
 import type { Modulation, ModSource } from '@/renderers/control-schema';
 import { getTrackBand, type TrackBand } from '@/lib/sound/track';
+import { getMicBand, type MicBand } from '@/lib/sound/mic';
 
 /**
  * Visual Mood Lab — the modulation bus.
@@ -9,16 +10,29 @@ import { getTrackBand, type TrackBand } from '@/lib/sound/track';
  * they only can if they read a single shared time value rather than each
  * keeping its own.
  *
- * Audio sources (Phase 4.9) are the one exception to "every card reads the
- * same value from the same source" above, deliberately: each is resolved
- * PER CARD, against that card's own uploaded track (lib/sound/track.ts),
- * not a single board-wide feed. Two cards routed to `audio.bass` react to
- * two different tracks, or one reacts and the other doesn't, depending on
- * what's loaded on each. That's why `sample()` and `rawSignal()` both take
- * a `cardId` now — every other source ignores it. A card with no track
- * loaded still resolves to the neutral 0.5 ("no modulation") that audio and
- * MIDI sources both returned before this file changed, so nothing about a
- * routing set up on a track-less card is different from before.
+ * Audio sources (Phase 4.9) are one exception to "every card reads the
+ * same value from the same source" above: each `audio.*` source is
+ * resolved PER CARD, against that card's own uploaded track
+ * (lib/sound/track.ts), not a single board-wide feed. Two cards routed to
+ * `audio.bass` react to two different tracks, or one reacts and the other
+ * doesn't, depending on what's loaded on each. That's why `sample()` and
+ * `rawSignal()` both take a `cardId` — every non-audio, non-mic source
+ * ignores it.
+ *
+ * mic.* sources (Phase 4.9.2) are the OPPOSITE exception: unlike audio.*,
+ * every card reading a mic.* source DOES read the same value, because
+ * there is only one physical microphone — lib/sound/mic.ts holds one
+ * shared stream for the whole app, not one per card (see that file's top
+ * doc). `cardId` is still threaded through to getMicBand() for interface
+ * symmetry with getTrackBand() and so a future per-card mic gain/mute
+ * could be added without changing this call site again, but the current
+ * implementation ignores it.
+ *
+ * A card with no track loaded, or with Mic not enabled anywhere, still
+ * resolves to the neutral 0.5 ("no modulation") that audio, mic, and MIDI
+ * sources all returned before this file changed, so nothing about a
+ * routing set up on a track-less/mic-disabled card is different from
+ * before.
  *
  * midi.cc remains genuinely unimplemented — no device negotiation exists
  * yet — so it alone still carries `pending: true` in MOD_SOURCES below.
@@ -115,6 +129,20 @@ class ModulationBus {
         return value ?? 0.5;
       }
 
+      case 'mic.rms':
+      case 'mic.bass':
+      case 'mic.mid':
+      case 'mic.high': {
+        const band = mod.source.slice('mic.'.length) as MicBand;
+        // cardId is threaded through for interface symmetry with
+        // getTrackBand() (see this file's top doc) — the shared mic
+        // implementation doesn't currently use it.
+        const value = getMicBand(band);
+        // null (not 0) means "Mic isn't enabled anywhere" — same neutral-
+        // centre fallback as audio.* above, for the same reason.
+        return value ?? 0.5;
+      }
+
       default:
         // midi.cc only, at this point — genuinely unimplemented, no device
         // negotiation exists yet. Same neutral-centre fallback.
@@ -174,6 +202,14 @@ export interface ModSourceOption {
       Kept as metadata here rather than hardcoding the four audio values
       at the call site, same reasoning as `hasRate` below. */
   requiresTrack?: boolean;
+  /** Only meaningful for mic.* sources. Same mechanism as requiresTrack
+      above, gated on useMicEnabled instead — disables the option with
+      "— enable mic" until Mic is actually on for the open card. Gated
+      per-card even though the underlying stream is shared app-wide (see
+      lib/sound/mic.ts's top doc): a routing on a card that's never
+      turned Mic on should still read as unavailable, not silently active
+      because some OTHER card happens to have it enabled. */
+  requiresMic?: boolean;
   /** Whether a rate control is meaningful for this source. */
   hasRate?: boolean;
 }
@@ -190,6 +226,10 @@ export const MOD_SOURCES: ModSourceOption[] = [
   { value: 'audio.bass', label: 'Audio — Bass', requiresTrack: true },
   { value: 'audio.mid', label: 'Audio — Mid', requiresTrack: true },
   { value: 'audio.high', label: 'Audio — High', requiresTrack: true },
+  { value: 'mic.rms', label: 'Mic — Level', requiresMic: true },
+  { value: 'mic.bass', label: 'Mic — Bass', requiresMic: true },
+  { value: 'mic.mid', label: 'Mic — Mid', requiresMic: true },
+  { value: 'mic.high', label: 'Mic — High', requiresMic: true },
   { value: 'midi.cc', label: 'MIDI CC', pending: true },
 ];
 

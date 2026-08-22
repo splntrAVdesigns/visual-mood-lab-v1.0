@@ -7,6 +7,7 @@ import { MAX_LIVE_RENDERERS } from '@/stores/playbackStore';
 import { normalizeSoundState } from '@/lib/sound/types';
 import { startTileAudio, stopTileAudio, stopAllTileAudio, updateTileAudio, isTileAudioActive, retriggerTileAudio } from '@/lib/sound/engine';
 import { unloadTrack, getTrackFrequencyData } from '@/lib/sound/track';
+import { disableMic, getMicFrequencyData, isMicEnabled } from '@/lib/sound/mic';
 import { HEARTBEAT_TIMEOUT_MS } from '@/lib/sandbox/protocol';
 
 /**
@@ -274,6 +275,13 @@ class RendererPool {
     // past the card that owns them, same reasoning as stopTileAudio just
     // above for the synth engine.
     unloadTrack(cardId);
+    // Releases this card's claim on the shared mic stream (Phase 4.9.2)
+    // — see lib/sound/mic.ts's ref-counting doc. A card scrolled off or
+    // evicted under budget that never explicitly turned Mic off would
+    // otherwise hold that ref forever, keeping the shared stream (and the
+    // browser's mic-in-use indicator) alive with nothing left actually
+    // reading it.
+    disableMic(cardId);
 
     entry.controller.abort();
     entry.renderer.dispose();
@@ -538,11 +546,21 @@ class RendererPool {
         // This card's own uploaded track (Phase 4.9) takes priority when
         // present — see lib/sound/track.ts's file doc for why RenderContext
         // is no longer genuinely board-wide despite the interface's older
-        // "shared analyser" comment. Falls back to `this.audio`, which
-        // remains the board-wide feed the interface originally described
-        // (always null today — nothing calls setAudio() yet) so a card
-        // with no track behaves exactly as before this change.
-        audio: getTrackFrequencyData(entry.cardId) ?? this.audio,
+        // "shared analyser" comment. Mic (Phase 4.9.2) is second priority:
+        // an explicitly loaded track is the more deliberate choice, mic is
+        // "react to whatever's happening right now." getMicFrequencyData()
+        // alone isn't enough to gate on — it returns real data whenever the
+        // SHARED stream is live for ANY card (see lib/sound/mic.ts's top
+        // doc), so without the isMicEnabled(entry.cardId) check here, a
+        // card that never turned Mic on would start silently reacting to
+        // it the instant some OTHER card did. Falls back to `this.audio`,
+        // the board-wide feed the interface originally described (always
+        // null today — nothing calls setAudio() yet) so a card with none
+        // of the three behaves exactly as before any of this existed.
+        audio:
+          getTrackFrequencyData(entry.cardId) ??
+          (isMicEnabled(entry.cardId) ? getMicFrequencyData() : null) ??
+          this.audio,
       };
 
       const modulated = this.applyModulation(entry);

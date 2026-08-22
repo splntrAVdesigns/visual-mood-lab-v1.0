@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { Button, Field, IconButton, Select, Slider, formatValue } from '@/components/ui';
 import { CloseIcon, ChevronDownIcon, ChevronRightIcon } from '@/components/ui';
 import { MOD_SOURCES, sourceMeta } from '@/lib/modulation/bus';
-import { useTrackLoaded } from '@/lib/hooks/useTrackState';
+import { useTrackLoaded, useMicEnabled } from '@/lib/hooks/useTrackState';
 import { RateStrip } from './controls/RateStrip';
 import type { Control, Modulation, ModSource } from '@/renderers/control-schema';
 import { useInspectorStore } from '@/stores';
@@ -15,7 +15,10 @@ interface ModulationPanelProps {
   /** Which card's routings these are — needed as of Phase 4.9 to know
       whether THIS card has a track loaded, since audio.* sources are
       resolved per-card (see lib/modulation/bus.ts's class doc) rather
-      than being globally available the moment they're implemented. */
+      than being globally available the moment they're implemented.
+      Phase 4.9.2 adds mic.* alongside it, gated the same way per-card
+      even though the underlying stream is shared app-wide — see
+      lib/sound/mic.ts's top doc. */
   itemId: string;
   onClose: () => void;
   /**
@@ -49,6 +52,7 @@ const DEFAULT_MOD: Modulation = { source: 'lfo.sine', amount: 0.3, rate: 0.4, sm
 export function ModulationPanel({ controls, itemId, onClose, embedded = false }: ModulationPanelProps) {
   const mod = useInspectorStore((st) => st.mod);
   const trackLoaded = useTrackLoaded(itemId);
+  const micEnabled = useMicEnabled(itemId);
   const [expanded, setExpanded] = useState<string | null>(controls[0]?.id ?? null);
   const [collapsed, setCollapsed] = useState(false);
 
@@ -64,6 +68,7 @@ export function ModulationPanel({ controls, itemId, onClose, embedded = false }:
           control={control}
           active={mod[control.id]}
           trackLoaded={trackLoaded}
+          micEnabled={micEnabled}
           expanded={expanded === control.id}
           onToggleExpand={() => setExpanded((e) => (e === control.id ? null : control.id))}
         />
@@ -96,6 +101,7 @@ function ModRow({
   control,
   active,
   trackLoaded,
+  micEnabled,
   expanded,
   onToggleExpand,
 }: {
@@ -105,6 +111,10 @@ function ModRow({
       itemId doc. Only changes which audio.* options are selectable; every
       other source's availability is unaffected. */
   trackLoaded: boolean;
+  /** Whether THIS card has Mic toggled on — see ModulationPanelProps'
+      itemId doc. Only changes which mic.* options are selectable, same
+      relationship trackLoaded has to audio.* above. */
+  micEnabled: boolean;
   expanded: boolean;
   onToggleExpand: () => void;
 }) {
@@ -139,11 +149,18 @@ function ModRow({
                   ? `${o.label} — soon`
                   : o.requiresTrack && !trackLoaded
                     ? `${o.label} — load a track`
-                    : o.label,
+                    : o.requiresMic && !micEnabled
+                      ? `${o.label} — enable mic`
+                      : o.label,
               }))}
               onChange={(v) => {
                 const opt = MOD_SOURCES.find((o) => o.value === (v as ModSource));
-                if (opt?.pending || (opt?.requiresTrack && !trackLoaded)) return;
+                if (
+                  opt?.pending ||
+                  (opt?.requiresTrack && !trackLoaded) ||
+                  (opt?.requiresMic && !micEnabled)
+                )
+                  return;
                 update({ source: v as ModSource });
               }}
             />

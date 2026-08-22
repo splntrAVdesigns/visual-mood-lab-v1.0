@@ -4,12 +4,13 @@ import { useState } from 'react';
 import { Button, ChevronDownIcon, ChevronRightIcon, CloseIcon, Field, IconButton, Select, Slider, Toggle } from '@/components/ui';
 import { getPool } from '@/lib/render/pool';
 import { unlockAudio } from '@/lib/sound/context';
+import { enableMic, disableMic } from '@/lib/sound/mic';
 import { getCompatiblePresets } from '@/lib/sound/presets';
 import { WAVE_SHAPE_CONTROL_ID, lfoShapeToWaveShapeValue } from '@/lib/sound/types';
 import { SoundMeter } from './SoundMeter';
 import { TrackSection } from './TrackSection';
 import { NoteRack } from './controls/NoteRack';
-import { useTrackLoaded } from '@/lib/hooks/useTrackState';
+import { useTrackLoaded, useMicEnabled } from '@/lib/hooks/useTrackState';
 import type { ControlSchema, LfoShape, MusicalScale, SoundState } from '@/renderers/control-schema';
 import { useInspectorStore } from '@/stores';
 import s from '../features.module.css';
@@ -71,6 +72,39 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
   // that full-height stacking was the actual "panel too tall" problem,
   // not spacing, so this collapses it rather than just tightening gaps.
   const trackLoaded = useTrackLoaded(itemId);
+  // Phase 4.9.2: Mic, unlike Track, is deliberately NOT mutually exclusive
+  // with the synth preset or Track itself — see lib/sound/mic.ts's top doc
+  // for why (analysis-only, never touches output, so it never competes for
+  // the card's one Volume control the way Track and the preset do with
+  // each other). That's why this toggle appears in every branch below
+  // rather than being folded into the trackLoaded-disables-everything
+  // logic the Sound/Humanize/Swing toggles already have.
+  const micEnabled = useMicEnabled(itemId);
+  const [micError, setMicError] = useState<string | null>(null);
+  const micField = (
+    <Field label="Mic">
+      <span title="Lets Modulate react to your live microphone input. Audio is analyzed only — never recorded or sent anywhere.">
+        <Toggle
+          label="Mic"
+          checked={micEnabled}
+          onChange={(enabled) => {
+            if (enabled) {
+              // Requested the instant the toggle is tapped, not behind an
+              // extra confirmation step first — same immediate, gesture-
+              // driven pattern iOS Safari already requires elsewhere in
+              // this app, and the browser's own native permission prompt
+              // is the trust boundary here, not a second app-level one in
+              // front of it.
+              void enableMic(itemId).then((result) => setMicError(result.ok ? null : result.error));
+            } else {
+              disableMic(itemId);
+              setMicError(null);
+            }
+          }}
+        />
+      </span>
+    </Field>
+  );
   const activePresetId = sound.presetId ?? presets[0]?.id ?? null;
   const activePreset = presets.find((p) => p.id === activePresetId) ?? presets[0];
   const hasLfo = activePreset?.bindings.some((b) => b.target === 'lfoRate' || b.target === 'lfoDepth') ?? false;
@@ -133,6 +167,8 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
             <Toggle label="Sound" checked={sound.enabled} disabled onChange={() => {}} />
           </Field>
 
+          {micField}
+
           <Field label="Humanize">
             <Toggle label="Humanize" checked={sound.humanize} disabled onChange={() => {}} />
           </Field>
@@ -151,22 +187,35 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
       // Tier 2 (no compatible preset at all — hasModulatableControls is
       // what got this asset into the panel in the first place, per the
       // presets.length === 0 branch below). Nothing to disable and no
-      // "built-in sound" to point back to, so just the live Meter, on
-      // its own rather than inside the four-across toggle row shape that
-      // implies siblings that don't exist here.
+      // "built-in sound" to point back to, so just Mic and the live
+      // Meter, rather than the four-across toggle row shape that implies
+      // siblings that don't exist here.
       <div className={s.soundToggleRow}>
+        {micField}
+
         <Field label="Meter">
           <SoundMeter itemId={itemId} />
         </Field>
       </div>
     )
   ) : presets.length === 0 ? (
-    // Only the fully-empty case (no preset AND nothing modulatable, i.e.
-    // TrackSection didn't render either) gets this notice — a Tier 2
-    // asset with modulatable controls but no preset has Track to offer
-    // instead, and showing this text above it would read as a
-    // contradiction of what's sitting right there.
-    !hasModulatableControls && <p className={s.notice}>No sound preset is available for this asset yet.</p>
+    hasModulatableControls ? (
+      // Tier 2, no track loaded yet — Mic is still available as an
+      // independent way to drive Modulate before/without ever uploading
+      // a track, same reasoning as the trackLoaded Tier-2 branch above.
+      <div className={s.soundToggleRow}>
+        {micField}
+
+        <Field label="Meter">
+          <SoundMeter itemId={itemId} />
+        </Field>
+      </div>
+    ) : (
+      // The fully-empty case (no preset AND nothing modulatable, i.e.
+      // TrackSection didn't render either, i.e. no home for Mic here
+      // either) gets this notice.
+      <p className={s.notice}>No sound preset is available for this asset yet.</p>
+    )
   ) : (
     <>
       <div className={s.soundToggleRow}>
@@ -180,6 +229,8 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
             }}
           />
         </Field>
+
+        {micField}
 
         <Field label="Humanize">
           <span title={humanizeHint}>
@@ -340,6 +391,11 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
         <TrackSection itemId={itemId} schema={schema} />
       )}
       {presetSection}
+      {/* One shared location for Mic's error regardless of which of the
+          three toggle-row branches above is currently rendering — same
+          reasoning as keeping micField itself as a single JSX constant
+          rather than three copies. */}
+      {hasModulatableControls && micError && <p className={s.trackError}>{micError}</p>}
     </div>
   );
 
