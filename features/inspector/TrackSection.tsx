@@ -35,7 +35,16 @@ interface TrackSectionProps {
   schema: ControlSchema;
 }
 
-const ACCEPT = 'audio/*';
+// A bare 'audio/*' MIME wildcard is not reliably recognized by iOS
+// Safari's native file-picker action sheet — instead of routing to the
+// audio-appropriate picker, it falls back to the generic media sheet
+// (Photo Library / Take Video / Choose File), which reads as if audio
+// uploads are broken even though "Choose File" → Browse still correctly
+// filters to audio once you get there. Pairing the wildcard with
+// explicit extensions gives WebKit unambiguous type hints and is the
+// standard mitigation for this. Desktop/Chrome already handle the bare
+// wildcard fine — this is additive, not a behavior change there.
+const ACCEPT = 'audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.aif,.aiff';
 
 function formatDuration(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
