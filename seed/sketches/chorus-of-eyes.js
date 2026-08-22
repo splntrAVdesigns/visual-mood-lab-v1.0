@@ -94,6 +94,12 @@ export default function sketch(p, get) {
       if (!eye.blinking && eye.blinkTimer > eye.nextBlink) {
         eye.blinking = true;
         eye.blinkTimer = 0;
+        // The blink itself is the trigger — a discrete, per-eye
+        // false-to-true transition, the same shape as field-lines.js's
+        // line-crossing graze. Position maps to pitch the same way: each
+        // eye plays its own note when it blinks, left-low/right-high
+        // across the grid.
+        if (typeof p.pluck === 'function') p.pluck(eye.x / p.width);
       }
       let blinkAmount = 0;
       if (eye.blinking) {

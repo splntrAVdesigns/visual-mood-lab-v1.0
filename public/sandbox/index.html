@@ -62,6 +62,14 @@
   // "the host never sent anything," instead of firing unconditionally and
   // racing it. See the case 'resize' handler for the full story.
   var lastHostResizeAt = 0;
+  // Live audio bridge — see lib/sandbox/protocol.ts's audioWaveform doc.
+  // audioEnabled mirrors the host's isTileAudioActive() for this card;
+  // audioWaveform is the current time-domain buffer, or null whenever
+  // audioEnabled is false (never a stale buffer left over from before
+  // sound was switched off — the 'audioWaveform' case below clears it
+  // explicitly on every message, not just when a new buffer arrives).
+  var audioEnabled = false;
+  var audioWaveform = null;
 
   /*
    * Pixel density is the difference between a smooth thumbnail and a
@@ -179,6 +187,47 @@
 
     try {
       instance = new p5(function (p) {
+        // Discrete trigger events a sketch fires itself, as opposed to the
+        // continuous per-frame state (params, pointer position) it reads
+        // via get(). Field Lines' graze-to-pluck is the first user: the
+        // sketch already knows, per frame, which lines the cursor is
+        // actually crossing — that's a one-shot event, not a value to
+        // poll, so it gets its own call rather than being smuggled into a
+        // param. x is normalized 0..1 across the tile; what it means
+        // (pitch, in Field Lines' case) is entirely the host's business —
+        // this bridge doesn't know or care.
+        p.pluck = function (x) {
+          post({ type: 'pluck', x: x });
+        };
+
+        // Continuous interaction-intensity bridge, for tiles whose sound
+        // should respond to how much the user is currently disturbing
+        // them rather than playing continuously — see
+        // lib/sandbox/protocol.ts's `energy` doc. Unlike p.pluck, this
+        // isn't a discrete event: a sketch calls it every draw() frame
+        // with its own current 0..1 value (Wound Thread: smoothed
+        // physics-sim velocity), and the host decides what to do with a
+        // steady stream of updates rather than a one-off. Clamped here
+        // so a sketch bug (an unclamped computation, a stray NaN) can't
+        // send something nonsensical downstream.
+        p.setEnergy = function (v) {
+          var n = typeof v === 'number' && isFinite(v) ? v : 0;
+          post({ type: 'energy', energy: n < 0 ? 0 : n > 1 ? 1 : n });
+        };
+
+        // Live audio bridge: returns the card's own current time-domain
+        // waveform (roughly -1..1) while its sound engine is running, or
+        // null otherwise — see lib/sandbox/protocol.ts's audioWaveform
+        // doc. A sketch that wants a real audio-driven trace (Static
+        // Choir) checks this every draw() and falls back to its own
+        // generated visual when it's null, exactly like it always did
+        // before this bridge existed. Returns the live buffer directly,
+        // not a copy — cheap, and fine as long as callers only read it;
+        // a sketch should treat the returned array as read-only.
+        p.getAudioWaveform = function () {
+          return audioEnabled ? audioWaveform : null;
+        };
+
         // Run the sketch factory, which assigns p.setup / p.draw.
         var wrapped = factory(p, get);
         if (typeof wrapped === 'function') wrapped(p, get);
@@ -323,26 +372,8 @@
      * does here.
      */
     var canvas = document.querySelector('canvas');
-    // DIAGNOSTIC — temporary, paired with the two logs above.
-    console.warn('[diag] canvas after run()', {
-      exists: !!canvas,
-      w: canvas ? canvas.width : null,
-      h: canvas ? canvas.height : null,
-    });
     if (canvas) {
       canvas.addEventListener('webglcontextlost', function (ev) {
-        // DIAGNOSTIC — temporary. The resize debounce alone didn't resolve
-        // the fullscreen render failure, so rather than guess again, log
-        // directly on the events themselves to see what's actually
-        // happening: does loss fire at all, and at what canvas size?
-        console.warn('[diag] webglcontextlost', {
-          canvasW: canvas.width,
-          canvasH: canvas.height,
-          clientW: canvas.clientWidth,
-          clientH: canvas.clientHeight,
-          fullscreenElement: !!document.fullscreenElement,
-          t: performance.now(),
-        });
         // preventDefault() is not optional — without it the browser
         // assumes the page has no recovery story and will never fire
         // webglcontextrestored at all, per the WebGL spec.
@@ -354,8 +385,6 @@
       }, false);
 
       canvas.addEventListener('webglcontextrestored', function () {
-        // DIAGNOSTIC — temporary, paired with the log above.
-        console.warn('[diag] webglcontextrestored', { t: performance.now() });
         var now = performance.now();
         // A genuine one-off loss (a fullscreen transition, a GPU driver
         // hiccup) recovers here cleanly. But each live WEBGL-mode p5
@@ -386,6 +415,23 @@
         lastRecoveryAt = now;
         run(lastSource);
       }, false);
+
+      // Pointer presence, forwarded to the host for interaction-gated sound
+      // presets (Field Lines' arp only plays while genuinely hovered — see
+      // lib/sound/engine.ts's setTileHovering()). Same reasoning as the key
+      // forwarding below: this cross-origin iframe's own hover state never
+      // reaches the host on its own. Attached here rather than at load for
+      // the same reason the context-loss listeners are — teardown() removes
+      // the canvas and run() creates a fresh one every time, so a listener
+      // bound once at load would be watching a detached element after the
+      // first re-run. Works for both 2D and WEBGL canvases alike, unlike
+      // the context-loss listeners above which only apply to WEBGL.
+      canvas.addEventListener('pointerenter', function () {
+        post({ type: 'hover', hovering: true });
+      });
+      canvas.addEventListener('pointerleave', function () {
+        post({ type: 'hover', hovering: false });
+      });
     }
 
     post({ type: 'ready' });
@@ -442,6 +488,10 @@
         if (instance && instance.pixelDensity) {
           try { instance.pixelDensity(densityFor(quality, window.innerWidth, window.innerHeight)); } catch (e) { /* ignore */ }
         }
+        break;
+      case 'audioWaveform':
+        audioEnabled = !!msg.enabled;
+        audioWaveform = audioEnabled ? (msg.waveform || null) : null;
         break;
       case 'play': paused = false; if (instance && instance.loop) instance.loop(); break;
       case 'pause': paused = true; break;

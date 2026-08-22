@@ -18,6 +18,7 @@ import { runMigrations } from '../lib/db/migrate';
 import { ingestAsset } from '../lib/ingest/ingest';
 import { LIBRARY_OWNER_ID } from '../lib/data/assets';
 import { paramsToSchema } from '../lib/sketch/params-to-schema';
+import type { ControlSchema } from '../renderers/control-schema';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SEED = join(ROOT, 'seed');
@@ -70,10 +71,21 @@ async function main(): Promise<void> {
 
     try {
       // Sketches are imported so the real params object is used rather than
-      // the conservative source-scrape the upload path has to rely on.
+      // the conservative source-scrape the upload path has to rely on. The
+      // resulting schema is now actually passed into ingestAsset (below) —
+      // it used to be computed here just for these warnings and then
+      // discarded, with ingestAsset silently re-deriving its own copy via
+      // the regex-based extractParamsLiteral. That extractor corrupts any
+      // hint/label containing an apostrophe (a blind `'` → `"` replace), so
+      // a sketch could ingest with a silently empty schema — no warning
+      // here, since this warnings-only call still succeeded on the real
+      // object; the corruption only happened in ingestAsset's separate,
+      // now-unused-for-this-path derivation.
+      let precomputedSchema: ControlSchema | undefined;
       if (entry.type === 'p5') {
         const mod = (await import(pathToFileURL(path).href)) as { params?: unknown };
-        const { warnings } = paramsToSchema(mod.params, { schemaId: `sketch:${entry.slug}` });
+        const { schema, warnings } = paramsToSchema(mod.params, { schemaId: `sketch:${entry.slug}` });
+        precomputedSchema = schema;
         for (const w of warnings) {
           if (w.level === 'warn') allWarnings.push(`${entry.slug}: ${w.message}`);
         }
@@ -87,6 +99,7 @@ async function main(): Promise<void> {
         source,
         seedSlug: entry.slug,
         boardOrder: manifest.assets.indexOf(entry),
+        ...(precomputedSchema !== undefined ? { precomputedSchema } : {}),
       });
 
       allWarnings.push(...res.warnings);

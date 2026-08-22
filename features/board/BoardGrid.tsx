@@ -8,6 +8,7 @@ import { openAssetById, recordRecentlyViewed } from './openAsset';
 import { RecentlyViewed } from './RecentlyViewed';
 import { Snapshots } from './Snapshots';
 import { Library } from './Library';
+import { useTextureSourcesSync } from './useTextureSourcesSync';
 import s from '../features.module.css';
 
 const SORT_LABEL: Record<SortKey, string> = {
@@ -18,7 +19,8 @@ const SORT_LABEL: Record<SortKey, string> = {
 
 export function BoardGrid() {
   const assets = useBoardStore(useShallow(selectVisibleAssets));
-  const total = useBoardStore((st) => st.assets.length);
+  const allAssets = useBoardStore((st) => st.assets);
+  const total = allAssets.length;
   const selectedId = useBoardStore((st) => st.selectedId);
   const clearFilters = useBoardStore((st) => st.clearFilters);
   const query = useBoardStore((st) => st.query);
@@ -26,6 +28,8 @@ export function BoardGrid() {
   const tagFilter = useBoardStore((st) => st.tagFilter);
   const sort = useBoardStore((st) => st.sort);
   const setSort = useBoardStore((st) => st.setSort);
+
+  useTextureSourcesSync(allAssets);
 
   const open = (asset: Asset) => {
     recordRecentlyViewed(asset);

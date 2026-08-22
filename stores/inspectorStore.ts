@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import type { ControlSchema, ModState, Modulation, ParamState, ParamValue } from '@/renderers/control-schema';
+import type { ControlSchema, ModState, Modulation, ParamState, ParamValue, SoundState } from '@/renderers/control-schema';
 import { coerce, defaultsOf, hydrate } from '@/renderers/control-schema';
 import { getPool } from '@/lib/render/pool';
+import { DEFAULT_SOUND_STATE, normalizeSoundState } from '@/lib/sound/types';
 import { useBoardStore } from './boardStore';
 import {
   flushParams,
@@ -9,6 +10,7 @@ import {
   persistMod,
   persistParams,
   persistSnapshotParams,
+  persistSound,
 } from '@/lib/persist/client';
 
 interface InspectorState {
@@ -38,6 +40,8 @@ interface InspectorState {
   isOwned: boolean;
   /** controlId -> routing. Empty for most cards. */
   mod: ModState;
+  /** Tile sound preset configuration for the open card. */
+  sound: SoundState;
 
   openInspector: (
     schema: ControlSchema,
@@ -46,8 +50,10 @@ interface InspectorState {
     isSnapshot?: boolean,
     mod?: ModState,
     isOwned?: boolean,
+    sound?: SoundState,
   ) => void;
   setModulation: (controlId: string, mod: Modulation | null) => void;
+  setSoundState: (sound: SoundState) => void;
   closeInspector: () => void;
   toggleNav: () => void;
   setNavOpen: (open: boolean) => void;
@@ -101,13 +107,29 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
   isSnapshot: false,
   isOwned: true,
   mod: {},
+  sound: DEFAULT_SOUND_STATE,
 
-  openInspector: (schema, saved, itemId, isSnapshot = false, mod = {}, isOwned = true) => {
+  openInspector: (schema, saved, itemId, isSnapshot = false, mod = {}, isOwned = true, sound = DEFAULT_SOUND_STATE) => {
     const params = hydrate(schema, saved);
-    set({ open: true, schema, params, dirty: new Set(), itemId, isSnapshot, isOwned, mod });
+    // normalizeSoundState, not a bare default param: `sound` here is
+    // whatever the caller read off the asset row, and `sound` is a JSONB
+    // column — a row written before the note rack landed still carries
+    // the legacy `key: string` shape with no `notes` array at all. The
+    // default param above only covers a caller passing nothing; it does
+    // nothing for a caller passing a genuinely malformed value, which is
+    // exactly what happens with an unmigrated row. Without this,
+    // SoundPanel reads sound.notes as undefined and NoteRack throws on
+    // `.length` the instant the panel opens — getPool().setSoundState()
+    // below was already safe (it normalizes internally), which is why
+    // the audio engine itself played fine even while this crashed; only
+    // the store's own copy, what the panel actually renders from, was
+    // still raw.
+    const normalizedSound = normalizeSoundState(sound);
+    set({ open: true, schema, params, dirty: new Set(), itemId, isSnapshot, isOwned, mod, sound: normalizedSound });
     getPool().get(itemId)?.setParams(params);
     getPool().setBaseParams(itemId, params);
     getPool().setModState(itemId, mod);
+    getPool().setSoundState(itemId, normalizedSound);
   },
 
   setModulation: (controlId, mod) => {
@@ -123,6 +145,17 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
     getPool().setModState(itemId, next);
     persistMod(itemId, next, isSnapshot || !isOwned);
     useBoardStore.getState().updateAssetMod(itemId, next);
+  },
+
+  setSoundState: (sound) => {
+    const { itemId, isSnapshot, isOwned } = get();
+    const normalized = normalizeSoundState(sound);
+    set({ sound: normalized });
+
+    if (!itemId) return;
+    getPool().setSoundState(itemId, normalized);
+    persistSound(itemId, normalized, isSnapshot || !isOwned);
+    useBoardStore.getState().updateAssetSound(itemId, normalized);
   },
 
   closeInspector: () => {

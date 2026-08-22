@@ -716,6 +716,245 @@
         "feedback",
         "fluid"
       ]
+    },
+    {
+      "slug": "bio-core",
+      "type": "p5",
+      "file": "sketches/bio-core.js",
+      "title": "Bio Core",
+      "tags": [
+        "organic",
+        "metaball",
+        "glow",
+        "reactive"
+      ]
+    },
+    {
+      "slug": "blobs-a-mess",
+      "type": "shader",
+      "file": "shaders/blobs-a-mess.frag",
+      "title": "Blobs-a-Mess",
+      "tags": [
+        "metaball",
+        "organic",
+        "physics",
+        "playful"
+      ]
+    },
+    {
+      "slug": "chromatic-glitch",
+      "type": "shader",
+      "file": "shaders/chromatic-glitch.frag",
+      "title": "Chromatic Glitch",
+      "tags": [
+        "glitch",
+        "aberration",
+        "trigger",
+        "raster"
+      ]
+    },
+    {
+      "slug": "data-bloom",
+      "type": "shader",
+      "file": "shaders/data-bloom.frag",
+      "title": "Data Bloom",
+      "tags": [
+        "circuit",
+        "noise",
+        "atmospheric",
+        "grid"
+      ]
+    },
+    {
+      "slug": "digital-matrix-shader",
+      "type": "shader",
+      "file": "shaders/matrix-rain.frag",
+      "title": "Matrix Rain",
+      "tags": [
+        "glyph",
+        "columns",
+        "generative",
+        "shader"
+      ]
+    },
+    {
+      "slug": "glitch-scan",
+      "type": "shader",
+      "file": "shaders/glitch-scan.frag",
+      "title": "Glitch Scan",
+      "tags": [
+        "glitch",
+        "crt",
+        "scanline",
+        "raster"
+      ]
+    },
+    {
+      "slug": "gradient-flow",
+      "type": "shader",
+      "file": "shaders/gradient-flow.frag",
+      "title": "Gradient Flow",
+      "tags": [
+        "gradient",
+        "ambient",
+        "minimal"
+      ]
+    },
+    {
+      "slug": "isometric-grid",
+      "type": "shader",
+      "file": "shaders/isometric-grid.frag",
+      "title": "Isometric Grid",
+      "tags": [
+        "isometric",
+        "3d",
+        "geometric",
+        "grid"
+      ]
+    },
+    {
+      "slug": "liquid-panel",
+      "type": "shader",
+      "file": "shaders/liquid-panel.frag",
+      "title": "Liquid Panel",
+      "tags": [
+        "gradient",
+        "liquid",
+        "grid",
+        "panel"
+      ]
+    },
+    {
+      "slug": "mask-field",
+      "type": "shader",
+      "file": "shaders/mask-field.frag",
+      "title": "Mask Field",
+      "tags": [
+        "gradient",
+        "mask",
+        "collage",
+        "geometric"
+      ]
+    },
+    {
+      "slug": "pulse-bars",
+      "type": "shader",
+      "file": "shaders/pulse-bars.frag",
+      "title": "Pulse Bars",
+      "tags": [
+        "bars",
+        "signal",
+        "reactive",
+        "minimal"
+      ]
+    },
+    {
+      "slug": "radial-fracture",
+      "type": "shader",
+      "file": "shaders/radial-fracture.frag",
+      "title": "Radial Fracture",
+      "tags": [
+        "radial",
+        "geometric",
+        "hud",
+        "dial"
+      ]
+    },
+    {
+      "slug": "strobe-cut",
+      "type": "shader",
+      "file": "shaders/strobe-cut.frag",
+      "title": "Strobe Cut",
+      "tags": [
+        "strobe",
+        "grid",
+        "reactive",
+        "minimal"
+      ]
+    },
+    {
+      "slug": "warp-mesh",
+      "type": "shader",
+      "file": "shaders/warp-mesh.frag",
+      "title": "Warp Mesh",
+      "tags": [
+        "wireframe",
+        "3d",
+        "noise",
+        "topographic"
+      ]
+    },
+    {
+      "slug": "hud-array",
+      "type": "p5",
+      "file": "sketches/hud-array.js",
+      "title": "HUD Array",
+      "tags": [
+        "hud",
+        "interactive",
+        "glow",
+        "sci-fi"
+      ]
+    },
+    {
+      "slug": "synth-organism",
+      "type": "p5",
+      "file": "sketches/synth-organism.js",
+      "title": "Synth Organism",
+      "tags": [
+        "organic",
+        "interactive",
+        "glow",
+        "locomotion"
+      ]
+    },
+    {
+      "slug": "circuit-pulse",
+      "type": "p5",
+      "file": "sketches/circuit-pulse.js",
+      "title": "Circuit Pulse",
+      "tags": [
+        "pcb",
+        "network",
+        "pulse",
+        "generative"
+      ]
+    },
+    {
+      "slug": "cluster-bloom",
+      "type": "shader",
+      "file": "shaders/cluster-bloom.frag",
+      "title": "Cluster Bloom",
+      "tags": [
+        "3d",
+        "raymarch",
+        "organic",
+        "glow"
+      ]
+    },
+    {
+      "slug": "refract-orb",
+      "type": "shader",
+      "file": "shaders/refract-orb.frag",
+      "title": "Refract Orb",
+      "tags": [
+        "3d",
+        "raymarch",
+        "glass",
+        "refraction"
+      ]
+    },
+    {
+      "slug": "echo-type",
+      "type": "p5",
+      "file": "sketches/echo-type.js",
+      "title": "Echo Type",
+      "tags": [
+        "typography",
+        "kinetic",
+        "text",
+        "glitch"
+      ]
     }
   ]
 }

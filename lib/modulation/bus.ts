@@ -1,4 +1,5 @@
 import type { Modulation, ModSource } from '@/renderers/control-schema';
+import { getTrackBand, type TrackBand } from '@/lib/sound/track';
 
 /**
  * Visual Mood Lab — the modulation bus.
@@ -8,11 +9,19 @@ import type { Modulation, ModSource } from '@/renderers/control-schema';
  * they only can if they read a single shared time value rather than each
  * keeping its own.
  *
- * Audio sources are declared in ModSource but deliberately not implemented
- * yet — LFOs need no permissions, no device negotiation, and no fallback
- * path, so the plumbing gets proven before a microphone prompt is added to
- * the mix. `sample()` returns a neutral 0.5 for audio sources, which reads
- * as "no modulation" rather than pinning a parameter to an extreme.
+ * Audio sources (Phase 4.9) are the one exception to "every card reads the
+ * same value from the same source" above, deliberately: each is resolved
+ * PER CARD, against that card's own uploaded track (lib/sound/track.ts),
+ * not a single board-wide feed. Two cards routed to `audio.bass` react to
+ * two different tracks, or one reacts and the other doesn't, depending on
+ * what's loaded on each. That's why `sample()` and `rawSignal()` both take
+ * a `cardId` now — every other source ignores it. A card with no track
+ * loaded still resolves to the neutral 0.5 ("no modulation") that audio and
+ * MIDI sources both returned before this file changed, so nothing about a
+ * routing set up on a track-less card is different from before.
+ *
+ * midi.cc remains genuinely unimplemented — no device negotiation exists
+ * yet — so it alone still carries `pending: true` in MOD_SOURCES below.
  *
  * Location: lib/modulation/bus.ts
  */
@@ -45,9 +54,14 @@ class ModulationBus {
    * Sample a routing at the current time. Always returns 0..1 — the caller
    * (applyModulation) maps that onto the control's own range, so a source
    * never needs to know anything about what it is driving.
+   *
+   * `cardId` is only consulted for `audio.*` sources (see the class doc)
+   * — every existing call site already has it in scope as part of `key`
+   * (`${cardId}:${controlId}`), so this is a second explicit parameter
+   * rather than parsing it back out of the string.
    */
-  sample(key: string, mod: Modulation, time = this.time): number {
-    const raw = this.rawSignal(mod, time);
+  sample(key: string, mod: Modulation, cardId: string, time = this.time): number {
+    const raw = this.rawSignal(mod, time, cardId);
 
     const smoothing = mod.smoothing ?? 0;
     if (smoothing <= 0) return raw;
@@ -60,7 +74,7 @@ class ModulationBus {
     return next;
   }
 
-  private rawSignal(mod: Modulation, time: number): number {
+  private rawSignal(mod: Modulation, time: number, cardId: string): number {
     const rate = mod.rate ?? 0.5;
     const phase = time * rate;
 
@@ -88,11 +102,22 @@ class ModulationBus {
       case 'pointer.y':
         return this.pointer.y;
 
+      case 'audio.rms':
+      case 'audio.bass':
+      case 'audio.mid':
+      case 'audio.high': {
+        const band = mod.source.slice('audio.'.length) as TrackBand;
+        const value = getTrackBand(cardId, band);
+        // null (not 0) means "this card has no track loaded" — 0.5 is the
+        // same neutral centre every unimplemented/inactive source falls
+        // back to, so a routing set up before a track is uploaded just
+        // sits inert rather than reading as silence.
+        return value ?? 0.5;
+      }
+
       default:
-        // Audio and MIDI sources are declared but not wired yet. 0.5 is the
-        // neutral centre: applyModulation treats it as zero deviation, so an
-        // unimplemented source leaves the parameter exactly where the person
-        // set it instead of slamming it to a limit.
+        // midi.cc only, at this point — genuinely unimplemented, no device
+        // negotiation exists yet. Same neutral-centre fallback.
         return 0.5;
     }
   }
@@ -136,8 +161,19 @@ function lerp(a: number, b: number, t: number): number {
 export interface ModSourceOption {
   value: ModSource;
   label: string;
-  /** Sources that are declared but not yet wired. Shown, but disabled. */
+  /** Sources that are declared but not yet wired AT ALL, for anyone. Shown,
+      but disabled, with no per-card escape — currently just midi.cc. This
+      is distinct from `requiresTrack` below: an audio.* source is fully
+      wired, just conditionally inert until that specific card has
+      something to analyse. */
   pending?: boolean;
+  /** Only meaningful for audio.* sources. The caller (ModulationPanel)
+      disables the option per-card when the open card has no track loaded,
+      using a different, more specific label ("— load a track") than
+      `pending`'s "— soon" — see useTrackLoaded in lib/hooks/useTrackState.
+      Kept as metadata here rather than hardcoding the four audio values
+      at the call site, same reasoning as `hasRate` below. */
+  requiresTrack?: boolean;
   /** Whether a rate control is meaningful for this source. */
   hasRate?: boolean;
 }
@@ -150,10 +186,10 @@ export const MOD_SOURCES: ModSourceOption[] = [
   { value: 'time', label: 'Time ramp', hasRate: true },
   { value: 'pointer.x', label: 'Pointer X' },
   { value: 'pointer.y', label: 'Pointer Y' },
-  { value: 'audio.rms', label: 'Audio — Level', pending: true },
-  { value: 'audio.bass', label: 'Audio — Bass', pending: true },
-  { value: 'audio.mid', label: 'Audio — Mid', pending: true },
-  { value: 'audio.high', label: 'Audio — High', pending: true },
+  { value: 'audio.rms', label: 'Audio — Level', requiresTrack: true },
+  { value: 'audio.bass', label: 'Audio — Bass', requiresTrack: true },
+  { value: 'audio.mid', label: 'Audio — Mid', requiresTrack: true },
+  { value: 'audio.high', label: 'Audio — High', requiresTrack: true },
   { value: 'midi.cc', label: 'MIDI CC', pending: true },
 ];
 

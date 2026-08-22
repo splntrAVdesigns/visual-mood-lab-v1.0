@@ -4,6 +4,7 @@ import { getDb, schema } from '@/lib/db/client';
 import { getStorage } from '@/lib/storage';
 import { requireUser } from '@/lib/auth';
 import { LIBRARY_OWNER_ID } from '@/lib/data/assets';
+import { MAX_POSTER_CAPTURE_BYTES } from '@/lib/validation/asset';
 import type { ParamState } from '@/renderers/control-schema';
 
 export const runtime = 'nodejs';
@@ -57,14 +58,19 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     const owned = await loadOwned(id);
     if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-    const body = (await req.json()) as { params?: ParamState; mod?: Record<string, unknown> };
-    if (!body.params && !body.mod) {
-      return NextResponse.json({ error: 'Expected { params } or { mod }' }, { status: 400 });
+    const body = (await req.json()) as {
+      params?: ParamState;
+      mod?: Record<string, unknown>;
+      sound?: Record<string, unknown>;
+    };
+    if (!body.params && !body.mod && !body.sound) {
+      return NextResponse.json({ error: 'Expected { params }, { mod }, or { sound }' }, { status: 400 });
     }
 
     const patch: Record<string, unknown> = { updatedAt: new Date() };
     if (body.params) patch.params = body.params;
     if (body.mod) patch.mod = body.mod;
+    if (body.sound) patch.sound = body.sound;
 
     await owned.db.update(schema.assets).set(patch).where(eq(schema.assets.id, id));
 
@@ -79,8 +85,17 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   const { id } = await ctx.params;
 
   try {
+    // Already correctly ordered (check ownership, THEN touch storage) —
+    // this is the pattern app/api/boards/default/items/[itemId]/route.ts's
+    // equivalent handler was missing and now matches. No change to the
+    // ordering here, only the size cap below.
     const owned = await loadPosterWritable(id);
     if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+    const declaredLength = Number(req.headers.get('content-length') ?? NaN);
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_POSTER_CAPTURE_BYTES) {
+      return NextResponse.json({ error: 'Capture too large' }, { status: 413 });
+    }
 
     const bytes = new Uint8Array(await req.arrayBuffer());
 
@@ -89,6 +104,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
     // a black square from permanently replacing a usable placeholder.
     if (bytes.byteLength < 2048) {
       return NextResponse.json({ error: 'Capture too small, ignored' }, { status: 422 });
+    }
+    // Upper bound didn't exist before — req.arrayBuffer() buffers the
+    // whole body into memory regardless, so this is also what limits how
+    // much memory a single request can force the server to hold.
+    if (bytes.byteLength > MAX_POSTER_CAPTURE_BYTES) {
+      return NextResponse.json({ error: 'Capture too large' }, { status: 413 });
     }
 
     const put = await getStorage().put(`posters/${id}.png`, bytes, 'image/png');

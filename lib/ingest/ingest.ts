@@ -7,6 +7,7 @@ import { paramsToSchema } from '@/lib/sketch/params-to-schema';
 import { defaultsOf, type ControlSchema } from '@/renderers/control-schema';
 import type { AssetType } from '@/types/asset';
 import { generatePosterSvg, hashContent, posterColors } from './poster';
+import { sanitizeAssetTitle, sanitizeAssetTags } from '@/lib/validation/asset';
 
 /**
  * One ingest path for everything.
@@ -14,6 +15,12 @@ import { generatePosterSvg, hashContent, posterColors } from './poster';
  * The seed script and the upload route both call `ingestAsset`. That is
  * deliberate: if seeding works, upload works, because there is no second
  * code path to drift. Phase 1's exit criterion depends on it.
+ *
+ * It's also, for the same reason, the one place free-text metadata
+ * (title, tags) MUST be sanitized regardless of which caller reached it —
+ * seed manifests are trusted, but upload-derived titles come straight from
+ * a filename the uploader chose, so this function treats all callers as
+ * untrusted rather than relying on each call site to have done it first.
  */
 
 export interface IngestInput {
@@ -32,6 +39,28 @@ export interface IngestInput {
   seedSlug?: string;
   /** Position on the board. Seed script passes the manifest index. */
   boardOrder?: number;
+  /**
+   * Pre-computed schema for a p5 sketch, from a caller that already has the
+   * REAL params object in hand (the seed script imports the sketch module
+   * directly). When present, this is used verbatim and `extractParamsLiteral`
+   * is skipped entirely.
+   *
+   * Only the seed path can supply this: it's the only caller trusted to run
+   * arbitrary sketch source in order to get the real object. The upload path
+   * (app/api/assets/route.ts) never sets this — running an untrusted upload's
+   * code server-side is the thing extractParamsLiteral's regex scrape exists
+   * specifically to avoid, so uploads keep going through it same as before.
+   *
+   * Closes a real gap: extractParamsLiteral does a blind `.replace(/'/g,
+   * '"')` to turn the object literal into JSON, which corrupts any string
+   * value containing an apostrophe (a hint like "a lit node's other edges"
+   * silently produces a zero-control schema, no error, and — because
+   * ingestAsset's `unchanged` fast path never re-derives — that corruption
+   * then survives every future reseed silently once cached). This trusted
+   * path removes the regex from that entire flow rather than trying to make
+   * the regex itself apostrophe-safe.
+   */
+  precomputedSchema?: ControlSchema | null;
 }
 
 export interface IngestResult {
@@ -45,10 +74,29 @@ export interface IngestResult {
   warnings: string[];
 }
 
+/** Non-negative finite number, or undefined if the input wasn't usable. */
+function clampNonNegative(value: number | undefined): number | undefined {
+  if (value === undefined || !Number.isFinite(value)) return undefined;
+  return Math.max(0, Math.floor(value));
+}
+
 export async function ingestAsset(input: IngestInput): Promise<IngestResult> {
+  if (!input.ownerId) {
+    // Cheap defense-in-depth, not the real authorization boundary — the
+    // caller (app/api/assets/route.ts) is where ownerId must come from
+    // the authenticated session, never from the request body. This just
+    // makes sure a future caller can't accidentally ingest ownerless data
+    // by forgetting that check.
+    throw new Error('ingestAsset: ownerId is required');
+  }
+
   const db = await getDb();
   const storage = getStorage();
   const warnings: string[] = [];
+
+  // Sanitized once, here, regardless of caller — see the module comment.
+  const title = sanitizeAssetTitle(input.title);
+  const tags = sanitizeAssetTags(input.tags ?? []);
 
   const id = input.seedSlug ?? crypto.randomUUID();
   const hashSource = input.source ?? input.srcUrl ?? id;
@@ -89,16 +137,22 @@ export async function ingestAsset(input: IngestInput): Promise<IngestResult> {
   /* ---- schema extraction ---------------------------------------- */
   let controlSchema: ControlSchema | null = null;
 
-  if (input.type === 'shader' && input.source) {
+  if (input.type === 'p5' && input.precomputedSchema !== undefined) {
+    // Trusted caller already ran the real sketch module and computed this
+    // properly — see the IngestInput.precomputedSchema doc comment for why
+    // this exists and what it avoids. No extraction to do here.
+    controlSchema = input.precomputedSchema;
+  } else if (input.type === 'shader' && input.source) {
     const parsed = parseUniforms(input.source, { schemaId: `shader:${id}` });
     controlSchema = parsed.schema;
     for (const w of parsed.warnings) {
       if (w.level === 'warn') warnings.push(`${id}: ${w.message}`);
     }
   } else if (input.type === 'p5' && input.source) {
-    // The sketch's params object is evaluated in the sandbox at runtime; at
-    // ingest we only need its shape, which the seed script supplies already
-    // parsed. Uploaded sketches go through the sandbox before landing here.
+    // Fallback for callers that DON'T have the real params object — only
+    // the upload route should ever land here now. Running arbitrary
+    // uploaded code server-side isn't an option, so this has to make do
+    // with a source-text scrape rather than a real import.
     const parsed = paramsToSchema(extractParamsLiteral(input.source), {
       schemaId: `sketch:${id}`,
     });
@@ -133,8 +187,8 @@ export async function ingestAsset(input: IngestInput): Promise<IngestResult> {
     id: prior?.id ?? id,
     ownerId: input.ownerId,
     type: input.type,
-    title: input.title,
-    tags: input.tags ?? [],
+    title,
+    tags,
     srcUrl: input.srcUrl ?? null,
     source: input.source ?? null,
     posterUrl,
@@ -143,9 +197,9 @@ export async function ingestAsset(input: IngestInput): Promise<IngestResult> {
     params: prior ? { ...params, ...prior.params } : params,
     mod: prior?.mod ?? {},
     dominantColors,
-    width: input.width ?? null,
-    height: input.height ?? null,
-    durationMs: input.durationMs ?? null,
+    width: clampNonNegative(input.width) ?? null,
+    height: clampNonNegative(input.height) ?? null,
+    durationMs: clampNonNegative(input.durationMs) ?? null,
     seedSlug: input.seedSlug ?? null,
     contentHash,
     updatedAt: now,

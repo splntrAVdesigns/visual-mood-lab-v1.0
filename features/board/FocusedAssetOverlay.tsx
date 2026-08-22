@@ -15,6 +15,8 @@ import { ASSET_TYPE_BADGE } from '@/types/asset';
 import { RendererStage } from './RendererStage';
 import { CodePanel } from './CodePanel';
 import { ModulationPanel } from '../inspector/ModulationPanel';
+import { SoundPanel } from '../inspector/SoundPanel';
+import { getCompatiblePresets } from '@/lib/sound/presets';
 import { closeAsset, openAssetById } from './openAsset';
 import {
   createSnapshot,
@@ -42,6 +44,7 @@ export function FocusedAssetOverlay() {
 
   const [showCode, setShowCode] = useState(false);
   const [showMod, setShowMod] = useState(false);
+  const [showSound, setShowSound] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -49,6 +52,7 @@ export function FocusedAssetOverlay() {
   useEffect(() => {
     setShowCode(false);
     setShowMod(false);
+    setShowSound(false);
     setSavedNote(null);
     // Carries over otherwise: this component instance persists across
     // different assets (it isn't remounted per-open), so a previous
@@ -93,6 +97,7 @@ export function FocusedAssetOverlay() {
   const enterFullscreen = () => {
     setShowCode(false);
     setShowMod(false);
+    setShowSound(false);
     requestAnimationFrame(() => {
       const el = panelRef.current;
       if (!el) return;
@@ -144,6 +149,7 @@ export function FocusedAssetOverlay() {
       if (active) {
         setShowCode(false);
         setShowMod(false);
+        setShowSound(false);
       } else {
         panelRef.current?.focus({ preventScroll: true });
       }
@@ -163,6 +169,17 @@ export function FocusedAssetOverlay() {
     (c) => c.modulatable === true && (c.kind === 'slider' || c.kind === 'stepper'),
   );
   const canModulate = !asset.isSnapshot && modulatableControls.length > 0;
+  // Snapshots stay excluded from Sound for the same reason they're excluded
+  // from Modulate: a snapshot is meant to be a settled, permanent look, and
+  // ongoing reactive sound is the same kind of "still drifting" behavior as
+  // ongoing modulation would be.
+  //
+  // As of Phase 4.9, Sound is no longer preset-only: an asset with nothing
+  // but modulatable controls (canModulate, no compatible preset) still gets
+  // the button, because that's exactly the asset an uploaded Track is for —
+  // SoundPanel's own hasModulatableControls check decides which section(s)
+  // it actually renders once open.
+  const canSound = !asset.isSnapshot && (getCompatiblePresets(schema).length > 0 || canModulate);
 
   const closeOverlay = () => {
     // Exiting fullscreen from the X takes two steps if left to the browser
@@ -237,10 +254,19 @@ export function FocusedAssetOverlay() {
       className={s.focusScrim}
       data-code={showCode ? 'true' : undefined}
       data-mod={showMod ? 'true' : undefined}
+      data-sound={showSound ? 'true' : undefined}
       onClick={closeOverlay}
     >
-      {showMod && canModulate && (
-        <ModulationPanel controls={modulatableControls} onClose={() => setShowMod(false)} />
+      {/* Invisible, same width as the real sidecar — keeps focusPanel's
+          own centered position mathematically identical whether or not
+          the sidecar is showing (a tile flanked by two equal-width
+          elements, one real, one not, stays centered either way). This
+          is what stops the tile from visibly shifting when Sound/
+          Modulate opens — the old approach tried to re-center the whole
+          {sidecar, tile} group with a padding calc, which is exactly
+          what moved the tile. See .sidecarSpacer's CSS doc. */}
+      {((showMod && canModulate) || (showSound && canSound && schema)) && (
+        <div className={s.sidecarSpacer} aria-hidden="true" />
       )}
 
       <div
@@ -273,6 +299,7 @@ export function FocusedAssetOverlay() {
                   onClick={() => {
                     setShowCode((v) => !v);
                     setShowMod(false);
+                    setShowSound(false);
                   }}
                 >
                   <CodeIcon />
@@ -290,6 +317,19 @@ export function FocusedAssetOverlay() {
                   }}
                 >
                   Modulate
+                </Button>
+              )}
+
+              {canSound && (
+                <Button
+                  variant="ghost"
+                  active={showSound}
+                  onClick={() => {
+                    setShowSound((v) => !v);
+                    setShowCode(false);
+                  }}
+                >
+                  Sound
                 </Button>
               )}
 
@@ -335,6 +375,21 @@ export function FocusedAssetOverlay() {
           <RendererStage asset={asset} focused />
         </div>
       </div>
+
+      {/* Real sidecar now renders AFTER focusPanel in DOM — it appears to
+          the tile's right, matching the spacer's position on the left.
+          No flex `order` needed anymore: DOM order already matches
+          visual order. */}
+      {((showMod && canModulate) || (showSound && canSound && schema)) && (
+        <div className={s.sidecarStack}>
+          {showSound && canSound && schema && (
+            <SoundPanel schema={schema} itemId={asset.itemId} onClose={() => setShowSound(false)} />
+          )}
+          {showMod && canModulate && (
+            <ModulationPanel controls={modulatableControls} itemId={asset.itemId} onClose={() => setShowMod(false)} />
+          )}
+        </div>
+      )}
 
       {showCode && hasSource && <CodePanel asset={asset} onClose={() => setShowCode(false)} />}
     </div>

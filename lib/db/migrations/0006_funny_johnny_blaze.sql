@@ -1,0 +1,1 @@
+ALTER TABLE "assets" ALTER COLUMN "sound" SET DEFAULT '{"enabled":false,"presetId":null,"notes":["C"],"scale":"major","octave":0,"lfoShape":"sine","volume":0.7}'::jsonb;

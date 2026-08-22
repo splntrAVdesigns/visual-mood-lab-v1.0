@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useActionState } from 'react';
+import { useEffect, useActionState, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Route } from 'next';
 import { TextInput, Button } from '@/components/ui';
-import { loginAction, loginWithGitHubAction, type FormState } from './actions';
+import { loginAction, loginWithGitHubAction, loginWithAppleAction, type FormState } from './actions';
+import { emailSchema } from '@/lib/validation/auth';
 import s from './auth.module.css';
 
 const initialState: FormState = {};
@@ -12,6 +13,17 @@ const initialState: FormState = {};
 export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
   const [state, formAction, pending] = useActionState(loginAction, initialState);
   const router = useRouter();
+
+  // Deliberately NOT running the password-complexity schema here. This
+  // form authenticates an *existing* credential, which may predate a
+  // policy change — the only thing worth gating locally is "did they type
+  // something in both boxes and does the email look like an email",
+  // never whether it matches the current password rules.
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  const emailLooksValid = email.trim().length === 0 || emailSchema.safeParse(email).success;
+  const canSubmit = email.trim().length > 0 && password.length > 0 && !pending;
 
   // Explicit client-side navigation on success, rather than throwing
   // redirect() inside the server action itself — that pattern was
@@ -33,7 +45,7 @@ export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
 
   return (
     <>
-      <form action={formAction} className={s.form}>
+      <form action={formAction} className={s.form} noValidate>
         {state.error && (
           <p className={s.error} role="alert">
             {state.error}
@@ -51,8 +63,15 @@ export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
             label="Email"
             autoComplete="email"
             required
-            onChange={() => {}}
+            value={email}
+            onChange={(value: string) => setEmail(value)}
+            aria-invalid={!emailLooksValid}
           />
+          {!emailLooksValid && (
+            <p className={s.error} role="alert">
+              Enter a valid email address.
+            </p>
+          )}
         </div>
 
         <div>
@@ -66,14 +85,20 @@ export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
             label="Password"
             autoComplete="current-password"
             required
-            onChange={() => {}}
+            value={password}
+            onChange={(value: string) => setPassword(value)}
           />
           <a href="/forgot-password" className={s.forgotLink}>
             Forgot password?
           </a>
         </div>
 
-        <Button type="submit" variant="accent" block disabled={pending || state.success}>
+        <Button
+          type="submit"
+          variant="accent"
+          block
+          disabled={!canSubmit || !emailLooksValid || state.success}
+        >
           {pending ? 'Logging in…' : state.success ? 'Redirecting…' : 'Log in'}
         </Button>
       </form>
@@ -84,6 +109,13 @@ export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
         <input type="hidden" name="callbackUrl" value={callbackUrl} />
         <Button type="submit" variant="outline" block>
           Continue with GitHub
+        </Button>
+      </form>
+
+      <form action={loginWithAppleAction} style={{ marginTop: 'var(--space-3)' }}>
+        <input type="hidden" name="callbackUrl" value={callbackUrl} />
+        <Button type="submit" variant="outline" block>
+          Continue with Apple
         </Button>
       </form>
 

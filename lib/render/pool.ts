@@ -2,8 +2,12 @@ import type { Asset, CardState } from '@/types/asset';
 import type { AssetRenderer, RenderContext } from '@/renderers/types';
 import { createRenderer } from '@/renderers/registry';
 import { getModBus } from '@/lib/modulation/bus';
-import { applyModulation, type ModState, type ParamState } from '@/renderers/control-schema';
+import { applyModulation, type ModState, type ParamState, type SoundState } from '@/renderers/control-schema';
 import { MAX_LIVE_RENDERERS } from '@/stores/playbackStore';
+import { normalizeSoundState } from '@/lib/sound/types';
+import { startTileAudio, stopTileAudio, stopAllTileAudio, updateTileAudio, isTileAudioActive, retriggerTileAudio } from '@/lib/sound/engine';
+import { unloadTrack, getTrackFrequencyData } from '@/lib/sound/track';
+import { HEARTBEAT_TIMEOUT_MS } from '@/lib/sandbox/protocol';
 
 /**
  * The renderer pool.
@@ -42,6 +46,10 @@ interface Entry {
       parameter along with it. */
   baseParams: ParamState;
   modState: ModState;
+  /** Audio-out counterpart to modState — see lib/sound/. Lifecycle is tied
+      to `state === 'focused'`, synced via the pool's syncAudio() helper
+      rather than left to callers to manage by hand. */
+  soundState: SoundState;
 }
 
 export interface PoolFrameInfo {
@@ -131,6 +139,7 @@ class RendererPool {
       existing.promotedAt = performance.now();
       existing.renderer.setQuality(state === 'focused' ? 'full' : 'preview');
       this.enforceBudget(cardId);
+      this.syncAudio(existing);
       return;
     }
 
@@ -185,6 +194,12 @@ class RendererPool {
       failure: null,
       baseParams: { ...(asset.params ?? {}) },
       modState: { ...(asset.mod ?? {}) },
+      // normalizeSoundState rather than a bare spread: `sound` is a JSONB
+      // column, so a row written before the note rack landed still has
+      // `key: string` and no `notes` array at all. Spreading that
+      // straight through handed an engine `notes: undefined`, which threw
+      // the moment anything mapped over it. See that function's comment.
+      soundState: normalizeSoundState(asset.sound),
     };
 
     // Keyed by cardId, matching every read/delete elsewhere in this class
@@ -216,6 +231,7 @@ class RendererPool {
 
     entry.mounted = true;
     if (this.paused) renderer.pause();
+    this.syncAudio(entry);
 
     this.notify(cardId, state, entry.failure ?? renderer.error);
     this.startLoop();
@@ -252,6 +268,12 @@ class RendererPool {
     for (const controlId of Object.keys(entry.modState)) {
       getModBus().forget(`${cardId}:${controlId}`);
     }
+    stopTileAudio(cardId);
+    // Session-only by design (see lib/sound/track.ts's file doc) — a
+    // decoded buffer and a running source node have no reason to survive
+    // past the card that owns them, same reasoning as stopTileAudio just
+    // above for the synth engine.
+    unloadTrack(cardId);
 
     entry.controller.abort();
     entry.renderer.dispose();
@@ -316,6 +338,35 @@ class RendererPool {
     }
   }
 
+  /** The Sound toggle/preset/key/octave/volume controls (Stage 2) call
+      this. Mirrors setModState — the pool owns the live entry, so this is
+      where a change actually takes effect, not just where it's stored. */
+  setSoundState(cardId: string, sound: SoundState): void {
+    const entry = this.entries.get(cardId);
+    if (!entry) return;
+    entry.soundState = normalizeSoundState(sound);
+    this.syncAudio(entry);
+  }
+
+  /** The Retrigger control (Stage 2) calls this directly — it's a
+      fire-and-forget action, not persisted state, same spirit as a
+      renderer's own trigger controls. */
+  retriggerSound(cardId: string): void {
+    retriggerTileAudio(cardId);
+  }
+
+  /** Starts or stops a card's audio subgraph to match `state === 'focused'`
+      and soundState.enabled — the single place that decision gets made, so
+      every call site (promotion, a state change, a Sound-toggle edit) stays
+      in sync with each other by construction rather than by discipline. */
+  private syncAudio(entry: Entry): void {
+    if (entry.state === 'focused' && entry.soundState.enabled) {
+      startTileAudio(entry.cardId, entry.soundState);
+    } else {
+      stopTileAudio(entry.cardId);
+    }
+  }
+
   /** Current modulated value, for the live readout in the inspector. */
   sampleModulated(cardId: string, controlId: string): number | null {
     const entry = this.entries.get(cardId);
@@ -331,7 +382,7 @@ class RendererPool {
     const base = entry.baseParams[controlId];
     if (typeof base !== 'number') return null;
 
-    const signal = getModBus().sample(`${cardId}:${controlId}`, mod);
+    const signal = getModBus().sample(`${cardId}:${controlId}`, mod, cardId);
     const next = applyModulation(control, base, mod, signal);
     return typeof next === 'number' ? next : null;
   }
@@ -342,6 +393,7 @@ class RendererPool {
 
   disposeAll(): void {
     for (const id of [...this.entries.keys()]) this.demote(id);
+    stopAllTileAudio();
     this.stopLoop();
   }
 
@@ -356,15 +408,25 @@ class RendererPool {
    * parameter is never overwritten. That separation is what lets you close
    * an asset mid-oscillation and reopen it exactly where you left it, rather
    * than wherever the LFO happened to be.
+   *
+   * Returns the same numeric modulated values it just pushed into the
+   * renderer, keyed by controlId — updateAudioBindings reuses this rather
+   * than resampling the bus a second time, which matters for a source
+   * like lfo.noise where sampling twice in the same frame would read two
+   * different values off the same phase. `null` when nothing on this
+   * asset is currently routed, the common case, so callers can skip
+   * building a merged param object for the (much more common) card with
+   * no modulation active at all.
    */
-  private applyModulation(entry: Entry): void {
+  private applyModulation(entry: Entry): Record<string, number> | null {
     const routings = Object.keys(entry.modState);
-    if (routings.length === 0) return;
+    if (routings.length === 0) return null;
 
     const schema = entry.renderer.getControlSchema();
-    if (!schema) return;
+    if (!schema) return null;
 
     const bus = getModBus();
+    const modulated: Record<string, number> = {};
 
     for (const controlId of routings) {
       const mod = entry.modState[controlId];
@@ -374,9 +436,41 @@ class RendererPool {
       const base = entry.baseParams[controlId];
       if (base === undefined) continue;
 
-      const signal = bus.sample(`${entry.cardId}:${controlId}`, mod);
-      entry.renderer.setParam(controlId, applyModulation(control, base, mod, signal));
+      const signal = bus.sample(`${entry.cardId}:${controlId}`, mod, entry.cardId);
+      const next = applyModulation(control, base, mod, signal);
+      entry.renderer.setParam(controlId, next);
+      // Sound bindings only ever read a numeric (slider/stepper) source —
+      // see normalizeControlValue in lib/sound/engine.ts — so a
+      // non-numeric result (color, select, etc. modulated some other way)
+      // simply isn't offered to updateAudioBindings below.
+      if (typeof next === 'number') modulated[controlId] = next;
     }
+
+    return modulated;
+  }
+
+  /** Pushes this frame's live param values into the active sound engine,
+      if this card is focused, sound-enabled, and actually has an engine
+      running.
+
+      Reads the SAME modulated values applyModulation just computed for
+      the renderer, layered over baseParams — a control that's both
+      sound-bound (via the preset's own SoundBinding) and modulation-
+      routed (via the Modulation panel) now drives the engine in lockstep
+      with whatever's on screen that frame, rather than the audio staying
+      pinned to wherever the slider was last left. A control with no
+      modulation routing falls through to its baseParams value exactly as
+      before — this only changes behavior for the intersection of "sound-
+      bound" and "modulated", which was previously silently inert. */
+  private updateAudioBindings(entry: Entry, modulated: Record<string, number> | null): void {
+    if (entry.state !== 'focused' || !entry.soundState.enabled) return;
+    if (!isTileAudioActive(entry.cardId)) return;
+
+    const schema = entry.renderer.getControlSchema();
+    if (!schema) return;
+
+    const effective = modulated ? { ...entry.baseParams, ...modulated } : entry.baseParams;
+    updateTileAudio(entry.cardId, schema, effective);
   }
 
   private startLoop(): void {
@@ -394,7 +488,21 @@ class RendererPool {
   private tick = (now: number): void => {
     this.rafId = requestAnimationFrame(this.tick);
 
-    const dt = Math.min((now - this.lastFrameAt) / 1000, 0.1);
+    // Raw, UNclamped gap since the last tick. A single slow frame is
+    // normal and dt below already guards against it — but a gap past
+    // HEARTBEAT_TIMEOUT_MS can only mean requestAnimationFrame itself was
+    // suspended for the whole tab (backgrounded, minimized, laptop sleep,
+    // or a native modal like a file picker holding OS focus), since nothing
+    // else can stall a single rAF-driven loop that long. That's a whole-
+    // loop stall, not any one card hanging — see resumeFromStall's doc on
+    // AssetRenderer for the concrete bug this prevents (a healthy p5
+    // sketch's iframe getting torn down the instant the loop resumes,
+    // because its own heartbeat was throttled along with everything else
+    // and reads as stale the moment anyone checks it again).
+    const rawGapMs = now - this.lastFrameAt;
+    const resumedFromStall = rawGapMs > HEARTBEAT_TIMEOUT_MS;
+
+    const dt = Math.min(rawGapMs / 1000, 0.1);
     this.lastFrameAt = now;
 
     this.fpsFrames++;
@@ -406,6 +514,8 @@ class RendererPool {
 
     for (const entry of this.entries.values()) {
       if (!entry.mounted) continue;
+
+      if (resumedFromStall) entry.renderer.resumeFromStall?.();
 
       const rect = entry.host.getBoundingClientRect();
       if (rect.width === 0 || rect.height === 0) continue;
@@ -425,10 +535,18 @@ class RendererPool {
         height: rect.height,
         pixelRatio: window.devicePixelRatio || 1,
         pointer: this.pointer,
-        audio: this.audio,
+        // This card's own uploaded track (Phase 4.9) takes priority when
+        // present — see lib/sound/track.ts's file doc for why RenderContext
+        // is no longer genuinely board-wide despite the interface's older
+        // "shared analyser" comment. Falls back to `this.audio`, which
+        // remains the board-wide feed the interface originally described
+        // (always null today — nothing calls setAudio() yet) so a card
+        // with no track behaves exactly as before this change.
+        audio: getTrackFrequencyData(entry.cardId) ?? this.audio,
       };
 
-      this.applyModulation(entry);
+      const modulated = this.applyModulation(entry);
+      this.updateAudioBindings(entry, modulated);
 
       try {
         entry.renderer.render(ctx);

@@ -11,6 +11,7 @@ import {
   PlayIcon,
   SearchIcon,
   SettingsIcon,
+  VolumeIcon,
 } from '@/components/ui';
 import { useBoardStore, useInspectorStore, usePlaybackStore } from '@/stores';
 import { LiveIndicator } from './LiveIndicator';
@@ -33,6 +34,8 @@ export function AppHeader({ onOpenSettings, needsSeed = false }: AppHeaderProps)
 
   const paused = usePlaybackStore((st) => st.paused);
   const togglePaused = usePlaybackStore((st) => st.togglePaused);
+  const muted = usePlaybackStore((st) => st.muted);
+  const toggleMuted = usePlaybackStore((st) => st.toggleMuted);
 
   return (
     <header className={s.header}>
@@ -98,6 +101,15 @@ export function AppHeader({ onOpenSettings, needsSeed = false }: AppHeaderProps)
               icon={paused ? <PlayIcon /> : <PauseIcon />}
               onClick={togglePaused}
               active={paused}
+            />
+          </Tooltip>
+
+          <Tooltip content={muted ? 'Unmute' : 'Mute'}>
+            <IconButton
+              label={muted ? 'Unmute tile sound' : 'Mute tile sound'}
+              icon={<VolumeIcon muted={muted} />}
+              onClick={toggleMuted}
+              active={muted}
             />
           </Tooltip>
         </>

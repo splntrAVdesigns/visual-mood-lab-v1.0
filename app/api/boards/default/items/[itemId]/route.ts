@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server';
 import {
+  boardItemBelongsToBoard,
   deleteBoardItem,
   getOrCreateDefaultBoard,
   setSnapshotPoster,
   updateSnapshotMod,
   updateSnapshotParams,
+  updateSnapshotSound,
 } from '@/lib/data/assets';
 import { getStorage } from '@/lib/storage';
 import { requireUser } from '@/lib/auth';
+import { MAX_POSTER_CAPTURE_BYTES } from '@/lib/validation/asset';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -22,13 +25,15 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ itemId: strin
     const body = (await req.json()) as {
       params?: Record<string, unknown>;
       mod?: Record<string, unknown>;
+      sound?: Record<string, unknown>;
     };
-    if (!body.params && !body.mod) {
-      return NextResponse.json({ error: 'Expected { params } or { mod }' }, { status: 400 });
+    if (!body.params && !body.mod && !body.sound) {
+      return NextResponse.json({ error: 'Expected { params }, { mod }, or { sound }' }, { status: 400 });
     }
 
     if (body.params) await updateSnapshotParams(itemId, boardId, body.params);
     if (body.mod) await updateSnapshotMod(itemId, boardId, body.mod);
+    if (body.sound) await updateSnapshotSound(itemId, boardId, body.sound);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[api/boards/default/items/:id PATCH]', err);
@@ -48,9 +53,36 @@ export async function POST(req: Request, ctx: { params: Promise<{ itemId: string
     const user = await requireUser();
     const boardId = await getOrCreateDefaultBoard(user.id);
 
+    // Ownership MUST be checked before the storage write below, not after
+    // via setSnapshotPoster's boardId-scoped update. storage.put() has no
+    // scoping of its own — nothing stops it from writing to
+    // `snapshots/<any itemId>.png` for an itemId that names a REAL row on
+    // someone else's board. Previously that write happened first and the
+    // DB update (correctly scoped) happened second, which meant the write
+    // itself was never actually gated: a mismatched boardId just made the
+    // follow-up DB update a no-op, while the blob write — and, because
+    // VercelBlobStorage.put() always sets allowOverwrite: true, an
+    // overwrite of that OTHER item's already-saved poster file — had
+    // already happened regardless.
+    const owned = await boardItemBelongsToBoard(itemId, boardId);
+    if (!owned) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    }
+
+    // Content-Length gives an early rejection without reading the body at
+    // all; the byteLength check below is the actual enforcement, since
+    // Content-Length can be absent or wrong.
+    const declaredLength = Number(req.headers.get('content-length') ?? NaN);
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_POSTER_CAPTURE_BYTES) {
+      return NextResponse.json({ error: 'Capture too large' }, { status: 413 });
+    }
+
     const bytes = new Uint8Array(await req.arrayBuffer());
     if (bytes.byteLength < 2048) {
       return NextResponse.json({ error: 'Capture too small, ignored' }, { status: 422 });
+    }
+    if (bytes.byteLength > MAX_POSTER_CAPTURE_BYTES) {
+      return NextResponse.json({ error: 'Capture too large' }, { status: 413 });
     }
 
     const put = await getStorage().put(`snapshots/${itemId}.png`, bytes, 'image/png');

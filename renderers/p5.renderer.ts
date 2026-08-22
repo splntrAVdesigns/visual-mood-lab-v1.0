@@ -5,10 +5,14 @@ import { paramsToSchema } from '@/lib/sketch/params-to-schema';
 import {
   BOOT_TIMEOUT_MS,
   HEARTBEAT_TIMEOUT_MS,
+  SANDBOX_RUNTIME_VERSION,
   type HostToSandbox,
   type SandboxToHost,
 } from '@/lib/sandbox/protocol';
 import type { AssetRenderer, CaptureOpts, Quality, RenderContext } from './types';
+import { setTileHovering, pluckTileAudio, setTileEnergy, isTileAudioActive } from '@/lib/sound/engine';
+import { getWaveform } from '@/lib/sound/meter';
+import { hasTrack, getTrackWaveform } from '@/lib/sound/track';
 
 /**
  * Runs a p5 sketch inside a sandboxed iframe.
@@ -34,6 +38,16 @@ export class P5Renderer implements AssetRenderer {
   private disposed = false;
   private ready = false;
   private quality: Quality = 'preview';
+  /**
+   * The board-item id (`asset.itemId`) — NOT `this.assetId`, which is
+   * `asset.id`, the underlying content's own id, shared across every board
+   * placement of it. lib/render/pool.ts keys everything sound-related
+   * (soundState, the active-engine map) by itemId, since createRenderer()
+   * is only ever given asset.id — this field exists specifically so the
+   * 'hover' handler below can forward to the correct key instead of
+   * silently missing every lookup.
+   */
+  private cardId = '';
 
   private lastHeartbeat = 0;
   private initSentAt = 0;
@@ -44,12 +58,18 @@ export class P5Renderer implements AssetRenderer {
   private onMessage: ((e: MessageEvent) => void) | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Tracks the last 'enabled' value actually sent to the sandbox, so the
+      falling edge (sound just stopped) sends exactly one explicit
+      audioWaveform message rather than either spamming it every frame or
+      never announcing the change — see render()'s audio block. */
+  private lastAudioActiveSent: boolean | null = null;
 
   constructor(assetId: string) {
     this.assetId = assetId;
   }
 
   async mount(el: HTMLElement, asset: Asset, signal: AbortSignal): Promise<void> {
+    this.cardId = asset.itemId;
 
     if (!asset.source) {
       this.error = 'Sketch has no source';
@@ -60,7 +80,16 @@ export class P5Renderer implements AssetRenderer {
     this.params = this.schema ? { ...defaultsOf(this.schema), ...(asset.params ?? {}) } : {};
 
     const frame = document.createElement('iframe');
-    frame.src = '/sandbox/index.html';
+    // Version query param, not a bare static path — public/sandbox/index.html
+    // has been edited several times this project (audioWaveform bridge,
+    // then setEnergy), and a bare path gives the browser (and any CDN in
+    // front of static assets) no signal that the file changed, so it can
+    // keep serving a stale cached copy indefinitely. That's a silent
+    // failure mode that looks exactly like a code bug — new host-side
+    // logic calling a bridge function the currently-loaded sandbox runtime
+    // never defined — while every line of actual code is correct. Bump
+    // this string any time index.html changes.
+    frame.src = `/sandbox/index.html?v=${SANDBOX_RUNTIME_VERSION}`;
     frame.style.cssText = 'width:100%;height:100%;border:0;display:block;background:#000';
     // allow-scripts WITHOUT allow-same-origin: the frame gets a null origin
     // and cannot reach this document, its storage, or its cookies.
@@ -162,6 +191,31 @@ export class P5Renderer implements AssetRenderer {
         break;
       }
 
+      case 'hover':
+        // Interaction-gated sound presets (Field Lines' arp) read this —
+        // see lib/sound/engine.ts. Must be cardId (asset.itemId), not
+        // this.assetId (asset.id) — see the cardId field's comment for why
+        // those are two different strings. Harmless no-op for a card whose
+        // active preset isn't an ArpEngine, or that has no sound engine
+        // running at all.
+        setTileHovering(this.cardId, !!msg.hovering);
+        break;
+
+      case 'pluck':
+        // Graze-to-pluck: a discrete trigger event from the sketch itself
+        // (Field Lines' per-line crossing detection), not continuous
+        // hover state. Same cardId-vs-assetId reasoning as 'hover' above.
+        if (typeof msg.x === 'number') pluckTileAudio(this.cardId, msg.x);
+        break;
+
+      case 'energy':
+        // Continuous interaction-intensity signal (Wound Thread's push
+        // physics), not a discrete event like pluck. Same cardId-vs-
+        // assetId reasoning as 'hover' above. No-op for anything that
+        // isn't an interaction-gated AbstractEngine — see setTileEnergy.
+        if (typeof msg.energy === 'number') setTileEnergy(this.cardId, msg.energy);
+        break;
+
       case 'captured': {
         const waiter = msg.requestId ? this.captureWaiters.get(msg.requestId) : undefined;
         if (waiter && msg.requestId) {
@@ -207,6 +261,29 @@ export class P5Renderer implements AssetRenderer {
     }
 
     void ctx;
+
+    // Forward this card's own live audio, if anything is actually driving
+    // it — generic plumbing any sketch can opt into via
+    // p.getAudioWaveform() in the sandbox, not something specific to any
+    // one sketch. Two possible sources as of Phase 4.9: an uploaded track
+    // (lib/sound/track.ts) or the tile's own synth preset
+    // (lib/sound/meter.ts's shared analyser tap) — a track takes priority
+    // when both are present, same as pool.ts's per-card ctx.audio
+    // resolution, since loading a track is the more deliberate, more
+    // recent choice. `enabled` is sent explicitly rather than inferred
+    // from the buffer, per the protocol doc.
+    const trackActive = hasTrack(this.cardId);
+    const synthActive = isTileAudioActive(this.cardId);
+    if (trackActive || synthActive) {
+      const waveform = trackActive ? getTrackWaveform(this.cardId) : getWaveform(this.cardId);
+      this.send({ type: 'audioWaveform', enabled: true, waveform: waveform ?? undefined });
+      this.lastAudioActiveSent = true;
+    } else if (this.lastAudioActiveSent !== false) {
+      // Falling edge (or first frame with nothing active) — announce it
+      // once rather than every subsequent silent frame.
+      this.send({ type: 'audioWaveform', enabled: false });
+      this.lastAudioActiveSent = false;
+    }
   }
 
   play(): void {
@@ -240,6 +317,27 @@ export class P5Renderer implements AssetRenderer {
   setQuality(q: Quality): void {
     this.quality = q;
     this.send({ type: 'quality', quality: q });
+  }
+
+  /**
+   * Called by the pool after it detects the WHOLE shared render loop just
+   * resumed from a large gap — see AssetRenderer.resumeFromStall's doc.
+   * A native file-picker dialog (Upload Audio, or any file input) is a
+   * confirmed real-world trigger: it takes OS-level focus, and the
+   * browser throttles requestAnimationFrame for the backgrounded tab —
+   * including this iframe's own heartbeat setInterval, which shares the
+   * same throttling. Without this reset, the very first render() after
+   * the dialog closes reads `lastHeartbeat` as stale by however long the
+   * dialog was open (often well past HEARTBEAT_TIMEOUT_MS), decides the
+   * sketch hung, and tears down a perfectly healthy iframe — the
+   * intermittent "tile goes blank the moment Upload Audio is clicked"
+   * bug. The sketch never actually stopped heartbeating; the whole tab,
+   * including the code that would have noticed, was paused right along
+   * with it. Just re-arm the clock and let the iframe's own heartbeat
+   * catch up normally on its next tick.
+   */
+  resumeFromStall(): void {
+    this.lastHeartbeat = performance.now();
   }
 
   async capture(_opts?: CaptureOpts): Promise<Blob | null> {

@@ -142,6 +142,28 @@ export default function sketch(p, get) {
   let currentCount = 0;
   let lastW = 0;
   let lastH = 0;
+  // Trigger tracking for the sound bridge — REPLACED the earlier
+  // physics-velocity-derived "energy" signal entirely, after several
+  // rounds of trying to calibrate it against real usage. The velocity
+  // approach was fundamentally indirect: shape-memory actively opposes
+  // an active push the whole time you're dragging, so the actual
+  // velocity a light or moderate push produces was smaller and far more
+  // variable than expected, and every recalibration attempt was still a
+  // guess at a number rather than a fix to the underlying mismatch.
+  //
+  // This uses the exact same p.pluck() bridge Field Lines, Cursor
+  // Ripple, SVG Particle, and Grid Snake's eat-trigger already use
+  // successfully — proven, reliable infrastructure — instead of a
+  // bespoke physics-derived signal. A fresh press fires immediately (a
+  // tap should always produce sound, not require it to already be
+  // moving), and continued dragging fires again every TRIGGER_STEP_PX of
+  // actual cursor movement — directly tied to how far the cursor has
+  // moved, not to how fast the simulated thread happens to be reacting.
+  let wasDragging = false;
+  let dragAccumX = null;
+  let dragAccumY = null;
+  let dragDistanceSinceTrigger = 0;
+  const TRIGGER_STEP_PX = 30;
 
   function buildTargets(shape, count, w, h) {
     if (shape === 'FREE') return null;
@@ -213,7 +235,18 @@ export default function sketch(p, get) {
 
     p.background(0);
 
-    const dragging = p.mouseIsPressed || p.touches.length > 0;
+    // p.mouseIsPressed is a document-GLOBAL flag in p5 (any mousedown
+    // anywhere in the page, not just on this canvas), not scoped to this
+    // sketch at all — dragging a slider in the Sound panel, or anything
+    // else on the page, reads as "the user is pushing the thread" without
+    // this bounds check, which is exactly what made the physics (and, via
+    // the energy signal below, the sound) engage while the actual cursor
+    // was nowhere near this tile. Requiring the pointer to genuinely be
+    // over the canvas is the fix; p.touches already reports actual touch
+    // points on this canvas specifically, so it doesn't need the same
+    // check.
+    const overCanvas = p.mouseX >= 0 && p.mouseX <= p.width && p.mouseY >= 0 && p.mouseY <= p.height;
+    const dragging = (p.mouseIsPressed && overCanvas) || p.touches.length > 0;
     const px = p.touches.length ? p.touches[0].x : p.mouseX;
     const py = p.touches.length ? p.touches[0].y : p.mouseY;
 
@@ -259,6 +292,24 @@ export default function sketch(p, get) {
       pt.x += pt.vx;
       pt.y += pt.vy;
     }
+
+    // Sound trigger: a fresh press fires immediately, continued dragging
+    // fires again every TRIGGER_STEP_PX of actual cursor movement. See
+    // this closure's own top-of-function comment for why this replaced
+    // the earlier velocity-derived signal.
+    if (dragging && !wasDragging) {
+      dragDistanceSinceTrigger = 0;
+      if (typeof p.pluck === 'function') p.pluck(px / p.width);
+    } else if (dragging && dragAccumX !== null) {
+      dragDistanceSinceTrigger += Math.hypot(px - dragAccumX, py - dragAccumY);
+      if (dragDistanceSinceTrigger >= TRIGGER_STEP_PX) {
+        dragDistanceSinceTrigger = 0;
+        if (typeof p.pluck === 'function') p.pluck(px / p.width);
+      }
+    }
+    dragAccumX = dragging ? px : null;
+    dragAccumY = dragging ? py : null;
+    wasDragging = dragging;
 
     // Render as one continuous thread.
     const pulse = 0.6 + 0.4 * Math.pow(0.5 + 0.5 * Math.sin(p.millis() * 0.001 * pulseRate * 6.283), 3);

@@ -103,6 +103,13 @@ export default function sketch(p, get) {
           vx: 0, vy: 0,
           r: Math.hypot(x, y),
           seed: Math.random() * 1000,
+          // Tracks whether this particle was within repelRadius of the
+          // cursor last frame — see the pluck-on-crossing block in
+          // draw() below. Per-particle rather than a single tile-wide
+          // flag, since "sound on proximity" only makes sense fired at
+          // the moment a specific particle enters range, not once for
+          // the whole cluster.
+          wasNear: false,
         });
       }
     }
@@ -177,6 +184,23 @@ export default function sketch(p, get) {
           q.vy += (dy / d) * f;
         }
       }
+
+      // Sound trigger: fires once on the frame a particle first enters
+      // repelRadius, not continuously while it stays inside — the same
+      // "graze, don't buzz" instinct as Field Lines' line-crossing pluck.
+      // Deliberately independent of repelF>0 above: this is about
+      // DISTANCE, not about whether the visual repel force is currently
+      // nonzero, so a preset could in principle want proximity-triggered
+      // sound with zero visual scatter. Reuses the same dx/dy the force
+      // block above computes when it runs, but needs its own
+      // (cheap) distance check when repelF is 0 and that block is
+      // skipped entirely.
+      const ddx = q.x - p.mouseX, ddy = q.y - p.mouseY;
+      const isNear = inside2 && ddx * ddx + ddy * ddy < repelR2;
+      if (isNear && !q.wasNear && typeof p.pluck === 'function') {
+        p.pluck(q.x / p.width);
+      }
+      q.wasNear = isNear;
 
       q.vx += (hx - q.x) * ret;
       q.vy += (hy - q.y) * ret;

@@ -7,6 +7,7 @@ import { SliderControlRow } from './controls/SliderControl';
 import { StepperControlRow } from './controls/StepperControl';
 import { ToggleControlRow } from './controls/ToggleControl';
 import { SelectControlRow } from './controls/SelectControl';
+import { ButtonStripControlRow } from './controls/ButtonStripControl';
 import { ColorControlRow } from './controls/ColorControl';
 import { XYControlRow } from './controls/XYControl';
 import { Vec3ControlRow } from './controls/Vec3Control';
@@ -55,7 +56,9 @@ function ControlBody({ control, value, dirty, onChange, onReset }: ControlRowPro
     case 'toggle':
       return <ToggleControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />;
     case 'select':
-      return <SelectControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />;
+      return control.displayStyle === 'strip'
+        ? <ButtonStripControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />
+        : <SelectControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />;
     case 'color':
       return <ColorControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />;
     case 'xy':

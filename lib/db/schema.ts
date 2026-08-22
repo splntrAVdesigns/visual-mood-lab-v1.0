@@ -10,7 +10,7 @@ import {
   timestamp,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import type { ControlSchema, ModState, ParamState } from '@/renderers/control-schema';
+import type { ControlSchema, ModState, ParamState, SoundState } from '@/renderers/control-schema';
 
 export const assetTypeEnum = pgEnum('asset_type', ['image', 'svg', 'video', 'p5', 'shader']);
 
@@ -39,6 +39,23 @@ export const assets = pgTable(
     schema: jsonb('schema').$type<ControlSchema>(),
     params: jsonb('params').$type<ParamState>().notNull().default({}),
     mod: jsonb('mod').$type<ModState>().notNull().default({}),
+    /**
+     * Default value spelled out explicitly rather than importing
+     * DEFAULT_SOUND_STATE, since drizzle-kit needs to statically resolve
+     * this at migration-generation time — keep in sync with
+     * lib/sound/types.ts's DEFAULT_SOUND_STATE by hand.
+     */
+    sound: jsonb('sound').$type<SoundState>().notNull().default({
+      enabled: false,
+      presetId: null,
+      notes: ['C'],
+      scale: 'major',
+      octave: 0,
+      lfoShape: 'sine',
+      volume: 0.7,
+      humanize: false,
+      swing: false,
+    }),
 
     dominantColors: text('dominant_colors').array().notNull().default(sql`ARRAY[]::text[]`),
     width: integer('width'),
@@ -109,6 +126,10 @@ export const boardItems = pgTable(
      * half the reason to save one.
      */
     modOverride: jsonb('mod_override').$type<ModState>(),
+
+    /** Sound configuration for a snapshot. Mirrors modOverride the same
+        way paramsOverride and modOverride already mirror each other. */
+    soundOverride: jsonb('sound_override').$type<SoundState>(),
   },
   (t) => [
     index('board_items_board_idx').on(t.boardId, t.order),

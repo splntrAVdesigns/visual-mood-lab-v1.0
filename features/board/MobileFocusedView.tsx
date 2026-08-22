@@ -12,6 +12,8 @@ import { ASSET_TYPE_BADGE } from '@/types/asset';
 import { groupedControls, isVisible } from '@/renderers/control-schema';
 import { ControlRow } from '@/features/inspector/ControlRow';
 import { ModulationPanel } from '@/features/inspector/ModulationPanel';
+import { SoundPanel } from '@/features/inspector/SoundPanel';
+import { getCompatiblePresets } from '@/lib/sound/presets';
 import { RendererStage } from './RendererStage';
 import { CodePanel } from './CodePanel';
 import { closeAsset } from './openAsset';
@@ -24,7 +26,7 @@ import {
 import { getPool } from '@/lib/render/pool';
 import s from '../features.module.css';
 
-type Tab = 'controls' | 'modulate';
+type Tab = 'controls' | 'modulate' | 'sound';
 
 /**
  * The focused view on a narrow screen.
@@ -113,6 +115,10 @@ export function MobileFocusedView() {
     (c) => c.modulatable === true && (c.kind === 'slider' || c.kind === 'stepper'),
   );
   const canModulate = !asset.isSnapshot && modulatable.length > 0;
+  // See FocusedAssetOverlay's identical change for the full reasoning —
+  // Sound now also covers Tier 2 assets (modulatable, no synth preset),
+  // since that's exactly what an uploaded Track is for (Phase 4.9).
+  const canSound = !asset.isSnapshot && (getCompatiblePresets(schema).length > 0 || canModulate);
   const groups = schema ? groupedControls(schema) : [];
   const hasAdvanced = (schema?.controls.some((c) => c.advanced) ?? false) && !showAdvanced;
 
@@ -201,7 +207,7 @@ export function MobileFocusedView() {
         </Button>
       </div>
 
-      {canModulate && (
+      {(canModulate || canSound) && (
         <div className={s.mobileTabs} role="tablist">
           <button
             type="button"
@@ -213,22 +219,38 @@ export function MobileFocusedView() {
           >
             Parameters
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === 'modulate'}
-            className={s.mobileTab}
-            data-active={tab === 'modulate' ? 'true' : undefined}
-            onClick={() => setTab('modulate')}
-          >
-            Modulate
-          </button>
+          {canModulate && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'modulate'}
+              className={s.mobileTab}
+              data-active={tab === 'modulate' ? 'true' : undefined}
+              onClick={() => setTab('modulate')}
+            >
+              Modulate
+            </button>
+          )}
+          {canSound && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'sound'}
+              className={s.mobileTab}
+              data-active={tab === 'sound' ? 'true' : undefined}
+              onClick={() => setTab('sound')}
+            >
+              Sounds
+            </button>
+          )}
         </div>
       )}
 
       <div className={s.mobileSheet} ref={sheetRef}>
         {tab === 'modulate' && canModulate ? (
-          <ModulationPanel controls={modulatable} onClose={() => setTab('controls')} embedded />
+          <ModulationPanel controls={modulatable} itemId={asset.itemId} onClose={() => setTab('controls')} embedded />
+        ) : tab === 'sound' && canSound && schema ? (
+          <SoundPanel schema={schema} itemId={asset.itemId} onClose={() => setTab('controls')} embedded />
         ) : (
           <>
             {groups.map(({ group, controls }) => {
@@ -239,7 +261,14 @@ export function MobileFocusedView() {
 
               return (
                 <section key={group.id} className={s.mobileGroup}>
-                  <h2 className={s.mobileGroupLabel}>{group.label}</h2>
+                  {/* Skipped when there's only one group total — the
+                      "Parameters" tab immediately above already says
+                      this, and repeating it here just eats vertical
+                      space on a screen that's already tight. A schema
+                      with multiple real groups still gets a heading per
+                      group, since those actually need distinguishing
+                      from each other. */}
+                  {groups.length > 1 && <h2 className={s.mobileGroupLabel}>{group.label}</h2>}
                   {rows.map((c) => (
                     <ControlRow
                       key={c.id}

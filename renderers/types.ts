@@ -25,7 +25,17 @@ export interface RenderContext {
   height: number;
   pixelRatio: number;
   pointer: { x: number; y: number; down: boolean };
-  /** 64-bin FFT from the shared analyser, or null when audio is off. Phase 4. */
+  /**
+   * 64-bin FFT, normalized 0..1, or null when nothing is providing one for
+   * this card this frame.
+   *
+   * Resolved PER CARD as of Phase 4.9, despite RenderContext otherwise
+   * being identical across every renderer the pool drives on a given tick
+   * (see the class doc above) — see lib/render/pool.ts's tick(): this
+   * card's own uploaded track (lib/sound/track.ts) takes priority when
+   * loaded, falling back to a board-wide feed reserved for a possible
+   * future shared source (mic-in or similar) that nothing populates yet.
+   */
   audio: Float32Array | null;
 }
 
@@ -62,6 +72,23 @@ export interface AssetRenderer {
 
   setQuality(q: Quality): void;
   capture(opts?: CaptureOpts): Promise<Blob | null>;
+
+  /**
+   * Called by lib/render/pool.ts's tick() when the ENTIRE shared render
+   * loop just resumed after a large gap — the browser throttling/pausing
+   * requestAnimationFrame for the whole tab (a backgrounded tab, a
+   * minimized window, laptop sleep, or a native modal like a file picker
+   * holding focus), not any one renderer hanging. Optional: only
+   * meaningful for a renderer that tracks its own liveness against wall-
+   * clock time across a postMessage boundary (P5Renderer's heartbeat
+   * watchdog) — most renderer types have nothing to reset here.
+   *
+   * Without this, a renderer with a wall-clock-based watchdog reads the
+   * stall itself as "target stopped responding" the instant the loop
+   * resumes, and tears down a perfectly healthy render — see
+   * P5Renderer's implementation for the concrete failure this fixes.
+   */
+  resumeFromStall?(): void;
 
   dispose(): void;
 

@@ -1,5 +1,5 @@
 export const params = {
-  staticIntensity:  { kind: 'slider', label: 'Static Intensity', min: 0, max: 1, step: 0.01, default: 0.35, modulatable: true },
+  staticIntensity:  { kind: 'slider', label: 'Static Intensity', min: 0, max: 1, step: 0.01, default: 0, modulatable: true, hint: 'Mock mode: brightness of the horizontal static roll bands. Live mode: grain jitter on the real trace. Defaults to 0 so the live trace starts perfectly clean.' },
   waveShape:        { kind: 'select', label: 'Waveform Shape', options: [
                         { label: 'Sine', value: 'SINE' },
                         { label: 'Saw', value: 'SAW' },
@@ -12,7 +12,9 @@ export const params = {
   layers:           { kind: 'stepper', label: 'Waveform Layers', min: 1, max: 10, step: 1, default: 2, hint: 'Each layer moves opposite the one before it.' },
   layerSpread:      { kind: 'slider', label: 'Layer Spread', min: 0, max: 1, step: 0.01, default: 0.3, hint: 'Vertical spacing between stacked layers.' },
   lfoRate:          { kind: 'slider', label: 'LFO Rate', min: 0.02, max: 1, step: 0.01, default: 0.12 },
-  glitchFrequency:  { kind: 'slider', label: 'Glitch Frequency', min: 0, max: 1, step: 0.01, default: 0.15, hint: 'Chance per second of a jolt burst — perturbs the waveform directly, not just the static.' },
+  glitchFrequency:  { kind: 'slider', label: 'Glitch Frequency', min: 0, max: 1, step: 0.01, default: 0.15, hint: 'Chance per second of a jolt burst — perturbs the waveform directly (mock or live) with a chromatic RGB-split, not just the static.' },
+  motionBlur:       { kind: 'slider', label: 'Motion Blur', min: 0, max: 1, step: 0.01, default: 0, hint: 'Trails the last several frames instead of clearing each one — 0 is crisp, higher values smear. Applies to both the mock and live waveform.' },
+  phosphorGlow:     { kind: 'slider', label: 'Phosphor Glow', min: 0, max: 1, step: 0.01, default: 0, hint: 'CRT-style soft glow around the trace. 0 is off. Applies to both the mock and live waveform.' },
   tint:             { kind: 'color', label: 'Wave Tint', default: { r: 0.85, g: 0.9, b: 0.95, a: 1 } },
   scanlines:        { kind: 'toggle', label: 'Scanlines', default: true, hint: 'Master switch for all horizontal artifacts — static grain and overlay lines together.' },
   scanlineColor:    { kind: 'color', label: 'Scanline Color', default: { r: 0, g: 0, b: 0, a: 1 } },
@@ -41,6 +43,9 @@ export default function sketch(p, get) {
 
   // Glitch is now a real timed burst state, not a per-row coin flip on
   // noise (which was imperceptible — shifting noise sideways barely reads).
+  // Shared by both draw paths via advanceGlitch() below, so mock and live
+  // modes burst on the identical schedule/feel rather than each having
+  // their own slightly-different timing.
   let glitchTimer = 0;
   let glitchStrength = 0;
 
@@ -55,7 +60,124 @@ export default function sketch(p, get) {
     rowOffsets = new Array(Math.ceil(p.height / 2)).fill(0);
   };
 
-  p.draw = () => {
+  /** Advances the shared glitch-burst state by one frame and returns
+      whether a burst is currently in progress. ~glitchFrequency chance
+      per second of a new burst starting once the previous one (if any)
+      has fully decayed. Factored out of drawMockWaveform so drawLiveWaveform
+      can trigger the identical chromatic RGB-split burst on real audio
+      too, rather than reimplementing its own version of "is this a
+      glitch frame." */
+  function advanceGlitch(glitchFrequency) {
+    if (glitchTimer <= 0) {
+      if (p.random() < glitchFrequency / 60) {
+        glitchTimer = Math.floor(p.random(6, 16));
+        glitchStrength = p.random(0.5, 1);
+      }
+    } else {
+      glitchTimer--;
+    }
+    return glitchTimer > 0;
+  }
+
+  /**
+   * Live mode: this card's own real sound engine output, read straight
+   * off the shared analyser tap (see lib/sound/meter.ts's getWaveform()
+   * and the audioWaveform bridge in p5.renderer.ts / the sandbox
+   * runtime).
+   *
+   * Layer stacking and the scanline roll bands stay genuinely inert here
+   * (see InspectorDrawer's STATIC_CHOIR_MOCK_ONLY_CONTROL_IDS) — those
+   * are specifically mock-generator artifacts, not something a real
+   * signal should be decorated with. Everything else now applies to the
+   * real trace too:
+   *
+   *  - Wave Amplitude: a direct visual gain on the real (roughly -1..1)
+   *    samples, same idea as the mock's own amp scaling, just applied to
+   *    real data instead of a generated one.
+   *  - Wave Frequency: "frequency" has no literal meaning against an
+   *    already-captured buffer, so this is repurposed as a horizontal
+   *    zoom — 1 (default) stretches the whole captured window across the
+   *    tile; higher values zoom into a shorter leading slice of it.
+   *  - Static Intensity (now defaults to 0, unlike the mock's roll
+   *    bands): per-point grain jitter on the trace itself. At 0 the
+   *    trace is perfectly clean; dialing it up roughens it.
+   *  - Glitch Frequency: the SAME timed chromatic RGB-split burst the
+   *    mock generator uses, applied to the real trace.
+   *  - Motion Blur: trails recent frames instead of a full clear each
+   *    draw, via a translucent background fill — the same technique
+   *    Cursor Ripple's own persistence trail uses. Also applies to the
+   *    mock generator (see drawMockWaveform), not live-only anymore.
+   *  - Phosphor Glow: a soft shadow blur behind the stroke via real
+   *    Canvas2D compositing (drawingContext.shadowBlur), not a fake
+   *    overlay — GPU-composited like any other canvas blend. Also
+   *    applies to the mock generator.
+   */
+  function drawLiveWaveform(audio) {
+    const waveAmplitude = get('waveAmplitude');
+    const waveFrequency = get('waveFrequency');
+    const tint = get('tint');
+    const staticIntensity = get('staticIntensity');
+    const glitchFrequency = get('glitchFrequency');
+    const motionBlur = get('motionBlur');
+    const phosphorGlow = get('phosphorGlow');
+
+    // Motion blur: a partially-transparent clear leaves a fading trail of
+    // the last several frames behind instead of wiping to black every
+    // draw. 0 (default) is a fully opaque clear — identical to the old
+    // always-crisp behavior.
+    const clearAlpha = 255 - motionBlur * 240;
+    p.background(4, 4, 4, clearAlpha);
+    p.noFill();
+
+    const glitching = advanceGlitch(glitchFrequency);
+    const midY = p.height / 2;
+    const sampleCount = audio.length;
+    const windowLength = Math.max(8, Math.floor(sampleCount / Math.max(0.25, waveFrequency)));
+
+    function sampleY(x) {
+      const t = x / p.width;
+      const idx = Math.min(sampleCount - 1, Math.floor(t * windowLength));
+      const sample = audio[idx] || 0;
+      const grain = staticIntensity > 0
+        ? (p.noise(x * 0.05, p.frameCount * 0.05) - 0.5) * staticIntensity * waveAmplitude * 0.6
+        : 0;
+      return midY + sample * waveAmplitude + grain;
+    }
+
+    const passes = glitching
+      ? [
+          { dx: -glitchStrength * 6, color: { r: 1, g: 0.2, b: 0.2 }, alpha: 130 },
+          { dx: glitchStrength * 6, color: { r: 0.2, g: 0.6, b: 1 }, alpha: 130 },
+          { dx: 0, color: tint, alpha: 255 },
+        ]
+      : [{ dx: 0, color: tint, alpha: 235 }];
+
+    for (const pass of passes) {
+      if (phosphorGlow > 0) {
+        p.drawingContext.shadowBlur = phosphorGlow * 24;
+        p.drawingContext.shadowColor = `rgba(${pass.color.r * 255}, ${pass.color.g * 255}, ${pass.color.b * 255}, 0.9)`;
+      }
+      p.stroke(pass.color.r * 255, pass.color.g * 255, pass.color.b * 255, pass.alpha);
+      p.strokeWeight(2);
+      p.beginShape();
+      for (let x = 0; x <= p.width; x += 2) {
+        let jolt = 0;
+        if (glitching) {
+          jolt = (p.noise(x * 0.05, p.frameCount * 0.6) - 0.5) * waveAmplitude * glitchStrength * 0.8;
+        }
+        p.vertex(pass.dx + x, sampleY(x) + jolt);
+      }
+      p.endShape();
+      if (phosphorGlow > 0) {
+        p.drawingContext.shadowBlur = 0;
+      }
+    }
+  }
+
+  /** Mock mode: the original procedural generator, entirely unchanged —
+      what every card shows before Sound is ever turned on, and what a
+      sound-less variant of this tile still shows indefinitely. */
+  function drawMockWaveform() {
     const staticIntensity = get('staticIntensity');
     const waveShape = get('waveShape');
     const waveAmplitude = get('waveAmplitude');
@@ -65,24 +187,21 @@ export default function sketch(p, get) {
     const layerSpread = get('layerSpread');
     const lfoRate = get('lfoRate');
     const glitchFrequency = get('glitchFrequency');
+    const motionBlur = get('motionBlur');
+    const phosphorGlow = get('phosphorGlow');
     const tint = get('tint');
     const scanlines = get('scanlines');
     const scanlineColor = get('scanlineColor');
     const scanlineWidth = get('scanlineWidth');
     const scanlineMotion = get('scanlineMotion');
 
-    p.background(4);
+    // Same translucent-clear motion-blur technique as the live path —
+    // 0 (default) is a fully opaque clear, identical to the old
+    // always-crisp behavior.
+    const clearAlpha = 255 - motionBlur * 240;
+    p.background(4, 4, 4, clearAlpha);
 
-    // Trigger / advance a glitch burst. ~glitchFrequency chance per second.
-    if (glitchTimer <= 0) {
-      if (p.random() < glitchFrequency / 60) {
-        glitchTimer = Math.floor(p.random(6, 16));
-        glitchStrength = p.random(0.5, 1);
-      }
-    } else {
-      glitchTimer--;
-    }
-    const glitching = glitchTimer > 0;
+    const glitching = advanceGlitch(glitchFrequency);
 
     // Static/roll bands — now fully owned by the Scanlines toggle, so
     // switching it off actually removes every horizontal artifact instead
@@ -123,6 +242,10 @@ export default function sketch(p, get) {
       : [{ dx: 0, color: tint, alpha: 220 }];
 
     for (const pass of passes) {
+      if (phosphorGlow > 0) {
+        p.drawingContext.shadowBlur = phosphorGlow * 24;
+        p.drawingContext.shadowColor = `rgba(${pass.color.r * 255}, ${pass.color.g * 255}, ${pass.color.b * 255}, 0.9)`;
+      }
       for (let layer = 0; layer < layers; layer++) {
         const dirSign = layer % 2 === 0 ? 1 : -1;
         const layerOffset = layers > 1
@@ -153,6 +276,9 @@ export default function sketch(p, get) {
         }
         p.endShape();
       }
+      if (phosphorGlow > 0) {
+        p.drawingContext.shadowBlur = 0;
+      }
     }
 
     if (scanlines) {
@@ -164,6 +290,20 @@ export default function sketch(p, get) {
       for (let y = -spacing; y < p.height + spacing; y += spacing) {
         p.line(0, y + offset, p.width, y + offset);
       }
+    }
+  }
+
+  p.draw = () => {
+    // getAudioWaveform() is only defined once the sandbox bridge exists
+    // (see public/sandbox/index.html) — the typeof guard is defensive,
+    // matching cursor-ripple.js's identical guard around p.pluck. Returns
+    // null whenever this card's own Sound isn't currently enabled/running
+    // (see the protocol doc), which is exactly the mock-mode condition.
+    const audio = typeof p.getAudioWaveform === 'function' ? p.getAudioWaveform() : null;
+    if (audio) {
+      drawLiveWaveform(audio);
+    } else {
+      drawMockWaveform();
     }
   };
 }

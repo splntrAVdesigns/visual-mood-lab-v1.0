@@ -108,7 +108,24 @@ export function RendererStage({ asset, focused = false }: RendererStageProps) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- asset.itemId
     // is deliberately used instead of `asset`; see the comment below.
-  }, [asset.itemId, focused, reducedMotion, quality, epoch, hovered, boardFrozen]);
+    // `quality` and `epoch` are deliberately NOT in this array. Both used
+    // to be here despite neither being read anywhere in this effect body —
+    // their only real effect was forcing a full demote+promote (dispose the
+    // renderer, tear the iframe down, mount a brand new one) any time
+    // either changed ANYWHERE in the app, including while this exact card
+    // sat focused and untouched. For a plain image/video card that's just
+    // a flicker. For Field Lines it was fatal: a fresh iframe means a
+    // fresh ArpEngine, which boots inactive by design (see arp.ts) and
+    // only activates on a genuine pointerenter — so a remount with the
+    // pointer already resting on the tile silently killed the sound with
+    // no user-visible cause. Quality already has a dedicated live-update
+    // path (see the effect below) that doesn't require remounting;
+    // `epoch` had no such path and no consumer here at all — if a
+    // deliberate "force everyone to hard-remount" signal is genuinely
+    // needed later, it should be an explicit imperative pool call, not a
+    // blanket dependency that also nukes whichever card the user has
+    // open.
+  }, [asset.itemId, focused, reducedMotion, hovered, boardFrozen]);
   // Deps deliberately do NOT include the whole `asset` object — only
   // asset.itemId, a primitive. This effect's job is mounting/detaching a
   // renderer for a given card; it doesn't need the latest params or mod to
@@ -129,6 +146,24 @@ export function RendererStage({ asset, focused = false }: RendererStageProps) {
   useEffect(() => {
     getPool().setPaused(paused || reducedMotion);
   }, [paused, reducedMotion]);
+
+  // Quality used to sit in the mount effect's deps and force a full
+  // remount on every change. Renderers already support live quality
+  // updates without remounting (P5Renderer.setQuality forwards a
+  // 'quality' postMessage; ShaderRenderer swaps program/FBO resolution in
+  // place) — this just uses that path instead of tearing the card down.
+  // Guarded against 'auto': the playback store's QualityTier allows a
+  // third value the renderer contract's Quality doesn't ('preview' |
+  // 'full' only), and pool.ts's own mount-time call resolves quality from
+  // this card's focused/preview role rather than consulting the store's
+  // tier — there's no confirmed mapping from 'auto' to a concrete tier
+  // visible from this component to replicate here. A concrete tier change
+  // still pushes live as intended; an 'auto' change is left to whatever
+  // already resolves it at the next genuine mount/promote.
+  useEffect(() => {
+    if (quality === 'auto') return;
+    getPool().get(asset.itemId)?.setQuality(quality);
+  }, [asset.itemId, quality]);
 
   const live = state !== 'poster' && !error;
 

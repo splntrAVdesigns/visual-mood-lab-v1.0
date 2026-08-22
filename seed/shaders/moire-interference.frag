@@ -4,15 +4,22 @@ precision highp float;
 /* moire-interference — several rotating line grids multiplied together.
    Almost nothing is drawn: the visible pattern is entirely emergent from
    interference between layers, which is why it stays hypnotic at very low
-   visual complexity. Fits the minimal aesthetic exactly. */
+   visual complexity. Fits the minimal aesthetic exactly.
+
+   Audio-reactivity candidates, mirroring pulse-bars.frag's convention of
+   calling these out directly rather than leaving every eligible uniform
+   modulatable-by-default with no guidance: u_frequency (line density
+   visibly breathing with the signal) and u_spin (rotation speed kicking
+   on bass) are the two most dramatic under modulation; u_bloom is the
+   subtler, glow-only option for a less aggressive read. */
 
 uniform float u_time;
 uniform vec2 u_resolution;
 
-uniform int u_layers;          // @label(Layers) @range(2, 6) @default(3)
-uniform float u_frequency;     // @label(Frequency) @range(4, 200) @default(38) @log @unit(lines)
+uniform int u_layers;          // @label(Layers) @range(2, 6) @default(3) @nomod @hint(Integer layer count — modulating this would add/remove a whole rotating layer as a visible snap rather than a smooth pulse, so it's excluded from Modulate.)
+uniform float u_frequency;     // @label(Frequency) @range(4, 200) @default(38) @log @unit(lines) @mod @hint(Line density — the most dramatic target for Modulate; a bass or rms source reads as the grid visibly breathing.)
 uniform float u_spreadAngle;   // @label(Angle spread) @range(0, 90) @default(7) @unit(deg) @hint(Small values give wide, slow beats.)
-uniform float u_spin;          // @label(Spin) @range(-1, 1) @default(0.05)
+uniform float u_spin;          // @label(Spin) @range(-1, 1) @default(0.05) @mod @hint(Rotation speed — pairs well with a bass or rms source for a kick-driven spin.)
 uniform float u_scaleDrift;    // @label(Scale drift) @range(0, 0.5) @default(0.06) @hint(Slowly detunes layer spacing.)
 
 uniform int u_shape;           // @label(Grid) @select(Lines=0 | Rings=1 | Radial=2 | Squares=3) @default(0)
@@ -24,7 +31,7 @@ uniform float u_warp;          // @label(Lens warp) @range(-1, 1) @default(0.15)
 
 uniform vec3 u_ink;            // @label(Ink) @color @default(0.0, 0.83, 1.0)
 uniform vec3 u_paper;          // @label(Paper) @color @default(0.0, 0.0, 0.02)
-uniform float u_bloom;         // @label(Bloom) @range(0, 1) @default(0.35)
+uniform float u_bloom;         // @label(Bloom) @range(0, 1) @default(0.35) @mod @hint(Subtler modulation option — glow intensity only, no structural change to the pattern.)
 uniform bool u_invert;         // @label(Invert) @default(false)
 
 out vec4 fragColor;

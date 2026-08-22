@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { MAX_UPLOAD_BYTES } from '@/lib/validation/asset';
 
 /**
  * Binary assets never stream through an API route — the client uploads
@@ -79,6 +80,16 @@ class VercelBlobStorage implements StorageAdapter {
       pathname,
       validUntil: expiresAt,
       allowedContentTypes: [contentType],
+      // Previously missing — app/api/upload/route.ts checks a
+      // client-REPORTED size before issuing this token, but nothing
+      // stopped the actual PUT that follows from sending more bytes than
+      // it claimed; that check was a self-reported number, not an
+      // enforced limit. This constrains the signed token itself, so an
+      // oversized PUT is rejected by Vercel's infrastructure regardless
+      // of what the sign request said. Confirm this option name against
+      // your installed @vercel/blob version's type defs — the client
+      // token API has changed shape before across major versions.
+      maximumSizeInBytes: MAX_UPLOAD_BYTES,
     });
 
     return {
@@ -112,8 +123,13 @@ class LocalStorage implements StorageAdapter {
   }
 
   /**
-   * No signing locally — the dev upload route accepts the bytes directly.
-   * The client code path is identical; only the URL differs.
+   * No signing locally — the dev upload route accepts the bytes directly
+   * (and, since app/api/upload/local/route.ts now hard-blocks itself
+   * outside development, this path is unreachable in production
+   * regardless). `expiresAt` here is informational only — nothing checks
+   * it against the clock, unlike Vercel Blob's token above, which enforces
+   * `validUntil` cryptographically. Not worth fixing given the production
+   * block already closes the gap this would otherwise leave.
    */
   async createSignedUpload(pathname: string, _contentType: string): Promise<SignedUpload> {
     return {

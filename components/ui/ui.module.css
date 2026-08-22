@@ -162,8 +162,6 @@
  * ------------------------------------------------------------------ */
 
 .slider {
-  --track-h: 2px;
-  --thumb: 12px;
   position: relative;
   flex: 1;
   height: var(--touch-target);
@@ -175,7 +173,15 @@
 .sliderTrack {
   position: absolute;
   inset-inline: 0;
-  height: var(--track-h);
+  /* Distinct names (--slider-track-h/--slider-thumb), NOT --track-h/
+     --thumb reused on .slider itself — a custom property that references
+     itself, even with a fallback, is a dependency cycle per the CSS
+     spec, and its computed value becomes invalid. That was the previous
+     version's actual bug: it silently broke sliders app-wide, not just
+     inside an overriding ancestor. These names are never declared on
+     .slider itself, so an ancestor CAN set them and have them cascade
+     down normally, with no cycle possible. */
+  height: var(--slider-track-h, 2px);
   background: var(--border);
   border-radius: 99px;
   pointer-events: none;
@@ -183,7 +189,7 @@
 
 .sliderFill {
   position: absolute;
-  height: var(--track-h);
+  height: var(--slider-track-h, 2px);
   background: var(--accent);
   border-radius: 99px;
   pointer-events: none;
@@ -191,9 +197,9 @@
 
 .sliderThumb {
   position: absolute;
-  width: var(--thumb);
-  height: var(--thumb);
-  margin-left: calc(var(--thumb) / -2);
+  width: var(--slider-thumb, 12px);
+  height: var(--slider-thumb, 12px);
+  margin-left: calc(var(--slider-thumb, 12px) / -2);
   border-radius: 50%;
   background: var(--text);
   pointer-events: none;
@@ -226,8 +232,12 @@
 
 .toggle {
   position: relative;
-  width: 32px;
-  height: 18px;
+  /* Same self-referencing-with-fallback pattern as .slider above — new
+     property names since Toggle had no matching custom properties at
+     all before. Fallbacks match the original hardcoded values exactly,
+     so nothing outside an overriding ancestor changes. */
+  width: var(--toggle-w, 32px);
+  height: var(--toggle-h, 18px);
   flex: none;
   border-radius: 99px;
   background: var(--bg-active);
@@ -237,10 +247,10 @@
 
 .toggleKnob {
   position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
+  top: var(--toggle-knob-inset, 2px);
+  left: var(--toggle-knob-inset, 2px);
+  width: var(--toggle-knob, 12px);
+  height: var(--toggle-knob, 12px);
   border-radius: 50%;
   background: var(--text-dim);
   transition: transform var(--dur-base) var(--ease), background var(--dur-fast) var(--ease);
@@ -252,7 +262,7 @@
 }
 
 .toggle[aria-checked='true'] .toggleKnob {
-  transform: translateX(14px);
+  transform: translateX(var(--toggle-knob-travel, 14px));
   background: var(--accent);
 }
 

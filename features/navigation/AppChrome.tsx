@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Button, Dialog, Field, Select, Toggle, useTooltipsEnabled } from '@/components/ui';
+import { Button, Dialog, Field, Select, Slider, Toggle, useTooltipsEnabled } from '@/components/ui';
 import { useBoardStore, useInspectorStore, usePlaybackStore, MAX_LIVE_RENDERERS } from '@/stores';
 import type { Asset } from '@/types/asset';
 import type { User } from '@/lib/auth';
@@ -108,6 +108,9 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
   const audioEnabled = usePlaybackStore((st) => st.audioEnabled);
   const setAudioEnabled = usePlaybackStore((st) => st.setAudioEnabled);
   const reducedMotion = usePlaybackStore((st) => st.reducedMotion);
+  const masterVolume = usePlaybackStore((st) => st.masterVolume);
+  const setMasterVolume = usePlaybackStore((st) => st.setMasterVolume);
+  const muted = usePlaybackStore((st) => st.muted);
   const [tooltipsEnabled, setTooltipsEnabled] = useTooltipsEnabled();
 
   return (
@@ -143,6 +146,21 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
           checked={audioEnabled}
           disabled
           onChange={setAudioEnabled}
+        />
+      </Field>
+
+      <Field
+        label="Volume"
+        hint="Master volume for tile sound presets — separate from Audio reactivity above, which is visual modulation driven by an incoming audio signal. This governs sound a tile itself produces."
+      >
+        <Slider
+          label="Volume"
+          value={masterVolume}
+          min={0}
+          max={1}
+          step={0.01}
+          disabled={muted}
+          onChange={setMasterVolume}
         />
       </Field>
 

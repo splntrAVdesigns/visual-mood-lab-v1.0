@@ -26,6 +26,11 @@
  *   @default(a[, b, c])   initial value
  *   @step(n)              slider increment
  *   @select(A=0 | B=1)    render as a dropdown
+ *   @strip                paired with @select: render as a compact button
+ *                          strip instead (same visual language as the
+ *                          Sound panel's rate/note strips) — best for a
+ *                          small option set someone will tap directly
+ *                          rather than open a dropdown for
  *   @color                force vec3/vec4 to a color picker
  *   @log                  logarithmic slider
  *   @advanced             hide behind the Advanced disclosure
@@ -65,6 +70,12 @@ export interface Annotations {
   advanced?: boolean;
   hidden?: boolean;
   mod?: boolean;
+  /** Render a @select as a compact button strip instead of a dropdown —
+      same visual language as the Sound panel's rate/note strips, for a
+      small (≤6 or so) set of options where tapping directly is more
+      natural than opening a dropdown. See SelectControl.displayStyle in
+      control-schema.ts. */
+  strip?: boolean;
 }
 
 export interface ParsedUniform {
@@ -416,6 +427,7 @@ export function parseAnnotations(text: string): Annotations {
       case 'hidden': a.hidden = true; break;
       case 'mod': a.mod = true; break;
       case 'nomod': a.mod = false; break;
+      case 'strip': a.strip = true; break;
       case 'step': {
         const n = Number(arg);
         if (Number.isFinite(n)) a.step = n;
@@ -519,6 +531,7 @@ function controlFor(
       ...common, kind: 'select',
       options: a.select, valueType: 'number',
       default: numericDefault(a) !== undefined ? String(numericDefault(a)) : fallback,
+      displayStyle: a.strip ? 'strip' : undefined,
     };
   }
 

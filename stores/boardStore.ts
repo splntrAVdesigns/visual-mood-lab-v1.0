@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ModState, ParamState } from '@/renderers/control-schema';
+import type { ModState, ParamState, SoundState } from '@/renderers/control-schema';
 import type { Asset, AssetType, BoardLayout, SortKey } from '@/types/asset';
 
 interface BoardState {
@@ -22,6 +22,7 @@ interface BoardState {
   /** Keeps the board's copy of a card in sync with inspector edits. */
   updateAssetParams: (itemId: string, params: ParamState) => void;
   updateAssetMod: (itemId: string, mod: ModState) => void;
+  updateAssetSound: (itemId: string, sound: SoundState) => void;
   select: (id: string | null) => void;
   setLayout: (layout: BoardLayout) => void;
   setQuery: (query: string) => void;
@@ -63,6 +64,10 @@ export const useBoardStore = create<BoardState>()((set) => ({
   updateAssetMod: (itemId, mod) =>
     set((s) => ({
       assets: s.assets.map((a) => (a.itemId === itemId ? { ...a, mod } : a)),
+    })),
+  updateAssetSound: (itemId, sound) =>
+    set((s) => ({
+      assets: s.assets.map((a) => (a.itemId === itemId ? { ...a, sound } : a)),
     })),
   /**
    * Keyed by itemId, not id. A snapshot shares its underlying asset's `id`

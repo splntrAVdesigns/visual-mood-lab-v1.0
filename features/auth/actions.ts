@@ -6,9 +6,15 @@
 // signIn() throws a special NEXT_REDIRECT error on success — that's
 // intentional Next.js machinery for triggering navigation from a server
 // action, so it must be re-thrown, never swallowed by the catch block.
+//
+// Every field here is re-validated against lib/validation/auth.ts even
+// though the client (SignupForm / ResetPasswordForm) already checks the
+// same schema — the client check is a UX nicety and is not trustworthy on
+// its own; a request can always be sent directly to this action, bypassing
+// the form entirely.
 
 import { AuthError } from 'next-auth';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { signIn, signOut } from '@/lib/auth/config';
 import { getDb } from '@/lib/db/client';
 import { users, accounts } from '@/lib/db/schema.auth';
@@ -16,6 +22,7 @@ import { hashPassword } from '@/lib/auth/hash';
 import { signupRateLimit, resetPasswordRateLimit } from '@/lib/auth/rate-limit';
 import { signupEnabled } from '@/lib/auth/flags';
 import { requireUser } from '@/lib/auth';
+import { signupSchema, passwordSchema } from '@/lib/validation/auth';
 import {
   createVerificationToken,
   sendVerificationEmail,
@@ -76,6 +83,11 @@ export async function loginWithGitHubAction(formData: FormData): Promise<void> {
   await signIn('github', { redirectTo: callbackUrl });
 }
 
+export async function loginWithAppleAction(formData: FormData): Promise<void> {
+  const callbackUrl = String(formData.get('callbackUrl') ?? '/');
+  await signIn('apple', { redirectTo: callbackUrl });
+}
+
 export async function signupAction(
   _prev: FormState,
   formData: FormData,
@@ -84,16 +96,21 @@ export async function signupAction(
     return { error: 'Signups are closed right now. Check back soon.' };
   }
 
-  const email = String(formData.get('email') ?? '').toLowerCase().trim();
-  const username = String(formData.get('username') ?? '').trim();
-  const password = String(formData.get('password') ?? '');
+  const raw = {
+    username: String(formData.get('username') ?? ''),
+    email: String(formData.get('email') ?? ''),
+    password: String(formData.get('password') ?? ''),
+  };
 
-  if (!email || !username || !password) {
-    return { error: 'All fields are required.' };
+  // Authoritative validation — allowlisted username characters, email
+  // format, and the full password policy (length, complexity, and the
+  // "password" substring block) all live in one shared schema so this
+  // can never drift from what SignupForm already checked client-side.
+  const parsed = signupSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? 'Check the highlighted fields.' };
   }
-  if (password.length < 8) {
-    return { error: 'Password must be at least 8 characters.' };
-  }
+  const { username, email, password } = parsed.data;
 
   const { success } = await signupRateLimit.limit(email);
   if (!success) {
@@ -107,8 +124,28 @@ export async function signupAction(
     return { error: 'An account with that email already exists.' };
   }
 
+  const [existingUsername] = await db
+    .select()
+    .from(users)
+    .where(eq(users.username, username))
+    .limit(1);
+  if (existingUsername) {
+    return { error: 'That username is already taken.' };
+  }
+
   const passwordHash = await hashPassword(password);
-  await db.insert(users).values({ email, username, passwordHash });
+
+  try {
+    await db.insert(users).values({ email, username, passwordHash });
+  } catch (err) {
+    // Belt-and-braces against a race between the uniqueness check above
+    // and the insert (two signups for the same email/username landing
+    // within the same request window) — the DB's own unique constraint
+    // is the real guarantee; this just turns it into a friendly message
+    // instead of a raw 500.
+    console.error('[signup] insert failed:', err);
+    return { error: 'That email or username is already in use.' };
+  }
 
   const token = await createVerificationToken(email);
   try {
@@ -165,10 +202,10 @@ export async function requestPasswordResetAction(
   // The response is identical whether the account exists, was rate
   // limited, or the email send failed — every branch below falls through
   // to the same `{ success: true }`. Telling the truth in any of those
-  // cases ("no account with that email", "too many requests") would let
+  // cases (\"no account with that email\", \"too many requests\") would let
   // an attacker enumerate which emails have accounts on this site. The
-  // only acceptable signal to leak is "an email may or may not be on its
-  // way" — which is also, not coincidentally, the only thing a real user
+  // only acceptable signal to leak is \"an email may or may not be on its
+  // way\" — which is also, not coincidentally, the only thing a real user
   // needs to know to proceed.
   if (withinLimit) {
     const db = await getDb();
@@ -199,14 +236,17 @@ export async function resetPasswordAction(
     .toLowerCase()
     .trim();
   const token = String(formData.get('token') ?? '');
-  const password = String(formData.get('password') ?? '');
+  const rawPassword = String(formData.get('password') ?? '');
 
   if (!email || !token) {
     return { error: 'Missing reset information.' };
   }
-  if (password.length < 8) {
-    return { error: 'Password must be at least 8 characters.' };
+
+  const parsedPassword = passwordSchema.safeParse(rawPassword);
+  if (!parsedPassword.success) {
+    return { error: parsedPassword.error.issues[0]?.message ?? 'Invalid password.' };
   }
+  const password = parsedPassword.data;
 
   const valid = await consumePasswordResetToken(email, token);
   if (!valid) {
@@ -238,6 +278,7 @@ export interface AccountInfo {
   createdAt: string;
   hasPassword: boolean;
   githubLinked: boolean;
+  appleLinked: boolean;
 }
 
 /**
@@ -245,7 +286,7 @@ export interface AccountInfo {
  * name / mobile drawer footer). Deliberately a separate, on-demand server
  * action rather than data baked into requireUser()'s return value —
  * requireUser() runs on every single page render, and most of these
- * fields (createdAt, whether a password is set, GitHub link status)
+ * fields (createdAt, whether a password is set, linked-provider status)
  * are only ever needed the moment someone actually opens this popup.
  */
 export async function getAccountInfoAction(): Promise<AccountInfo | null> {
@@ -260,11 +301,13 @@ export async function getAccountInfoAction(): Promise<AccountInfo | null> {
   const [row] = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
   if (!row) return null;
 
-  const [githubAccount] = await db
+  const linkedAccounts = await db
     .select({ provider: accounts.provider })
     .from(accounts)
-    .where(and(eq(accounts.userId, user.id), eq(accounts.provider, 'github')))
-    .limit(1);
+    .where(eq(accounts.userId, user.id));
+
+  const githubLinked = linkedAccounts.some((a) => a.provider === 'github');
+  const appleLinked = linkedAccounts.some((a) => a.provider === 'apple');
 
   return {
     name: row.name ?? row.username ?? row.email,
@@ -272,7 +315,8 @@ export async function getAccountInfoAction(): Promise<AccountInfo | null> {
     username: row.username,
     createdAt: row.createdAt.toISOString(),
     hasPassword: !!row.passwordHash,
-    githubLinked: !!githubAccount,
+    githubLinked,
+    appleLinked,
   };
 }
 

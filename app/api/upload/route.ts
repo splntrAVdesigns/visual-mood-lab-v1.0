@@ -40,7 +40,26 @@ export async function POST(req: Request) {
       );
     }
 
-    if (typeof body.size === 'number' && body.size > MAX_BYTES) {
+    // `size` is now REQUIRED, not optionally checked. The previous
+    // `typeof body.size === 'number' && body.size > MAX_BYTES` silently
+    // skipped this check entirely whenever the client omitted `size` —
+    // trivial to do by editing the request body, since it costs the
+    // caller nothing to leave the field out. Rejecting a missing/invalid
+    // size outright, rather than treating "no size reported" as "assume
+    // it's fine", is what actually makes this a limit instead of a
+    // suggestion.
+    //
+    // This is still only a client-reported number, though — it does not
+    // by itself guarantee the PUT that follows can't send more bytes than
+    // this claims. If lib/storage's createSignedUpload() can pass a
+    // maximum-size constraint into the signed token itself (Vercel Blob's
+    // `put`/token API supports this), that is the layer where the limit
+    // actually becomes enforced rather than merely reported — worth
+    // wiring through there too.
+    if (typeof body.size !== 'number' || !Number.isFinite(body.size) || body.size <= 0) {
+      return NextResponse.json({ error: 'A valid file size is required' }, { status: 400 });
+    }
+    if (body.size > MAX_BYTES) {
       return NextResponse.json(
         { error: `File exceeds ${Math.round(MAX_BYTES / 1024 / 1024)}MB` },
         { status: 413 },

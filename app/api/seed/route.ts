@@ -60,7 +60,12 @@ async function migrate(): Promise<number> {
       await db.execute(sql.raw(stmt));
     }
 
-    await db.execute(sql.raw(`INSERT INTO _migrations (name) VALUES ('${file}')`));
+    // Parameter-bound rather than sql.raw(`... '${file}' ...`) — see the
+    // matching comment in lib/db/migrate.ts. `file` is a repo-local
+    // filename here too, never attacker-controlled, but there's no reason
+    // to leave string-interpolated SQL lying around when the tagged
+    // template costs nothing extra.
+    await db.execute(sql`INSERT INTO _migrations (name) VALUES (${file})`);
     ran++;
   }
 

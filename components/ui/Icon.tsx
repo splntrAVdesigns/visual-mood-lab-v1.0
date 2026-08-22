@@ -70,6 +70,20 @@ export const PauseIcon = (p: IconProps) => (
   </Svg>
 );
 
+/** Speaker cone plus either sound-wave arcs or an X, same on/off-prop
+    pattern as FullscreenIcon below. Used for the header master mute
+    toggle (Phase 4.8, Stage 1). */
+export const VolumeIcon = ({ muted, ...p }: IconProps & { muted?: boolean }) => (
+  <Svg {...p}>
+    <path d="M2 6h2.5L8 3v10L4.5 10H2z" fill="currentColor" strokeWidth={1} />
+    {muted ? (
+      <path d="M10.5 6l3 4M13.5 6l-3 4" />
+    ) : (
+      <path d="M10.5 5.5a4 4 0 0 1 0 5M12.3 4a6.5 6.5 0 0 1 0 8" />
+    )}
+  </Svg>
+);
+
 export const SettingsIcon = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="8" cy="8" r="2.25" />

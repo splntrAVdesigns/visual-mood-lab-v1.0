@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { CardState } from '@/types/asset';
+import { setMasterVolume as setAudioMasterVolume } from '@/lib/sound/context';
 
 /**
  * Global playback state. In Phase 2 the renderer pool reads from here, and a
@@ -55,6 +56,11 @@ interface PlaybackState {
   reducedMotion: boolean;
   /** Audio input feeding the modulation bus. Phase 4. */
   audioEnabled: boolean;
+  /** Tile sound presets (Phase 4.8). Governs the single shared master
+      GainNode every tile's audio subgraph connects into — see
+      lib/sound/context.ts's getMasterGain(). */
+  masterVolume: number;
+  muted: boolean;
   /**
    * Bumped whenever a focused view closes. Cards subscribe to this so the
    * grid thumbnail a focused overlay borrowed a renderer from re-checks
@@ -77,6 +83,8 @@ interface PlaybackState {
   setQuality: (quality: QualityTier) => void;
   setReducedMotion: (reduced: boolean) => void;
   setAudioEnabled: (enabled: boolean) => void;
+  setMasterVolume: (volume: number) => void;
+  toggleMuted: () => void;
   bumpEpoch: () => void;
   setBoardFrozen: (frozen: boolean) => void;
 
@@ -91,6 +99,8 @@ export const usePlaybackStore = create<PlaybackState>()((set, get) => ({
   quality: 'auto',
   reducedMotion: false,
   audioEnabled: false,
+  masterVolume: 0.8,
+  muted: false,
   epoch: 0,
   boardFrozen: false,
   cardStates: new Map(),
@@ -102,6 +112,16 @@ export const usePlaybackStore = create<PlaybackState>()((set, get) => ({
   setReducedMotion: (reducedMotion) =>
     set({ reducedMotion, paused: reducedMotion ? true : get().paused }),
   setAudioEnabled: (audioEnabled) => set({ audioEnabled }),
+  setMasterVolume: (masterVolume) => {
+    set({ masterVolume });
+    setAudioMasterVolume(get().muted ? 0 : masterVolume);
+  },
+  toggleMuted: () =>
+    set((s) => {
+      const muted = !s.muted;
+      setAudioMasterVolume(muted ? 0 : s.masterVolume);
+      return { muted };
+    }),
   bumpEpoch: () => set((s) => ({ epoch: s.epoch + 1 })),
   setBoardFrozen: (boardFrozen) => set({ boardFrozen }),
 

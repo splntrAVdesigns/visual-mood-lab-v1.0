@@ -69,6 +69,82 @@ export interface Modulation {
 export type ModState = Record<string, Modulation>;
 
 /* ------------------------------------------------------------------ *
+ * Sound — the tile-instrument bus (audio-out, mirrors Modulation above)
+ * ------------------------------------------------------------------ */
+
+export type MusicalScale = 'major' | 'minor' | 'pentatonic' | 'chromatic';
+
+/** Reuses the exact option set Static Choir's Waveform Shape select already
+    established, so a user who's touched one understands the other. */
+export type LfoShape = 'sine' | 'triangle' | 'square' | 'sawtooth';
+
+/**
+ * Per-card sound configuration — the audio-out counterpart to ModState.
+ * Where Modulation samples a SOURCE to drive a visual control, a sound
+ * preset samples a visual control's own live value to drive an audio
+ * parameter instead. The preset engine and its vocabulary (SoundPreset,
+ * SoundBinding, the arp/pad/pluck/retro-oneshot/abstract engines) live in
+ * lib/sound/ — mirroring how ModSource/MOD_SOURCES live in
+ * lib/modulation/bus.ts rather than here. This is just the persisted
+ * shape, stored alongside ParamState and ModState.
+ */
+export interface SoundState {
+  enabled: boolean;
+  presetId: string | null;
+  /**
+   * Selected root notes, 1-3 of them, e.g. ['C', 'E']. Always at least
+   * one — the note rack refuses to deselect the last remaining entry, so
+   * there is always a root.
+   *
+   * What more than one MEANS is the engine's business, deliberately, and
+   * differs between them:
+   *   - pad (Acid Melt): a genuine chord — one voice pair per note,
+   *     sounding simultaneously. Sample-backed pads are the exception and
+   *     use notes[0] only; see PadEngine's comment for why.
+   *   - arp (Field Lines): the pool plucks draw from — every selected
+   *     note contributes its own scale's degrees, merged and sorted, so
+   *     two notes genuinely widens the available pitch set rather than
+   *     one overriding the other.
+   *
+   * Replaced the old `key: string` when the Key dropdown became the note
+   * rack. Rows persisted before that change still carry `key` and no
+   * `notes` — normalizeSoundState() in lib/sound/types.ts migrates them
+   * on read, which is why nothing here needs a DB migration (sound is a
+   * JSONB column) and why no code should read a raw persisted sound
+   * object without passing it through that function first.
+   */
+  notes: string[];
+  scale: MusicalScale;
+  /** -2..2 */
+  octave: number;
+  /** Only meaningful for presets with an LFO-modulated target (a tremolo
+      pad, for instance) — ignored otherwise. Kept on SoundState rather
+      than baked into the preset because this is the one thing the
+      redesigned Acid Melt experience is explicitly meant to let a user
+      adjust. */
+  lfoShape: LfoShape;
+  /** 0..1 */
+  volume: number;
+  /**
+   * Arp engine only (see ArpEngine in lib/sound/engines/arp.ts) — adds a
+   * few cents of random detune, a little velocity variance, and (for a
+   * scheduled-mode preset) a little timing wobble to each note, so a
+   * sequence or a run of plucks doesn't sound machine-quantized. No
+   * effect on a pad preset; the Sound panel disables this toggle when the
+   * active preset's engine isn't 'arp'.
+   */
+  humanize: boolean;
+  /**
+   * Arp engine, scheduled-mode presets only — delays every other
+   * scheduled note slightly for a swung rhythmic feel. Meaningless for a
+   * graze-to-pluck (triggerMode: 'event') preset, which has no fixed grid
+   * to swing against; the Sound panel disables this toggle for those
+   * rather than leaving a control that visibly does nothing.
+   */
+  swing: boolean;
+}
+
+/* ------------------------------------------------------------------ *
  * Conditional visibility
  * ------------------------------------------------------------------ */
 
@@ -167,6 +243,10 @@ export interface SelectControl extends ControlCommon {
    * writing them to the binding. Lets an int uniform expose named modes.
    */
   valueType?: 'string' | 'number';
+  /** 'strip' renders a compact button row instead of a dropdown — see
+      the @strip annotation in lib/gl/parse-uniforms.ts. Undefined/
+      'dropdown' keeps the existing Select behavior untouched. */
+  displayStyle?: 'dropdown' | 'strip';
 }
 
 export interface XYControl extends ControlCommon {

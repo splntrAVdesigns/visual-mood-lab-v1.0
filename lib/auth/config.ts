@@ -35,6 +35,7 @@
 import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import GitHub from "next-auth/providers/github";
+import Apple from "next-auth/providers/apple";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
@@ -74,6 +75,35 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     GitHub({
       clientId: process.env.AUTH_GITHUB_ID,
       clientSecret: process.env.AUTH_GITHUB_SECRET,
+    }),
+    // Apple ID ("Sign in with Apple"). Goes through the same
+    // DrizzleAdapter OAuth path as GitHub above — no extra code needed
+    // for account creation on first sign-in; the adapter's
+    // handleLoginOrRegister() creates the `user` + `account` rows the
+    // same way it does for GitHub.
+    //
+    // AUTH_APPLE_ID is the Services ID (e.g. "com.splntr-microtools.vml.web"),
+    // registered in the Apple Developer portal against this app's
+    // *production* domain (visual-mood-lab.splntr-microtools.com) — Apple
+    // validates the domain and does not accept localhost or preview
+    // *.vercel.app hosts, so Apple sign-in can only be exercised against
+    // the real deployment, not local dev or preview branches.
+    //
+    // AUTH_APPLE_SECRET is NOT a static secret like GitHub's — Apple
+    // requires a client secret that is itself a short-lived JWT (max 6
+    // months), signed with ES256 using the private key (.p8) downloaded
+    // once from the Apple Developer portal, your Team ID, and your Key
+    // ID. It must be regenerated and rotated in Vercel's env vars before
+    // it expires (see scripts/generate-apple-secret.ts). next-auth does
+    // not generate this for you.
+    //
+    // Apple only sends the user's name on the very first authorization
+    // ever performed for a given Services ID + Apple ID pair — capture it
+    // in the adapter's user-creation path if a display name matters here,
+    // because it will never be sent again on subsequent sign-ins.
+    Apple({
+      clientId: process.env.AUTH_APPLE_ID,
+      clientSecret: process.env.AUTH_APPLE_SECRET,
     }),
     Credentials({
       credentials: {

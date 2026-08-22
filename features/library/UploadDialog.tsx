@@ -4,6 +4,12 @@ import { useCallback, useRef, useState } from 'react';
 import { Button, Dialog, UploadIcon } from '@/components/ui';
 import { useBoardStore } from '@/stores';
 import type { Asset } from '@/types/asset';
+import {
+  MAX_UPLOAD_BYTES,
+  MAX_FILES_PER_BATCH,
+  isAllowedUploadMimeType,
+  sanitizeAssetTitle,
+} from '@/lib/validation/asset';
 import s from '../features.module.css';
 
 interface UploadDialogProps {
@@ -28,6 +34,17 @@ const ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/svg+xml,video/we
  * short-lived signed URL — they never pass through a server route, because a
  * 40MB video through a serverless function is a payload-limit failure
  * waiting to happen.
+ *
+ * The checks in this file (size, MIME allowlist, batch count) are a UX
+ * nicety only — fast, local rejection instead of a round trip that fails
+ * later. The `accept` attribute on the file input does NOT enforce
+ * anything: it's ignored entirely for drag-and-drop, and even for the
+ * picker it's just a filter suggestion the OS lets a user override. The
+ * real enforcement has to live in /api/upload (which issues the signed
+ * URL) and in ingest.ts — both should apply the same
+ * MAX_UPLOAD_BYTES / isAllowedUploadMimeType checks from
+ * lib/validation/asset.ts server-side, since nothing client-side here can
+ * be trusted on its own.
  */
 export function UploadDialog({ open, onClose }: UploadDialogProps) {
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -41,6 +58,27 @@ export function UploadDialog({ open, onClose }: UploadDialogProps) {
 
   const uploadOne = useCallback(
     async (file: File) => {
+      // Local, instant rejection for the two cheap-to-check cases —
+      // skips the network round trip entirely for the common mistakes
+      // (wrong file type, file too large) instead of waiting on a server
+      // response to say the same thing.
+      if (!isAllowedUploadMimeType(file.type)) {
+        setJob(file.name, {
+          status: 'error',
+          message: `"${file.type || 'unknown type'}" isn't a supported file type.`,
+        });
+        return;
+      }
+      if (file.size > MAX_UPLOAD_BYTES) {
+        const mb = Math.round(file.size / (1024 * 1024));
+        const maxMb = Math.round(MAX_UPLOAD_BYTES / (1024 * 1024));
+        setJob(file.name, {
+          status: 'error',
+          message: `File is ${mb}MB — the limit is ${maxMb}MB.`,
+        });
+        return;
+      }
+
       setJob(file.name, { status: 'uploading' });
 
       try {
@@ -130,7 +168,11 @@ export function UploadDialog({ open, onClose }: UploadDialogProps) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             assetId: signed.assetId,
-            title: file.name.replace(/\.[^.]+$/, ''),
+            // Sanitized client-side too, purely so the title the person
+            // sees land on the board matches what the server will
+            // actually store — ingest.ts (the real boundary) runs the
+            // same sanitizeAssetTitle() again regardless of this value.
+            title: sanitizeAssetTitle(file.name.replace(/\.[^.]+$/, '')),
             contentType: file.type,
             srcUrl: realUrl ?? signed.publicUrl,
           }),
@@ -154,9 +196,25 @@ export function UploadDialog({ open, onClose }: UploadDialogProps) {
   const handleFiles = useCallback(
     async (files: FileList | null) => {
       if (!files || files.length === 0) return;
-      const list = Array.from(files);
+      let list = Array.from(files);
+
+      const overflow = list.length - MAX_FILES_PER_BATCH;
+      if (overflow > 0) {
+        list = list.slice(0, MAX_FILES_PER_BATCH);
+      }
 
       setJobs(list.map((f) => ({ name: f.name, status: 'pending' as const })));
+
+      if (overflow > 0) {
+        setJobs((prev) => [
+          ...prev,
+          {
+            name: `+${overflow} more`,
+            status: 'error' as const,
+            message: `Only the first ${MAX_FILES_PER_BATCH} files were queued — upload the rest in another batch.`,
+          },
+        ]);
+      }
 
       // Sequential rather than parallel: signed URLs are short-lived, and a
       // dozen simultaneous uploads on a slow connection risk some expiring

@@ -1,4 +1,4 @@
-import type { ControlSchema, ModState, ParamState } from '@/renderers/control-schema';
+import type { ControlSchema, ModState, ParamState, SoundState } from '@/renderers/control-schema';
 
 export type AssetType = 'image' | 'svg' | 'video' | 'p5' | 'shader';
 
@@ -54,6 +54,7 @@ export interface Asset {
   schema?: ControlSchema;
   params?: ParamState;
   mod?: ModState;
+  sound?: SoundState;
 
   dominantColors?: string[];
   width?: number;
@@ -76,6 +77,8 @@ export interface BoardItem {
   h?: number;
   /** Snapshot: same asset, different look. */
   paramsOverride?: ParamState;
+  /** Snapshot: same asset, different instrument — mirrors paramsOverride. */
+  soundOverride?: SoundState;
 }
 
 export interface Board {

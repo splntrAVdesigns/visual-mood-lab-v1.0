@@ -2,14 +2,21 @@
 
 import { useState } from 'react';
 import { Button, Field, IconButton, Select, Slider, formatValue } from '@/components/ui';
-import { CloseIcon } from '@/components/ui';
+import { CloseIcon, ChevronDownIcon, ChevronRightIcon } from '@/components/ui';
 import { MOD_SOURCES, sourceMeta } from '@/lib/modulation/bus';
+import { useTrackLoaded } from '@/lib/hooks/useTrackState';
+import { RateStrip } from './controls/RateStrip';
 import type { Control, Modulation, ModSource } from '@/renderers/control-schema';
 import { useInspectorStore } from '@/stores';
 import s from '../features.module.css';
 
 interface ModulationPanelProps {
   controls: Control[];
+  /** Which card's routings these are — needed as of Phase 4.9 to know
+      whether THIS card has a track loaded, since audio.* sources are
+      resolved per-card (see lib/modulation/bus.ts's class doc) rather
+      than being globally available the moment they're implemented. */
+  itemId: string;
   onClose: () => void;
   /**
    * Render inline inside an existing scroll region instead of as a fixed
@@ -39,9 +46,11 @@ const DEFAULT_MOD: Modulation = { source: 'lfo.sine', amount: 0.3, rate: 0.4, sm
  * shrinking it rather than covering it, using the exact same slide-in
  * mechanism — so this cost no new layout code, only a new list.
  */
-export function ModulationPanel({ controls, onClose, embedded = false }: ModulationPanelProps) {
+export function ModulationPanel({ controls, itemId, onClose, embedded = false }: ModulationPanelProps) {
   const mod = useInspectorStore((st) => st.mod);
+  const trackLoaded = useTrackLoaded(itemId);
   const [expanded, setExpanded] = useState<string | null>(controls[0]?.id ?? null);
+  const [collapsed, setCollapsed] = useState(false);
 
   const rows = (
     <div className={embedded ? s.modPanelListEmbedded : s.modPanelList}>
@@ -54,6 +63,7 @@ export function ModulationPanel({ controls, onClose, embedded = false }: Modulat
           key={control.id}
           control={control}
           active={mod[control.id]}
+          trackLoaded={trackLoaded}
           expanded={expanded === control.id}
           onToggleExpand={() => setExpanded((e) => (e === control.id ? null : control.id))}
         />
@@ -64,8 +74,13 @@ export function ModulationPanel({ controls, onClose, embedded = false }: Modulat
   if (embedded) return rows;
 
   return (
-    <aside className={s.modPanel} onClick={(e) => e.stopPropagation()} aria-label="Modulation">
+    <aside className={s.modPanel} data-collapsed={collapsed ? 'true' : undefined} onClick={(e) => e.stopPropagation()} aria-label="Modulation">
       <header className={s.codeHeader}>
+        <IconButton
+          label={collapsed ? 'Expand modulation' : 'Collapse modulation'}
+          icon={collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
+          onClick={() => setCollapsed((c) => !c)}
+        />
         <span className={s.codeTitle}>Modulation</span>
         <span className={s.codeMeta}>
           {Object.keys(mod).length} of {controls.length} routed
@@ -80,11 +95,16 @@ export function ModulationPanel({ controls, onClose, embedded = false }: Modulat
 function ModRow({
   control,
   active,
+  trackLoaded,
   expanded,
   onToggleExpand,
 }: {
   control: Control;
   active: Modulation | undefined;
+  /** Whether THIS card has an uploaded track — see ModulationPanelProps'
+      itemId doc. Only changes which audio.* options are selectable; every
+      other source's availability is unaffected. */
+  trackLoaded: boolean;
   expanded: boolean;
   onToggleExpand: () => void;
 }) {
@@ -115,11 +135,15 @@ function ModRow({
               value={current.source}
               options={MOD_SOURCES.map((o) => ({
                 value: o.value,
-                label: o.pending ? `${o.label} — soon` : o.label,
+                label: o.pending
+                  ? `${o.label} — soon`
+                  : o.requiresTrack && !trackLoaded
+                    ? `${o.label} — load a track`
+                    : o.label,
               }))}
               onChange={(v) => {
                 const opt = MOD_SOURCES.find((o) => o.value === (v as ModSource));
-                if (opt?.pending) return;
+                if (opt?.pending || (opt?.requiresTrack && !trackLoaded)) return;
                 update({ source: v as ModSource });
               }}
             />
@@ -136,15 +160,18 @@ function ModRow({
             />
           </Field>
 
-          {meta?.hasRate !== false && (
-            <Field label="Rate" value={`${formatValue(current.rate ?? 0.4, 0.01)} Hz`}>
-              <Slider
-                label={`${control.label} modulation rate`}
-                value={current.rate ?? 0.4}
-                min={0.01}
-                max={8}
-                step={0.01}
-                scale="log"
+          {/* hasRate is only ever set true (the lfo sources, or time) or left
+              undefined (pointer.*, audio.*, midi.cc) — MOD_SOURCES never sets it to
+              false explicitly. `!== false` therefore showed Rate for every
+              undeclared source too, including Audio, where bus.ts's
+              rawSignal() never reads mod.rate at all: a fully interactive
+              control that silently did nothing. This must be an allowlist
+              (=== true), not a denylist. */}
+          {meta?.hasRate === true && (
+            <Field label="Rate">
+              <RateStrip
+                label={`${control.label} modulation`}
+                hz={current.rate ?? 0.4}
                 onChange={(v) => update({ rate: v })}
               />
             </Field>

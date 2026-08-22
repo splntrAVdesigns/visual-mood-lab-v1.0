@@ -9,6 +9,15 @@
  * itself — BFS toward food, flood-fill fallback into the most open space
  * when no path exists, a blink-and-restart on a genuine dead end — carries
  * over almost unchanged.
+ *
+ * Interactive food placement: clicking (or tapping) anywhere on the board
+ * queues that cell as where the NEXT food appears, once the current one
+ * is eaten — it doesn't relocate the food the snake is already pathing
+ * toward mid-approach, which would read as the target randomly jumping
+ * away. The queued cell is re-validated at the moment it's actually
+ * used, not just at click time, since the snake may have grown into it
+ * by then; an invalid queued cell silently falls back to the normal
+ * random placement rather than erroring or leaving food nowhere.
  */
 
 export const params = {
@@ -20,7 +29,7 @@ export const params = {
   growth: { kind: 'stepper', label: 'Growth per food', min: 1, max: 8, step: 1, default: 1 },
   fade: { kind: 'slider', label: 'Tail fade', min: 0, max: 100, step: 1, default: 32, unit: '%' },
   snakeColor: { kind: 'color', label: 'Snake', default: { r: 1, g: 1, b: 1, a: 1 } },
-  foodColor: { kind: 'color', label: 'Food', default: { r: 0.98, g: 0.45, b: 0.1, a: 1 } },
+  foodColor: { kind: 'color', label: 'Food', default: { r: 0.98, g: 0.45, b: 0.1, a: 1 }, hint: 'Click anywhere on the tile to choose where the next food appears, once the current one is eaten.' },
   boardColor: { kind: 'color', label: 'Board', default: { r: 1, g: 1, b: 1, a: 0.06 } },
 };
 
@@ -42,6 +51,11 @@ export default function sketch(p, get) {
   let cols = 0, rows = 0, cellW = 0, cellH = 0, pitchX = 0, pitchY = 0;
   let snake = [];
   let food = -1;
+  // Player-clicked cell, waiting to become the next food once the
+  // current one is eaten — see advance()'s consumption logic and
+  // placeFoodAt() below. -1 means nothing queued (normal random
+  // placement applies).
+  let queuedFood = -1;
   let dying = 0;
   let acc = 0;
   let builtFor = '';
@@ -65,6 +79,22 @@ export default function sketch(p, get) {
     const free = [];
     for (let i = 0; i < cols * rows; i++) if (!body.has(i)) free.push(i);
     food = free.length ? free[Math.floor(rand() * free.length)] : -1;
+  }
+
+  /** Converts a click/tap position to a grid cell and queues it as the
+      next food, if it's a valid, currently-unoccupied cell. Silently
+      does nothing for a click outside the board or on the snake's own
+      body — no error, no feedback beyond simply not queuing anything,
+      matching how a miss should feel (ignored, not rejected). */
+  function placeFoodAt(x, y) {
+    if (cols <= 0 || rows <= 0) return;
+    const col = Math.floor(x / pitchX);
+    const row = Math.floor(y / pitchY);
+    if (col < 0 || col >= cols || row < 0 || row >= rows) return;
+    const cell = idx(col, row);
+    const body = new Set(snake);
+    if (body.has(cell)) return;
+    queuedFood = cell;
   }
 
   function reset() {
@@ -143,9 +173,36 @@ export default function sketch(p, get) {
 
     snake.unshift(target);
     if (target === food) {
+      // Sound accent on the exact moment of eating — layered on top of
+      // whatever the continuous chase-arp is already doing (see
+      // grid-snake preset comments in presets.ts). ArpEngine's pluck()
+      // works independently of scheduled mode; it doesn't need — and
+      // doesn't check — triggerMode, so this fires as a genuine payoff
+      // accent regardless of whether the preset is scheduled or event.
+      // Normalized by the food's actual grid column, same left-low/
+      // right-high spatial convention every other pluck-driven tile uses.
+      if (typeof p.pluck === 'function') p.pluck(colOf(target) / Math.max(1, cols - 1));
       const tail = snake[snake.length - 1];
       for (let i = 1; i < Math.max(1, Math.round(get('growth'))); i++) snake.push(tail);
-      placeFood();
+      // A player-queued cell takes priority over the normal random
+      // placement — but only if it's still valid NOW, not just at click
+      // time; the snake may have grown into it in the meantime (growth
+      // just pushed a new tail segment on the very line above, for one).
+      // An invalid queued cell is dropped silently and falls through to
+      // the same random placement it would have used if nothing had
+      // been queued at all.
+      if (queuedFood >= 0) {
+        const body = new Set(snake);
+        if (!body.has(queuedFood)) {
+          food = queuedFood;
+          queuedFood = -1;
+        } else {
+          queuedFood = -1;
+          placeFood();
+        }
+      } else {
+        placeFood();
+      }
     } else {
       snake.pop();
     }
@@ -173,11 +230,24 @@ export default function sketch(p, get) {
     p.createCanvas(p.windowWidth, p.windowHeight);
     p.colorMode(p.RGB, 1, 1, 1, 1);
     p.noStroke();
+    p.cursor(p.HAND);
     build();
     builtFor = `${get('cellSize')}:${get('gap')}`;
   };
 
   p.windowResized = () => { p.resizeCanvas(p.windowWidth, p.windowHeight); build(); builtFor = `${get('cellSize')}:${get('gap')}`; };
+
+  // p.mousePressed covers mouse input; p5 doesn't reliably also fire it
+  // for touch once a sketch defines its own touchStarted, so both are
+  // defined explicitly rather than assuming one covers both input types.
+  // Returning false from touchStarted is the standard p5 way to suppress
+  // the browser's own default touch behavior (scrolling, zoom) on the
+  // canvas.
+  p.mousePressed = () => placeFoodAt(p.mouseX, p.mouseY);
+  p.touchStarted = () => {
+    if (p.touches.length) placeFoodAt(p.touches[0].x, p.touches[0].y);
+    return false;
+  };
 
   p.draw = () => {
     const key = `${get('cellSize')}:${get('gap')}`;
@@ -208,6 +278,15 @@ export default function sketch(p, get) {
     } else if (food >= 0) {
       p.fill(foodCol.r, foodCol.g, foodCol.b, foodCol.a);
       tile(colOf(food), rowOf(food));
+    }
+
+    // Dim preview of a player-queued cell, distinct from the active
+    // food so it never reads as "there are two food items right now" —
+    // it's clearly a fainter marker, not a second target the snake is
+    // pathing toward.
+    if (queuedFood >= 0 && queuedFood !== food) {
+      p.fill(foodCol.r, foodCol.g, foodCol.b, foodCol.a * 0.35);
+      tile(colOf(queuedFood), rowOf(queuedFood));
     }
 
     for (let i = 0; i < snake.length; i++) {

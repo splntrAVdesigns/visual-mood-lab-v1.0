@@ -38,6 +38,7 @@ export function toAsset(row: AssetRow): Omit<Asset, 'itemId' | 'isSnapshot'> {
     schema: row.schema ?? undefined,
     params: row.params,
     mod: row.mod,
+    sound: row.sound,
     dominantColors: row.dominantColors,
     width: row.width ?? undefined,
     height: row.height ?? undefined,
@@ -70,6 +71,7 @@ function toCard(asset: AssetRow, item: BoardItemRow, viewerId: string): Asset {
     // would show the wrong look entirely.
     posterUrl: item.posterOverride ?? asset.posterUrl,
     mod: item.modOverride ?? asset.mod,
+    sound: item.soundOverride ?? asset.sound,
   };
 }
 
@@ -168,6 +170,17 @@ export async function getOrCreateDefaultBoard(ownerId: string): Promise<string> 
 /**
  * The board, as cards. This is what the grid actually renders — not raw
  * assets, so a snapshot and its source asset both appear as distinct cards.
+ *
+ * NOTE: this trusts `boardId` completely — it renders whatever board items
+ * exist for that id, with no check that `boardId` belongs to `viewerId`.
+ * That's intentional in isolation (the library's board is meant to be
+ * readable by everyone), but it means the CALLER is responsible for never
+ * passing a client-supplied boardId straight through — `boardId` must
+ * always be resolved server-side (getOrCreateDefaultBoard(user.id), or the
+ * library's own fixed id), never taken from a request body/URL param
+ * as-is. Confirmed: app/api/boards/default/items/route.ts and
+ * .../[itemId]/route.ts both do this correctly — boardId is always
+ * `getOrCreateDefaultBoard(user.id)`, never read off the request.
  */
 export async function listBoardItems(boardId: string, viewerId: string): Promise<Asset[]> {
   const db = await getDb();
@@ -194,6 +207,30 @@ export async function getBoardItem(itemId: string, viewerId: string): Promise<As
 
   const row = rows[0];
   return row ? toCard(row.asset, row.item, viewerId) : null;
+}
+
+/**
+ * True only if `itemId` names an actual row on this exact board.
+ *
+ * Exists specifically to gate an external side effect — a storage write —
+ * that has to happen BEFORE any DB update, not after. The boardId-scoped
+ * updates elsewhere in this file (updateSnapshotParams, deleteBoardItem,
+ * etc.) are already safe on their own: a mismatched boardId just matches
+ * zero rows, no separate existence check needed. A storage write has no
+ * such built-in scoping — nothing about calling storage.put() with an
+ * arbitrary key fails just because that key doesn't correspond to a real,
+ * owned row. See the call site in
+ * app/api/boards/default/items/[itemId]/route.ts's POST handler for why
+ * this matters concretely.
+ */
+export async function boardItemBelongsToBoard(itemId: string, boardId: string): Promise<boolean> {
+  const db = await getDb();
+  const rows = await db
+    .select({ id: schema.boardItems.id })
+    .from(schema.boardItems)
+    .where(and(eq(schema.boardItems.id, itemId), eq(schema.boardItems.boardId, boardId)))
+    .limit(1);
+  return rows.length > 0;
 }
 
 /**
@@ -246,6 +283,20 @@ export async function createSnapshot(
   order: number,
   viewerId: string,
 ): Promise<Asset | null> {
+  // listBoardItems/getBoardItem render whatever asset a board item points
+  // at with no per-item visibility check of their own — that check is
+  // meant to happen exactly once, at creation, which is here. Without it,
+  // a caller who obtained another private asset's id by any means (assetId
+  // is a random UUID, not guessable in practice, but "not guessable"
+  // shouldn't be the only thing standing between a private asset and
+  // someone who isn't its owner) could pin a snapshot to it on their own
+  // board and have that asset's title, source, srcUrl, schema, and params
+  // rendered back to them indefinitely. getAsset() already enforces the
+  // real rule (own asset, or the shared library) — reusing it here rather
+  // than re-deriving the same check a second way.
+  const target = await getAsset(assetId);
+  if (!target) return null;
+
   const db = await getDb();
   const id = crypto.randomUUID();
 
@@ -269,6 +320,18 @@ export async function updateSnapshotMod(
   await db
     .update(schema.boardItems)
     .set({ modOverride: mod as never })
+    .where(and(eq(schema.boardItems.id, itemId), eq(schema.boardItems.boardId, boardId)));
+}
+
+export async function updateSnapshotSound(
+  itemId: string,
+  boardId: string,
+  sound: Record<string, unknown>,
+): Promise<void> {
+  const db = await getDb();
+  await db
+    .update(schema.boardItems)
+    .set({ soundOverride: sound as never })
     .where(and(eq(schema.boardItems.id, itemId), eq(schema.boardItems.boardId, boardId)));
 }
 

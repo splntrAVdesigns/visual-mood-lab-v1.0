@@ -628,7 +628,12 @@
 
 .focusPanel {
   position: relative;
-  width: min(78vw, 78vh, 900px);
+  /* Was min(78vw, 78vh, 900px) — bumped ~7-8% per dimension, +140px on
+     the absolute cap. FocusedAssetOverlay only ever mounts above the
+     ~820px mobile breakpoint (MobileFocusedView takes over below that),
+     so this is automatically desktop-only with no extra media query
+     needed. */
+  width: min(84vw, 84vh, 1040px);
   aspect-ratio: 1;
   display: flex;
   flex-direction: column;
@@ -724,31 +729,131 @@
 }
 
 /*
- * Modulation deliberately does NOT shrink the focused panel the way Code
- * does. The graphic is the reason the panel is open in the first place —
- * shrinking it to make room for routing controls fights the point. Instead
- * the scrim allows horizontal scroll when the combined width of the
- * full-size panel plus the sidecar doesn't fit; on anything wide enough
- * (most laptops and up) it simply fits, with the graphic visually shifted
- * right of centre by the sidecar's flex order rather than being squeezed.
+ * Modulation and Sound deliberately do NOT shrink the focused panel the way
+ * Code does. The graphic is the reason the panel is open in the first
+ * place — shrinking it to make room for routing controls fights the point.
+ *
+ * REWRITTEN — the previous approach tried to re-center the whole {sidecar,
+ * tile} group by switching justify-content to flex-start and calculating a
+ * padding-inline offset. That's exactly what made the tile visibly shift
+ * sideways the moment Sound/Modulate opened, since the tile's own reference
+ * point changed. Fixed by leaving justify-content: center (the base rule,
+ * untouched here) and instead flanking the tile with two EQUAL-WIDTH
+ * elements — the real .sidecarStack on the right, and an invisible
+ * .sidecarSpacer of the same width on the left (see FocusedAssetOverlay.tsx
+ * for the DOM order this depends on). A tile centered between two
+ * equal-width things stays centered whether those things are there or not
+ * — so the tile never moves, and the sidecar simply appears to its right.
+ * Horizontal scroll remains the fallback on anything too narrow to fit all
+ * three side by side.
  */
-.focusScrim[data-mod='true'] {
+.focusScrim[data-mod='true'],
+.focusScrim[data-sound='true'] {
+  /* Single source of truth for the sidecar's width, shared with
+     .sidecarStack/.sidecarSpacer below via inheritance (custom properties
+     cascade down the DOM by default) — so they can never drift out of
+     sync with each other. */
+  --sidecar-w: min(20vw, 280px);
   gap: var(--space-4);
-  justify-content: flex-start;
   overflow-x: auto;
-  padding-inline: max(var(--space-5), calc((100vw - 900px - 40vw - var(--space-4)) / 2));
+}
+
+.sidecarSpacer {
+  flex: none;
+  width: var(--sidecar-w, min(20vw, 280px));
+  /* Purely a layout balance — never seen, never interactive. */
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.sidecarStack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  flex: none;
+  /* Falls back to the old min(40vw, 560px) if this ever renders outside
+     the data-mod/data-sound scrim context above (shouldn't happen, but
+     keeps old behavior rather than collapsing to 0 if it does). */
+  width: var(--sidecar-w, min(40vw, 560px));
+  max-height: 100%;
+  overflow-y: auto;
 }
 
 .modPanel {
   display: flex;
   flex-direction: column;
-  width: min(40vw, 560px);
-  max-height: 100%;
+  width: 100%;
+  flex: none;
   background: var(--bg-surface);
   border: 1px solid var(--border-hi);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  order: -1;
+
+  /*
+   * Scoped scale-down: the sidecar is now roughly half its old width, so
+   * everything inside needs to shrink to match.
+   *
+   * REWRITTEN — the previous version of this block self-referenced every
+   * token it touched (e.g. --control-h: calc(var(--control-h) * 0.72)
+   * declared on THIS SAME rule). That is not "read the inherited value
+   * and scale it," which is what it was meant to do — per the CSS custom
+   * properties spec, a property that references itself, even inside a
+   * calc() with other math around it, is a dependency CYCLE, and its
+   * computed value becomes invalid, full stop. There is no fallback that
+   * rescues a cycle. That's a materially different failure mode than a
+   * missing var() falling back to a default: it broke --control-h,
+   * --touch-target, every step and space token, and (via ui.module.css's
+   * matching mistake) --track-h/--thumb, everywhere those properties are
+   * used inside .modPanel — and --track-h/--thumb were declared directly
+   * on .slider with the same self-reference, which broke sliders
+   * app-wide, not just in the sidecar.
+   *
+   * Fixed by introducing ONE new, non-conflicting variable
+   * (--modpanel-scale) that nothing here also redeclares, and deriving
+   * every dimension from it times its real base value (taken straight
+   * from tokens.css, not guessed). Nothing here references itself
+   * anywhere, so there is no cycle possible. Retuning the whole panel is
+   * one number.
+   *
+   * Uniform factor rather than the previous per-tier percentages — this
+   * is a literal "same layout, proportionally smaller," which is what
+   * was actually asked for; the earlier version's "type shrinks less
+   * than chrome" idea was my own embellishment, not the request.
+   */
+  --modpanel-scale: 0.85;
+  --control-h: calc(var(--modpanel-scale) * 28px);
+  --touch-target: calc(var(--modpanel-scale) * 36px);
+  --step--2: calc(var(--modpanel-scale) * 0.6875rem);
+  --step--1: calc(var(--modpanel-scale) * 0.75rem);
+  --step-0: calc(var(--modpanel-scale) * 0.8125rem);
+  --step-1: calc(var(--modpanel-scale) * 0.9375rem);
+  --step-2: calc(var(--modpanel-scale) * 1.125rem);
+  --space-1: calc(var(--modpanel-scale) * 4px);
+  --space-2: calc(var(--modpanel-scale) * 8px);
+  --space-3: calc(var(--modpanel-scale) * 12px);
+  --space-4: calc(var(--modpanel-scale) * 16px);
+  --space-5: calc(var(--modpanel-scale) * 24px);
+  --radius: calc(var(--modpanel-scale) * 3px);
+
+  /* Slider/Toggle's own dimensions — see ui.module.css's
+     --slider-track-h/--slider-thumb/--toggle-* doc for why these are
+     distinct names rather than reusing track-h/thumb (the exact bug
+     above, applied to a component instead of a token). Same
+     --modpanel-scale, same base values Toggle/Slider hardcode when
+     nothing overrides them, so everything shrinks in the same proportion
+     rather than some pieces shrinking more than others. */
+  --slider-track-h: calc(var(--modpanel-scale) * 2px);
+  --slider-thumb: calc(var(--modpanel-scale) * 12px);
+  --toggle-w: calc(var(--modpanel-scale) * 32px);
+  --toggle-h: calc(var(--modpanel-scale) * 18px);
+  --toggle-knob: calc(var(--modpanel-scale) * 12px);
+  --toggle-knob-inset: calc(var(--modpanel-scale) * 2px);
+  --toggle-knob-travel: calc(var(--modpanel-scale) * 14px);
+}
+
+.modPanel[data-collapsed='true'] .modPanelList,
+.modPanel[data-collapsed='true'] .modPanelListEmbedded {
+  display: none;
 }
 
 .modPanelList {
@@ -770,7 +875,12 @@
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  height: 44px;
+  /* Was a flat 44px — a hardcoded value, not a token, so it's untouched
+     by the scale-down above on its own. Derived from --modpanel-scale
+     (inherited from .modPanel, this rule doesn't declare it) rather than
+     a second hardcoded number, so retuning the panel's scale in one
+     place keeps this in proportion automatically. */
+  height: calc(var(--modpanel-scale, 1) * 44px);
   text-align: left;
 }
 
@@ -810,7 +920,345 @@
 }
 
 .modPanelRowFoot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   padding-top: var(--space-1);
+}
+
+/*
+ * Signal meter — sits at the far right of the Sound toggle's own row. A
+ * plain flex row rather than anything reaching into Field's internals: the
+ * Field (label + toggle) is the left child, the meter is the right child,
+ * space-between does the rest.
+ */
+.soundToggleRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* Sound, Humanize, Swing, and Meter are all Field-wrapped now — same
+   label-above-control shape, same Toggle size, per the "all toggles the
+   same size" rule. flex-wrap above means four full-size items on a
+   narrow mobile drawer drop to two rows instead of clipping or forcing
+   a squeeze; nothing here shrinks to fit. */
+
+.soundMeter {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+}
+
+/* ------------------------------------------------------------------ *
+ * Track section (Phase 4.9) — per-card uploaded audio, lives at the top
+ * of SoundPanel's body, above the preset controls. Uses the same
+ * --space and --step tokens .modPanel already scales down inside its
+ * sidecar context, so this shrinks in proportion right along with
+ * everything else in the panel without any of its own scale math.
+ * ------------------------------------------------------------------ */
+
+.trackEmpty,
+.trackSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.trackHint {
+  font-size: var(--step--2);
+  line-height: var(--leading-normal);
+  color: var(--text-mute);
+}
+
+.trackError {
+  font-size: var(--step--2);
+  color: var(--accent);
+}
+
+.trackMeta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.trackTitle {
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--step-0);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trackDuration {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.trackTransport {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* One-click "swap the LFO you already have for this track" suggestion —
+   shown at most once per upload, dismissible, never blocking. Same
+   dashed-border language as .notice so it reads as an aside rather than
+   a form field, but with its own accent-tinted background so it doesn't
+   just look like an empty-state message. */
+.trackNudge {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px dashed var(--accent-dim);
+  border-radius: var(--radius);
+  background: var(--accent-dim);
+  font-size: var(--step--2);
+  color: var(--text-dim);
+}
+
+.trackNudgeActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+
+/* Replace/Remove side by side (Phase 4.9.1) — unlike .modPanelRowFoot's
+   single Retrigger/Assign/Remove button elsewhere in this panel, Track
+   has two roughly-equal actions that don't need a full row each. */
+.trackButtonRow {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.trackHalfButton {
+  flex: 1;
+}
+
+/* Standard offscreen-but-accessible pattern for the file input itself —
+   the visible affordance is always the Button next to it; the input is
+   triggered via ref().click() rather than ever being seen or tapped
+   directly. */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ------------------------------------------------------------------ *
+ * Note rack — 12 chromatic roots as one flush 2x6 button strip.
+ *
+ * "Strip" is the whole point: no gap between cells, one continuous
+ * control rather than twelve loose buttons. That's why the border lives
+ * on the CONTAINER and the internal divisions are per-cell border-right
+ * / border-bottom rather than a full border on each button. Giving every
+ * button its own 1px border and butting them together would double every
+ * internal seam to 2px, which on pure black reads as a rendering glitch
+ * rather than a deliberate division.
+ *
+ * overflow:hidden + the container radius is what keeps the four corner
+ * cells' square edges from poking outside the rounded container.
+ * ------------------------------------------------------------------ */
+/* A control that's currently inert because Sound has taken over what it
+   would otherwise affect (see InspectorDrawer's
+   STATIC_CHOIR_MOCK_ONLY_CONTROL_IDS). Same opacity/pointer-events
+   language as .noteRack[data-disabled] and .rateStripWrap[data-disabled]
+   — dimmed and unclickable rather than hidden, so its current value stays
+   visible for reference. */
+.controlRowInert {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.noteRack {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  width: 100%;
+}
+
+.noteRack[data-disabled='true'] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.noteRackKey {
+  /* Matches the height of Select/TextInput directly above it in the
+     Sound panel, so the rack reads as "the Key select, expanded" rather
+     than a foreign widget bolted on. At 6 across in a ~340-380px mobile
+     drawer this also lands each cell near 55-63px wide — comfortably past
+     the 44px minimum tap target without needing a separate mobile size. */
+  height: var(--control-h);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  letter-spacing: var(--tracking-mono);
+  color: var(--text-dim);
+  background: transparent;
+  cursor: pointer;
+  /* Internal seams only — see the block comment above. */
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  transition: color 90ms linear, background-color 90ms linear;
+}
+
+/* Last cell in each row, and the whole bottom row, sit against the
+   container's own border — no second line needed. */
+.noteRackKey:nth-child(6n) {
+  border-right: none;
+}
+
+.noteRackKey:nth-child(n + 7) {
+  border-bottom: none;
+}
+
+/* Hover is the "about to select" signal only — border shift, no fill —
+   matching the texture picker's established behaviour. Guarded to
+   pointer:fine so a touch device never gets a sticky hover state stuck on
+   the last note tapped. */
+@media (hover: hover) and (pointer: fine) {
+  .noteRackKey:hover:not(:disabled):not([data-selected='true']) {
+    color: var(--accent);
+    background: var(--accent-faint);
+  }
+}
+
+.noteRackKey:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Selected: solid accent fill, using the same fill/text pairing the
+   .accent Button variant already establishes rather than a new one. */
+.noteRackKey[data-selected='true'] {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+/* At the selection cap the remaining unselected cells go visibly inert,
+   so nobody taps a dead button wondering whether it's broken. Selected
+   cells are never disabled — see NoteRack.tsx. */
+.noteRackKey:disabled {
+  color: var(--text-mute);
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------------------ *
+ * Rate strip — 6-button LFO rate divisions (1/1..1/16, Hz), same flush-
+ * strip language as .noteRack directly above, deliberately: this is the
+ * modulation-rate sibling of the note rack, not an unrelated widget. See
+ * lib/modulation/lfo.ts for what the six buttons mean.
+ * ------------------------------------------------------------------ */
+.rateStripWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.rateStripWrap[data-disabled='true'] {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.rateStrip {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  width: 100%;
+}
+
+.rateStripKey {
+  height: var(--control-h);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  letter-spacing: var(--tracking-mono);
+  color: var(--text-dim);
+  background: transparent;
+  cursor: pointer;
+  border-right: 1px solid var(--border);
+  transition: color 90ms linear, background-color 90ms linear;
+}
+
+.rateStripKey:last-child {
+  border-right: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rateStripKey:hover:not(:disabled):not([data-selected='true']) {
+    color: var(--accent);
+    background: var(--accent-faint);
+  }
+}
+
+.rateStripKey:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.rateStripKey[data-selected='true'] {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.rateStripKey:disabled {
+  color: var(--text-mute);
+  cursor: not-allowed;
+}
+
+/* Small mono readout under the Hz slider — the strip's buttons already
+   show which division is active, so this exists specifically for the
+   'hz' (custom) case, where the exact dialed-in value is the only
+   feedback the buttons themselves can't provide. */
+.rateStripReadout {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  letter-spacing: var(--tracking-mono);
+  color: var(--text-dim);
+  text-align: right;
+}
+
+.soundMeterDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--border-hi);
+  transition: background-color 80ms linear;
+}
+
+.soundMeterDot[data-lit='true'] {
+  background: var(--accent);
 }
 
 @media (max-width: 600px) {
@@ -818,10 +1266,17 @@
      panel is worse than just showing the panel — genuinely small screens
      only, not the "laptops" the horizontal-scroll behavior above already
      covers. */
-  .focusScrim[data-mod='true'] .focusPanel {
+  .focusScrim[data-mod='true'] .focusPanel,
+  .focusScrim[data-sound='true'] .focusPanel {
     display: none;
   }
-  .modPanel {
+  /* 7 dots desktop, 4 on narrow viewports — hiding via CSS rather than a
+     JS viewport check keeps SoundMeter identical between the mobile
+     embedded tab and the desktop sidecar. */
+  .soundMeterDot:nth-child(n + 5) {
+    display: none;
+  }
+  .sidecarStack {
     width: 100%;
     max-width: 640px;
   }
@@ -1778,13 +2233,24 @@
 }
 
 /* Square, capped so the controls below always have room. On a short
-   landscape phone the canvas would otherwise eat the entire viewport. */
+   landscape phone the canvas would otherwise eat the entire viewport.
+
+   max-height is a PERCENTAGE of .mobileFocus's own box, not a second
+   independent `dvh` value. Two separate dvh-based sizes (.mobileFocus's
+   100dvh height and this using 44dvh directly) each recalculate off the
+   visual viewport on every frame of iOS Safari's toolbar show/hide
+   animation — and don't necessarily land in sync with each other during
+   that transition, which is what showed up as the stage's bottom edge
+   and the row below it briefly overlapping. A percentage here resolves
+   against .mobileFocus's already-settled height in the SAME layout pass
+   instead of re-querying the viewport a second time, which removes the
+   two-clock mismatch entirely. */
 .mobileStage {
   flex: none;
   position: relative;
   width: 100%;
   aspect-ratio: 1;
-  max-height: 44dvh;
+  max-height: 44%;
   background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
   overflow: hidden;

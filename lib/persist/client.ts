@@ -1,7 +1,7 @@
 import type { AssetRenderer } from '@/renderers/types';
 import type { ParamState } from '@/renderers/control-schema';
 import type { Asset } from '@/types/asset';
-import type { ModState } from '@/renderers/control-schema';
+import type { ModState, SoundState } from '@/renderers/control-schema';
 
 /**
  * Client-side persistence helpers.
@@ -362,6 +362,44 @@ export function persistMod(itemId: string, mod: ModState, usesBoardItemPath: boo
           if (!res.ok) logPersistFailure(`modulation (${itemId})`, res);
         })
         .catch((err) => logPersistFailure(`modulation (${itemId})`, null, err));
+    }, delay),
+  );
+}
+
+/**
+ * Persist tile sound configuration. Same debounce/routing shape as
+ * persistMod — a Volume slider drag shouldn't write a row per frame any
+ * more than a modulation rate slider should.
+ */
+export function persistSound(itemId: string, sound: SoundState, usesBoardItemPath: boolean, delay = 500): void {
+  const key = `sound:${itemId}`;
+  pending.set(key, sound as never);
+
+  const existing = timers.get(key);
+  if (existing) clearTimeout(existing);
+
+  const url = usesBoardItemPath
+    ? `/api/boards/default/items/${itemId}`
+    : `/api/assets/${itemId}`;
+
+  timers.set(
+    key,
+    setTimeout(() => {
+      const payload = pending.get(key);
+      timers.delete(key);
+      pending.delete(key);
+      if (!payload) return;
+
+      fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sound: payload }),
+        keepalive: true,
+      })
+        .then((res) => {
+          if (!res.ok) logPersistFailure(`sound (${itemId})`, res);
+        })
+        .catch((err) => logPersistFailure(`sound (${itemId})`, null, err));
     }, delay),
   );
 }

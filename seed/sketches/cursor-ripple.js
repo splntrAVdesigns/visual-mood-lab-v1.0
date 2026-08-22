@@ -17,6 +17,12 @@ export default function sketch(p, get) {
     const maxRipples = get('maxRipples');
     ripples.push({ x, y, radius: 0, alpha: 255 });
     if (ripples.length > maxRipples) ripples.shift();
+    // Each ripple is a discrete, water-drop-like event — the same shape
+    // graze-to-pluck was built for in field-lines.js, just triggered by a
+    // spawn instead of a line crossing. Wired here rather than in each
+    // caller (mouseMoved/mousePressed/touchMoved/touchStarted) since every
+    // one of them already funnels through this single function.
+    if (typeof p.pluck === 'function') p.pluck(x / p.width);
   }
 
   p.setup = () => {

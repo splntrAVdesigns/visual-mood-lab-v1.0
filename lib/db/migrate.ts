@@ -59,7 +59,13 @@ export async function runMigrations(): Promise<{ ran: number }> {
       await db.execute(sql.raw(stmt));
     }
 
-    await db.execute(sql.raw(`INSERT INTO _migrations (name) VALUES ('${file}')`));
+    // Parameter-bound rather than sql.raw(`... '${file}' ...`) — file
+    // names here only ever come from readdirSync() of a repo-local
+    // directory, so this was never reachable with attacker-controlled
+    // input, but a tagged-template call is exactly as easy to write and
+    // means nothing in this file relies on manual string escaping being
+    // correct, now or after a future edit.
+    await db.execute(sql`INSERT INTO _migrations (name) VALUES (${file})`);
     ran++;
   }
 

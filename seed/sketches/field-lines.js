@@ -23,6 +23,17 @@ export default function sketch(p, get) {
     return p.mouseX > 0 && p.mouseX < p.width && p.mouseY > 0 && p.mouseY < p.height;
   }
 
+  // Graze-to-pluck: each cell remembers whether the field was "near" it
+  // last frame. A false→true transition is the graze — the moment the
+  // cursor actually crosses that line — and fires exactly one pluck, not
+  // one per frame the cursor happens to linger. Rebuilt whenever density
+  // changes, since the grid's cell count (and therefore every index into
+  // this array) changes with it; a stale array from a different-sized
+  // grid would compare the wrong cells against each other.
+  let wasNear = [];
+  let wasNearDensity = -1;
+  const NEAR_THRESHOLD = 0.55;
+
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
   };
@@ -47,11 +58,22 @@ export default function sketch(p, get) {
 
     // Idle: the field's focal point drifts gently so the piece isn't
     // static before anyone touches it, same idea as follow-cursor.js.
-    const px = inside() ? p.mouseX : p.width / 2 + Math.cos(t * 0.35) * p.width * 0.25;
-    const py = inside() ? p.mouseY : p.height / 2 + Math.sin(t * 0.28) * p.height * 0.25;
+    const pointerActive = inside();
+    const px = pointerActive ? p.mouseX : p.width / 2 + Math.cos(t * 0.35) * p.width * 0.25;
+    const py = pointerActive ? p.mouseY : p.height / 2 + Math.sin(t * 0.28) * p.height * 0.25;
 
     const cellW = p.width / density;
     const cellH = p.height / density;
+
+    if (density !== wasNearDensity) {
+      wasNear = new Array(density * density).fill(false);
+      wasNearDensity = density;
+    }
+    // No real pointer on the tile: nothing counts as "near" for graze
+    // purposes, so the idle drift point never triggers a pluck, and the
+    // next genuine crossing after re-entry always reads as fresh rather
+    // than inheriting whatever was true the last time the pointer left.
+    if (!pointerActive) wasNear.fill(false);
 
     p.strokeCap(p.ROUND);
 
@@ -63,7 +85,11 @@ export default function sketch(p, get) {
         const dx = px - cx;
         const dy = py - cy;
         const dist = Math.hypot(dx, dy);
-        const influence = p.constrain(1 - dist / fieldRadius, 0, 1) * bendStrength;
+        // Raw proximity, independent of Bend Strength — graze detection
+        // reads this directly so the knob stays purely visual and doesn't
+        // secretly retune how easily the instrument triggers.
+        const proximity = p.constrain(1 - dist / fieldRadius, 0, 1);
+        const influence = proximity * bendStrength;
 
         const baseAngle = Math.sin(ix * 0.4) * 0.4 + Math.cos(iy * 0.4) * 0.4;
         let pointerAngle = Math.atan2(dy, dx);
@@ -86,6 +112,15 @@ export default function sketch(p, get) {
         p.stroke(lineColor.r * 255, lineColor.g * 255, lineColor.b * 255, 255);
         p.strokeWeight(lineWidth);
         p.line(ax, ay, bx, by);
+
+        if (pointerActive) {
+          const cellIndex = iy * density + ix;
+          const near = proximity > NEAR_THRESHOLD;
+          if (near && !wasNear[cellIndex] && typeof p.pluck === 'function') {
+            p.pluck(cx / p.width);
+          }
+          wasNear[cellIndex] = near;
+        }
       }
     }
   };
