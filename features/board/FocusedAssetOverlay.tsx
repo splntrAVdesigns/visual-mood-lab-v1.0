@@ -257,16 +257,25 @@ export function FocusedAssetOverlay() {
       data-sound={showSound ? 'true' : undefined}
       onClick={closeOverlay}
     >
-      {/* Invisible, same width as the real sidecar — keeps focusPanel's
-          own centered position mathematically identical whether or not
-          the sidecar is showing (a tile flanked by two equal-width
-          elements, one real, one not, stays centered either way). This
-          is what stops the tile from visibly shifting when Sound/
-          Modulate opens — the old approach tried to re-center the whole
-          {sidecar, tile} group with a padding calc, which is exactly
-          what moved the tile. See .sidecarSpacer's CSS doc. */}
+      {/* Real sidecar now renders BEFORE focusPanel in DOM — it appears to
+          the tile's LEFT. Moved from the right (where it used to render
+          after focusPanel) because the right edge of the scrim sits right
+          up against the fixed Inspector drawer outside this overlay
+          entirely (z-index 50, see .focusScrim's doc) — there was no
+          room left for the sidecar there, which is what cut off Mute and
+          the track duration readout. The left side has nothing else
+          docked against it, so it's genuinely open space. No flex `order`
+          needed: DOM order directly matches visual order in this simple
+          a flex row (see .focusScrim), so this swap alone moves it. */}
       {((showMod && canModulate) || (showSound && canSound && schema)) && (
-        <div className={s.sidecarSpacer} aria-hidden="true" />
+        <div className={s.sidecarStack}>
+          {showSound && canSound && schema && (
+            <SoundPanel schema={schema} itemId={asset.itemId} onClose={() => setShowSound(false)} />
+          )}
+          {showMod && canModulate && (
+            <ModulationPanel controls={modulatableControls} itemId={asset.itemId} onClose={() => setShowMod(false)} />
+          )}
+        </div>
       )}
 
       <div
@@ -376,19 +385,16 @@ export function FocusedAssetOverlay() {
         </div>
       </div>
 
-      {/* Real sidecar now renders AFTER focusPanel in DOM — it appears to
-          the tile's right, matching the spacer's position on the left.
-          No flex `order` needed anymore: DOM order already matches
-          visual order. */}
+      {/* Invisible, same width as the real sidecar — keeps focusPanel's
+          own centered position mathematically identical whether or not
+          the sidecar is showing (a tile flanked by two equal-width
+          elements, one real, one not, stays centered either way). This
+          is what stops the tile from visibly shifting when Sound/
+          Modulate opens. Now on the right, mirroring the real sidecar's
+          move to the left — same counterweight technique, opposite side.
+          See .sidecarSpacer's CSS doc. */}
       {((showMod && canModulate) || (showSound && canSound && schema)) && (
-        <div className={s.sidecarStack}>
-          {showSound && canSound && schema && (
-            <SoundPanel schema={schema} itemId={asset.itemId} onClose={() => setShowSound(false)} />
-          )}
-          {showMod && canModulate && (
-            <ModulationPanel controls={modulatableControls} itemId={asset.itemId} onClose={() => setShowMod(false)} />
-          )}
-        </div>
+        <div className={s.sidecarSpacer} aria-hidden="true" />
       )}
 
       {showCode && hasSource && <CodePanel asset={asset} onClose={() => setShowCode(false)} />}

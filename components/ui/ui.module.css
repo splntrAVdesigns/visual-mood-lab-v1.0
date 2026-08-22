@@ -167,7 +167,13 @@
   height: var(--touch-target);
   display: flex;
   align-items: center;
-  touch-action: none;
+  /* pan-y (not none): lets the browser's own touch-scroll take a
+     vertical gesture that starts on the slider, rather than blocking all
+     native touch handling and leaving Slider.tsx's own pointer-capture
+     logic as the only thing deciding what a touch meant. Horizontal pan
+     stays disabled since that axis is this element's own drag gesture —
+     see Slider.tsx's touch-drag-threshold doc for the JS half of this. */
+  touch-action: pan-y;
 }
 
 .sliderTrack {

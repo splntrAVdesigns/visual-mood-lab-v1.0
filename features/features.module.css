@@ -739,11 +739,15 @@
  * sideways the moment Sound/Modulate opened, since the tile's own reference
  * point changed. Fixed by leaving justify-content: center (the base rule,
  * untouched here) and instead flanking the tile with two EQUAL-WIDTH
- * elements — the real .sidecarStack on the right, and an invisible
- * .sidecarSpacer of the same width on the left (see FocusedAssetOverlay.tsx
- * for the DOM order this depends on). A tile centered between two
+ * elements — the real .sidecarStack on the left, and an invisible
+ * .sidecarSpacer of the same width on the right (see FocusedAssetOverlay.tsx
+ * for the DOM order this depends on — sidecarStack now renders BEFORE
+ * focusPanel, sidecarSpacer after, the reverse of this file's original
+ * left/right assignment; the real sidecar moved to the left because the
+ * right edge of the scrim sits against the fixed Inspector drawer outside
+ * this overlay, leaving no room there). A tile centered between two
  * equal-width things stays centered whether those things are there or not
- * — so the tile never moves, and the sidecar simply appears to its right.
+ * — so the tile never moves, and the sidecar simply appears to its left.
  * Horizontal scroll remains the fallback on anything too narrow to fit all
  * three side by side.
  */

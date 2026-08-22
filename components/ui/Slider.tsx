@@ -55,6 +55,35 @@ export function Slider({
     [min, max, scale, step, value],
   );
 
+  // Touch-only drag-intent gate. Mouse/pen never touch this — desktop's
+  // existing feel (setPointerCapture + jump to click position immediately
+  // on pointerdown) is untouched below, exactly as it was.
+  //
+  // On a touchscreen, a slider living inside a vertically scrollable
+  // panel (SoundPanel/ModulationPanel's rows) has no way to tell "this
+  // touch means to drag the slider" from "this touch happens to land on
+  // the slider but means to scroll the panel" until the finger actually
+  // moves — they're the same input channel. The old code decided on
+  // pointerdown, before any movement at all: it jumped the value and
+  // called setPointerCapture immediately, which both fired the moment a
+  // finger merely touched down (a value jump on pure contact, before any
+  // drag) and, once captured, gave the browser's own touch-scroll
+  // recognizer nothing left to claim for that pointer — so a scroll
+  // gesture that happened to start on a slider always lost.
+  //
+  // Fixed by holding off on both of those until movement crosses
+  // TOUCH_DRAG_THRESHOLD, and then checking which axis moved further:
+  // predominantly horizontal commits to a drag (capture + start tracking
+  // value, from here on out behaving exactly like the mouse path always
+  // has); predominantly vertical releases this pointer entirely and lets
+  // the ancestor's native scroll handle it, aided by touch-action: pan-y
+  // below (ui.module.css) so the browser's own compositor can take that
+  // scroll over smoothly rather than everything routing through React.
+  const touchDrag = useRef<{ pointerId: number; startX: number; startY: number; dragging: boolean } | null>(
+    null,
+  );
+  const TOUCH_DRAG_THRESHOLD = 6; // px — small enough to feel immediate once committed, large enough that a stationary tap-then-scroll doesn't false-trigger a drag first.
+
   const handlePointerDown = (e: PointerEvent<HTMLDivElement>) => {
     if (disabled) return;
     // Only the primary (left) button drags the slider. Without this check,
@@ -63,18 +92,62 @@ export function Slider({
     // turn could suppress the browser's own contextmenu dispatch. Right and
     // middle clicks now pass through untouched.
     if (e.button !== 0) return;
+
+    if (e.pointerType === 'touch') {
+      touchDrag.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, dragging: false };
+      e.currentTarget.focus();
+      return;
+    }
+
     e.currentTarget.setPointerCapture(e.pointerId);
     e.currentTarget.focus();
     onChange(valueFromPointer(e.clientX));
   };
 
   const handlePointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    if (disabled || !e.currentTarget.hasPointerCapture(e.pointerId)) return;
+    if (disabled) return;
+
+    if (e.pointerType === 'touch') {
+      const drag = touchDrag.current;
+      if (!drag || drag.pointerId !== e.pointerId) return;
+
+      if (!drag.dragging) {
+        const dx = e.clientX - drag.startX;
+        const dy = e.clientY - drag.startY;
+        if (Math.abs(dx) < TOUCH_DRAG_THRESHOLD && Math.abs(dy) < TOUCH_DRAG_THRESHOLD) return;
+        if (Math.abs(dy) >= Math.abs(dx)) {
+          // Predominantly vertical — a scroll, not a slider drag. Let go
+          // entirely; touch-action: pan-y lets the browser take it from here.
+          touchDrag.current = null;
+          return;
+        }
+        // Predominantly horizontal past the threshold — this is a drag.
+        drag.dragging = true;
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+
+      onChange(valueFromPointer(e.clientX));
+      return;
+    }
+
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
     onChange(valueFromPointer(e.clientX));
   };
 
   const handlePointerUp = (e: PointerEvent<HTMLDivElement>) => {
-    if (disabled || !e.currentTarget.hasPointerCapture(e.pointerId)) return;
+    if (disabled) return;
+
+    if (e.pointerType === 'touch') {
+      const drag = touchDrag.current;
+      if (drag && drag.pointerId === e.pointerId && drag.dragging) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+        onCommit?.(valueFromPointer(e.clientX));
+      }
+      touchDrag.current = null;
+      return;
+    }
+
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
     e.currentTarget.releasePointerCapture(e.pointerId);
     onCommit?.(valueFromPointer(e.clientX));
   };
