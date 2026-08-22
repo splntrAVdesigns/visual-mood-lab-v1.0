@@ -1270,10 +1270,11 @@
   .focusScrim[data-sound='true'] .focusPanel {
     display: none;
   }
-  /* 7 dots desktop, 4 on narrow viewports — hiding via CSS rather than a
-     JS viewport check keeps SoundMeter identical between the mobile
-     embedded tab and the desktop sidecar. */
-  .soundMeterDot:nth-child(n + 5) {
+  /* 7 dots desktop, 5 on narrow viewports (room for a 5th over the
+     previous 4 — see SoundMeter.tsx's DOT_COUNT doc) — hiding via CSS
+     rather than a JS viewport check keeps SoundMeter identical between
+     the mobile embedded tab and the desktop sidecar. */
+  .soundMeterDot:nth-child(n + 6) {
     display: none;
   }
   .sidecarStack {

@@ -132,11 +132,11 @@ export function TrackSection({ itemId, schema }: TrackSectionProps) {
     if (sound.enabled) setSoundState({ ...sound, enabled: false });
   };
 
-  // The one control this section can't render disabled: any real-audio
-  // decode has to originate from the file input's own onChange, so the
-  // gesture chain (tap -> pick -> decode -> unlockAudio) never breaks —
-  // see loadTrack()'s doc in lib/sound/track.ts for why that matters on
-  // iOS specifically.
+  // The file input must be the thing that opens the native picker (tap ->
+  // pick -> onChange), same as ever — but decode itself no longer needs
+  // that tap to count as a "valid gesture" for anything; see loadTrack()'s
+  // doc in lib/sound/track.ts for what used to be conflated here and the
+  // mobile bug that came from it.
   const pickFile = () => inputRef.current?.click();
 
   const hiddenInput = (

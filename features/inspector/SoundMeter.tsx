@@ -5,7 +5,7 @@ import { getMeterLevel, isMeterActive } from '@/lib/sound/meter';
 import { hasTrack, getTrackLevel } from '@/lib/sound/track';
 import s from '../features.module.css';
 
-/** CSS hides dots 5–7 under the mobile breakpoint, leaving 4 visible —
+/** CSS hides dots 6–7 under the mobile breakpoint, leaving 5 visible —
     same breakpoint the sidecar layout already uses, kept in one place
     (features.module.css) rather than duplicated as a JS viewport check. */
 const DOT_COUNT = 7;

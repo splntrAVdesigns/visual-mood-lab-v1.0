@@ -67,7 +67,7 @@ export const params = {
   panelBorderWeight: { kind: 'slider', label: 'Panel border weight', min: 0.5, max: 4, step: 0.1, default: 1, showIf: { equals: ['hudMode', 'alpha'] } },
   scanlineWeight: { kind: 'slider', label: 'Scanline weight', min: 0.5, max: 4, step: 0.1, default: 1.5, showIf: { equals: ['hudMode', 'alpha'] } },
   panelGridDensity: { kind: 'stepper', label: 'Panel grid density', min: 2, max: 14, step: 1, default: 6, showIf: { equals: ['hudMode', 'alpha'] } },
-  microIconGap: { kind: 'slider', label: 'Micro-icon spacing', min: 16, max: 40, step: 1, default: 24, unit: 'px', showIf: { equals: ['hudMode', 'alpha'] }, hint: 'Spacing between the knob / color block / bars icons in each corner cluster.' },
+  microIconGap: { kind: 'slider', label: 'Micro-icon spacing', min: 16, max: 40, step: 1, default: 24, unit: 'px', showIf: { equals: ['hudMode', 'alpha'] }, hint: 'Spacing between the bars / LED / dial icons in the centered bottom row.' },
 
   // --- Delta mode ---
   horizonBobSpeed: { kind: 'slider', label: 'Horizon bob speed', min: 0, max: 2, step: 0.01, default: 0.35, modulatable: true, showIf: { equals: ['hudMode', 'delta'] } },
@@ -123,12 +123,16 @@ export default function sketch(p, get) {
   let cx = 0, cy = 0, radius = 0;
   const rand = hash(0xf00d);
   const panelSeeds = Array.from({ length: 8 }, () => ({ dx: (rand() - 0.5) * 40, dy: (rand() - 0.5) * 40, phase: rand() * 6.283 }));
-  // Alpha's bottom-row micro-icon clusters — one hugging the DRIFT
-  // readout, one hugging STUTTER, each a fixed [bars, color block,
-  // knob] triplet (mirrored on the right) rather than the old
-  // random-density scatter. Every instance gets its own fixed phase/
-  // speed offset, seeded once here (not per-frame), so duplicated icons
-  // of the same type never move in lockstep with each other.
+  // Alpha's bottom-row micro-icon cluster — a fixed [bars, LED matrix,
+  // dial-knob, dial-knob, LED matrix, bars] sextet drawn as one
+  // contiguous, centered row (see drawMicroRow) rather than the old
+  // random-density scatter, and rather than the two corner-hugging
+  // clusters this replaced (those visibly overlapped the DRIFT/STUTTER
+  // corner readouts at ordinary tile sizes). Kept as two seed objects
+  // purely so every one of the 6 instances gets its own fixed phase/
+  // speed offset, seeded once here (not per-frame) — duplicated icons
+  // of the same kind (bars appears twice, led twice, dial twice) would
+  // otherwise move in lockstep with their mirror if they shared a seed.
   const microLeft = {
     bars: { phase: rand() * 6.283, speed: 0.8 + rand() * 0.4 },
     led: { phase: rand() * 6.283, speed: 0.8 + rand() * 0.4 },
@@ -451,14 +455,23 @@ export default function sketch(p, get) {
     // line rather than overlapping the text baseline.
     const rowY = cy + baseH * 0.72 - 6;
     const gap = get('microIconGap');
-    // Left cluster hugs DRIFT (left edge), right cluster hugs STUTTER
-    // (right edge), each pulled in from its label rather than sitting on
-    // top of it — "in center" between the two readouts, not scattered
-    // across the whole panel.
-    const leftX = cx - baseW * 0.42;
-    const rightX = cx + baseW * 0.42 - gap * 2;
-    drawMicroCluster(['bars', 'led', 'dial'], microLeft, leftX, rowY, gap, time, accent);
-    drawMicroCluster(['dial', 'led', 'bars'], microRight, rightX, rowY, gap, time, accent);
+    // One combined 6-icon row, centered on cx — replaces the previous
+    // two separate clusters hugging the DRIFT/STUTTER corner readouts.
+    // Hugging the corners put each cluster's start position close enough
+    // to that corner's own label text width that they visibly overlapped
+    // at ordinary tile sizes, worse at lower microIconGap values. A
+    // centered row's total span is fixed by gap alone (max 5*40=200px),
+    // comfortably inside baseW*0.62 (where the labels sit) even at the
+    // smallest tiles this HUD renders at, so it clears both labels
+    // across the control's whole range rather than only at some sizes.
+    // microLeft/microRight stay as two distinct seed sources purely so
+    // all 6 icons keep independently offset phase/speed (see their
+    // declaration above) — same instances, laid out contiguously now
+    // instead of split to opposite corners.
+    const totalSpan = gap * 5; // 6 icons, 5 gaps between their centers
+    const startX = cx - totalSpan / 2;
+    drawMicroCluster(['bars', 'led', 'dial'], microLeft, startX, rowY, gap, time, accent);
+    drawMicroCluster(['dial', 'led', 'bars'], microRight, startX + gap * 3, rowY, gap, time, accent);
   }
 
   function drawAlpha(accent, dim, glowAmt) {

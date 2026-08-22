@@ -55,11 +55,16 @@ import { getAudioContext, getMasterGain, unlockAudio } from './context';
  * Limits
  * ------------------------------------------------------------------ */
 
-/** 20MB — generous for a compressed track (a 5-minute MP3 at 256kbps is
-    roughly 10MB), while still keeping a single tab's worst case in memory
-    reasonable once decoded to PCM (which runs several times larger than
-    the compressed file). */
-export const MAX_TRACK_BYTES = 20 * 1024 * 1024;
+/** 80MB. Raised from an earlier 20MB cap that undershot common real-world
+    track sizes — a lossless WAV/AIFF a few minutes long routinely lands
+    in the 40-80MB range even well within MAX_TRACK_SECONDS below, and a
+    compressed MP3/AAC at any reasonable bitrate stays far under this
+    regardless. Decoded PCM still runs several times larger than the
+    compressed file in memory once loaded — MAX_TRACK_SECONDS is what
+    actually bounds a single tab's worst case, not this byte limit; this
+    exists mainly to fail fast and give a clear error on a wildly
+    oversized or wrong-file upload before attempting a slow decode. */
+export const MAX_TRACK_BYTES = 80 * 1024 * 1024;
 
 /** 12 minutes. A mood-board tile's track is meant to loop as a bed, not
     play a whole album side — this is a sanity ceiling, not a musical
@@ -251,10 +256,10 @@ export type LoadTrackResult = { ok: true } | { ok: false; error: string };
 
 /**
  * Decode a File into this card's track. Replaces any track already loaded
- * for the card. Must be called from within a real user gesture (the file
- * input's onChange, fired by a tap/click) — unlockAudio() below is what
- * makes that gesture double as the AudioContext unlock on iOS Safari,
- * which refuses to resume a suspended context from anywhere else.
+ * for the card. Does NOT require a user gesture to succeed — decoding is
+ * independent of AudioContext unlock state; see the fire-and-forget
+ * unlockAudio() call below for why that used to be conflated and what
+ * broke because of it.
  *
  * `previousSoundEnabled` is the caller's current sound.enabled value —
  * Track and the synth preset are mutually exclusive as of Phase 4.9.1
@@ -278,11 +283,23 @@ export async function loadTrack(
     return { ok: false, error: `File is ${mb}MB — the limit is ${maxMb}MB.` };
   }
 
-  try {
-    await unlockAudio();
-  } catch {
-    return { ok: false, error: "Couldn't enable audio playback. Try tapping again." };
-  }
+  // NOT awaited — fire-and-forget, same pattern playTrack() already uses
+  // for its own unlockAudio() call. This used to block here, and that
+  // was the actual bug behind "upload gets stuck on Decoding… on mobile
+  // until an unrelated tap": AudioContext.decodeAudioData() below needs
+  // no 'running' context at all — decoding is pure format conversion,
+  // not playback — so there was never a real reason to gate it on
+  // resume() succeeding. iOS Safari's native file-picker UI sits between
+  // the "Upload Audio" tap and this onChange firing, and that intervening
+  // OS-level surface can sever the "trusted gesture" WebKit requires to
+  // resume a suspended AudioContext, so resume() can sit pending
+  // indefinitely rather than rejecting — awaiting it here just hung the
+  // whole load forever with no error surfaced (loading stayed true until
+  // some unrelated genuine tap elsewhere, e.g. the Sound toggle, finally
+  // resumed the same shared context and let this stalled await resolve
+  // too). Playback still gets properly unlocked, from a guaranteed-clean
+  // gesture — the Play button's own onClick, via playTrack() below.
+  void unlockAudio().catch(() => {});
   const ctx = getAudioContext();
 
   let buffer: AudioBuffer;
