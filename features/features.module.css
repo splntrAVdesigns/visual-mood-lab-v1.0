@@ -2080,6 +2080,27 @@
   }
 }
 
+/* About page only (see AboutShell.tsx) — deliberately mirrors
+   .footerCredit's positioning/typography exactly, opposite corner, so
+   the two read as one designed pair rather than two unrelated bits of
+   fixed-position chrome that happen to share a screen. */
+.updatedMark {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-3);
+  z-index: 5;
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-mute);
+  letter-spacing: 0.01em;
+}
+
+@media (max-width: 600px) {
+  .updatedMark {
+    display: none;
+  }
+}
+
 /* ------------------------------------------------------------------ *
  * Texture picker
  * ------------------------------------------------------------------ */

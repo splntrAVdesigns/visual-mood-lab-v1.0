@@ -2,7 +2,9 @@
 
 import { AppChrome } from '@/features/navigation/AppChrome';
 import { Hero } from '@/features/board/Hero';
+import { StartStrip } from './StartStrip';
 import { QuadrantSection } from './QuadrantSection';
+import { updatedCopy } from './content';
 import type { Asset } from '@/types/asset';
 import type { User } from '@/lib/auth';
 import s from '../features.module.css';
@@ -29,8 +31,11 @@ export function AboutShell({ assets, needsSeed = false, user = null }: AboutShel
 
       <main className={s.main} data-inspector-open="false">
         <Hero />
+        <StartStrip />
         <QuadrantSection />
       </main>
+
+      <span className={s.updatedMark}>updated: {updatedCopy.date}</span>
     </>
   );
 }

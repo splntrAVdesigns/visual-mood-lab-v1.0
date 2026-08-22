@@ -1,0 +1,38 @@
+.strip {
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 1rem 1.75rem;
+}
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.875rem;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--text-dim);
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.glyph {
+  flex: none;
+}
+
+.arrow {
+  color: var(--text-mute);
+}
+
+@media (max-width: 640px) {
+  .strip {
+    padding: 0.875rem 1rem;
+  }
+}

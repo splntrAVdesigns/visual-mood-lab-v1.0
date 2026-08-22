@@ -12,7 +12,6 @@
 
 .brandLink {
   display: inline-block;
-  margin-top: 0.5rem;
   font-family: var(--font-mono);
   font-size: var(--step--1);
   color: var(--accent);
@@ -23,6 +22,54 @@
 .brandLink:hover,
 .brandLink:focus-visible {
   border-bottom-color: var(--accent);
+}
+
+/* Two standalone outbound links (site, Instagram) stacked as their own
+   lines — brandLink itself stays inline-block (unchanged) so the SAME
+   class still sits correctly inline inside feedbackLine's sentence
+   below, rather than needing a second, near-duplicate link style. */
+.brandLinks {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.feedbackLine {
+  margin: 0.75rem 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--text-dim);
+}
+
+/* conceptCopy.applications / brandCopy.pillars — a short, skimmable list
+   under each quadrant's prose, using the same HudGridBullet glyph
+   ManifestList's rows use, so the device reads as one consistent part of
+   the page's language rather than a one-off confined to a single
+   quadrant. */
+.bulletList {
+  list-style: none;
+  margin: 1.25rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.bulletRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.bulletGlyph {
+  flex: none;
+  margin-top: 0.4em; /* optical alignment with the first line of text, not the row's own baseline */
 }
 
 @media (max-width: 640px) {
