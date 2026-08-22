@@ -1,0 +1,12 @@
+.bullet {
+  flex: none;
+  display: block;
+}
+
+.cellLit {
+  fill: var(--accent);
+}
+
+.cellDim {
+  fill: var(--border-hi);
+}
