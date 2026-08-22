@@ -103,6 +103,15 @@ const enabledCards = new Set<string>();
     dynamics. */
 const bandGain = new BandAutoGain<MicBand>();
 
+/** Held peak-with-decay for getMicLevel(), same constant and same
+    algorithm as track.ts's own LEVEL_DECAY_PER_SECOND (and meter.ts's
+    DECAY_PER_SECOND before it) — kept in sync so Mic's meter reading
+    feels identical to Track's and the synth engine's when SoundMeter.tsx
+    switches between them. */
+const LEVEL_DECAY_PER_SECOND = 3.5;
+let levelPeak = 0;
+let lastLevelTick = performance.now();
+
 type MicListener = () => void;
 const listeners = new Set<MicListener>();
 
@@ -190,6 +199,8 @@ async function acquireStream(): Promise<MicResult> {
   // the output graph.
 
   bandGain.reset();
+  levelPeak = 0;
+  lastLevelTick = performance.now();
   return { ok: true };
 }
 
@@ -205,6 +216,8 @@ function releaseStream(): void {
   waveAnalyser = null;
   waveBuffer = null;
   bandGain.reset();
+  levelPeak = 0;
+  lastLevelTick = performance.now();
 }
 
 /**
@@ -306,4 +319,40 @@ export function getMicWaveform(): Float32Array<ArrayBuffer> | null {
   if (!waveAnalyser || !waveBuffer) return null;
   waveAnalyser.getFloatTimeDomainData(waveBuffer);
   return waveBuffer;
+}
+
+/**
+ * Call from a UI-driven requestAnimationFrame loop — updates the held
+ * peak against elapsed time and returns the current 0..1 level, same
+ * contract as track.ts's getTrackLevel() and meter.ts's getMeterLevel().
+ * Feeds SoundMeter.tsx's "hey, I hear you" indicator (Track > Mic > synth
+ * preset priority — see that file's doc) — this is what actually answers
+ * the "the tile doesn't seem to recognize the audio right away" report:
+ * the plumbing was always live the instant permission was granted, but
+ * nothing was showing that back to the person until this existed.
+ *
+ * Returns 0, decaying any stale held peak toward it, when the shared
+ * stream isn't live — rather than freezing at its last real reading,
+ * which would show a stuck level after Mic gets disabled.
+ */
+export function getMicLevel(): number {
+  const now = performance.now();
+  const dt = Math.max(0, (now - lastLevelTick) / 1000);
+  lastLevelTick = now;
+
+  if (!waveAnalyser || !waveBuffer) {
+    levelPeak = levelPeak * Math.max(0, 1 - LEVEL_DECAY_PER_SECOND * dt);
+    return levelPeak;
+  }
+
+  waveAnalyser.getFloatTimeDomainData(waveBuffer);
+  let peak = 0;
+  for (let i = 0; i < waveBuffer.length; i++) {
+    const abs = Math.abs(waveBuffer[i]);
+    if (abs > peak) peak = abs;
+  }
+
+  const decayed = levelPeak * Math.max(0, 1 - LEVEL_DECAY_PER_SECOND * dt);
+  levelPeak = Math.min(1, Math.max(peak, decayed));
+  return levelPeak;
 }

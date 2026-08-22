@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Button, Field, IconButton, Select, Slider, formatValue } from '@/components/ui';
-import { CloseIcon, ChevronDownIcon, ChevronRightIcon } from '@/components/ui';
+import { CloseIcon, ChevronDownIcon, ChevronRightIcon, ResetIcon } from '@/components/ui';
 import { MOD_SOURCES, sourceMeta } from '@/lib/modulation/bus';
 import { useTrackLoaded, useMicEnabled } from '@/lib/hooks/useTrackState';
 import { RateStrip } from './controls/RateStrip';
@@ -51,10 +51,20 @@ const DEFAULT_MOD: Modulation = { source: 'lfo.sine', amount: 0.3, rate: 0.4, sm
  */
 export function ModulationPanel({ controls, itemId, onClose, embedded = false }: ModulationPanelProps) {
   const mod = useInspectorStore((st) => st.mod);
+  const setModulation = useInspectorStore((st) => st.setModulation);
   const trackLoaded = useTrackLoaded(itemId);
   const micEnabled = useMicEnabled(itemId);
   const [expanded, setExpanded] = useState<string | null>(controls[0]?.id ?? null);
   const [collapsed, setCollapsed] = useState(false);
+
+  const routedIds = Object.keys(mod);
+  // Same removal path each ModRow's own "Remove" button already uses
+  // (setModulation(id, null)), just applied to every routed control on
+  // this card in one action instead of one at a time — no separate
+  // "clear all" store action needed.
+  const resetAll = () => {
+    for (const id of routedIds) setModulation(id, null);
+  };
 
   const rows = (
     <div className={embedded ? s.modPanelListEmbedded : s.modPanelList}>
@@ -88,8 +98,14 @@ export function ModulationPanel({ controls, itemId, onClose, embedded = false }:
         />
         <span className={s.codeTitle}>Modulation</span>
         <span className={s.codeMeta}>
-          {Object.keys(mod).length} of {controls.length} routed
+          {routedIds.length} of {controls.length} routed
         </span>
+        <IconButton
+          label="Remove all modulation"
+          icon={<ResetIcon />}
+          onClick={resetAll}
+          disabled={routedIds.length === 0}
+        />
         <IconButton label="Close modulation" icon={<CloseIcon />} onClick={onClose} />
       </header>
       {rows}

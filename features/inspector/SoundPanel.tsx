@@ -51,6 +51,8 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
   const sound = useInspectorStore((st) => st.sound);
   const setSoundState = useInspectorStore((st) => st.setSoundState);
   const setParam = useInspectorStore((st) => st.setParam);
+  const mod = useInspectorStore((st) => st.mod);
+  const setModulation = useInspectorStore((st) => st.setModulation);
   const [collapsed, setCollapsed] = useState(false);
 
   const presets = getCompatiblePresets(schema);
@@ -81,6 +83,48 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
   // logic the Sound/Humanize/Swing toggles already have.
   const micEnabled = useMicEnabled(itemId);
   const [micError, setMicError] = useState<string | null>(null);
+
+  // Enabling Mic used to leave the tile visually unchanged until the
+  // person made a SEPARATE trip to Modulate and assigned a control by
+  // hand — reported as "the tile doesn't seem to recognize the audio
+  // right away," even though the plumbing was live the instant
+  // permission was granted (see SoundMeter.tsx's Mic priority for the
+  // other half of that fix). This closes the gap automatically rather
+  // than leaving it as a second manual step.
+  //
+  // Only steps in when NOTHING on this card is already routed to a
+  // mic.* source — checked fresh against the current mod state, not a
+  // one-time flag — so re-toggling Mic off/on later never clobbers a
+  // routing the person set up or changed by hand in the meantime.
+  // Prefers a control that already has an LFO routed, since swapping
+  // THAT one's source to Mic gives the most immediately obvious "I can
+  // hear you" feedback — it's already visibly animating something, so
+  // the change reads as "this now reacts to you" rather than as a new,
+  // unexplained motion appearing from nowhere. Falls back to the first
+  // modulatable control when nothing has an LFO yet, so this still does
+  // something useful on every eligible tile, not just ones that already
+  // had a routing — "across the spectrum of asset tiles," not a special
+  // case for a handful of them.
+  const autoAssignMicModulation = () => {
+    const alreadyRouted = Object.values(mod).some((m) => m.source.startsWith('mic.'));
+    if (alreadyRouted) return;
+
+    const modulatableControls = schema.controls.filter(
+      (c) => c.modulatable === true && (c.kind === 'slider' || c.kind === 'stepper'),
+    );
+    if (modulatableControls.length === 0) return;
+
+    const lfoControl = modulatableControls.find((c) => mod[c.id]?.source.startsWith('lfo.'));
+    const target = lfoControl ?? modulatableControls[0];
+    const current = mod[target.id];
+
+    setModulation(target.id, {
+      source: 'mic.rms',
+      amount: current?.amount ?? 0.3,
+      smoothing: current?.smoothing ?? 0,
+    });
+  };
+
   const micField = (
     <Field label="Mic">
       <span title="Lets Modulate react to your live microphone input. Audio is analyzed only — never recorded or sent anywhere.">
@@ -95,7 +139,10 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
               // this app, and the browser's own native permission prompt
               // is the trust boundary here, not a second app-level one in
               // front of it.
-              void enableMic(itemId).then((result) => setMicError(result.ok ? null : result.error));
+              void enableMic(itemId).then((result) => {
+                setMicError(result.ok ? null : result.error);
+                if (result.ok) autoAssignMicModulation();
+              });
             } else {
               disableMic(itemId);
               setMicError(null);
