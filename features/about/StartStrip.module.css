@@ -23,12 +23,9 @@
   gap: 0.5rem;
 }
 
-.glyph {
-  flex: none;
-}
-
 .arrow {
-  color: var(--text-mute);
+  color: var(--accent);
+  font-size: 1.15em;
 }
 
 @media (max-width: 640px) {

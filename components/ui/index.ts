@@ -11,4 +11,5 @@ export { Tooltip } from './Tooltip';
 export { useTooltipsEnabled } from './useTooltipsEnabled';
 export { Field } from './Field';
 export { Badge, SectionLabel, Divider } from './Badge';
+export { HudMicroCluster } from './HudMicroCluster';
 export * from './Icon';

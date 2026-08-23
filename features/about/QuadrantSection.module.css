@@ -44,10 +44,13 @@
 }
 
 /* conceptCopy.applications / brandCopy.pillars — a short, skimmable list
-   under each quadrant's prose, using the same HudGridBullet glyph
-   ManifestList's rows use, so the device reads as one consistent part of
-   the page's language rather than a one-off confined to a single
-   quadrant. */
+   under each quadrant's prose. .bulletGlyph is a plain single cyan
+   square, same treatment ManifestList's rows use, so the device reads
+   as one consistent part of the page's language rather than a one-off
+   confined to a single quadrant. The animated HudMicroCluster is
+   reserved for the once-per-quadrant header graphic (see Quadrant.tsx)
+   — repeating it down every list item would be a lot more motion than
+   "a bit of flare." */
 .bulletList {
   list-style: none;
   margin: 1.25rem 0 0;
@@ -69,7 +72,10 @@
 
 .bulletGlyph {
   flex: none;
-  margin-top: 0.4em; /* optical alignment with the first line of text, not the row's own baseline */
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  margin-top: 0.55em; /* optical alignment with the first line of text, not the row's own baseline */
 }
 
 @media (max-width: 640px) {

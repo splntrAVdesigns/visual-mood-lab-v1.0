@@ -1,4 +1,3 @@
-import { HudGridBullet } from '@/components/ui/HudGridBullet';
 import { Quadrant } from './Quadrant';
 import { ManifestList } from './ManifestList';
 import { conceptCopy, capabilitiesCopy, roadmapCopy, brandCopy } from './content';
@@ -12,9 +11,9 @@ export function QuadrantSection() {
           <p key={paragraph.slice(0, 24)}>{paragraph}</p>
         ))}
         <ul className={styles.bulletList}>
-          {conceptCopy.applications.map((item, i) => (
+          {conceptCopy.applications.map((item) => (
             <li key={item.slice(0, 24)} className={styles.bulletRow}>
-              <HudGridBullet seed={i} className={styles.bulletGlyph} />
+              <span className={styles.bulletGlyph} aria-hidden="true" />
               <span>{item}</span>
             </li>
           ))}
@@ -34,9 +33,9 @@ export function QuadrantSection() {
           <p key={paragraph.slice(0, 24)}>{paragraph}</p>
         ))}
         <ul className={styles.bulletList}>
-          {brandCopy.pillars.map((item, i) => (
+          {brandCopy.pillars.map((item) => (
             <li key={item.slice(0, 24)} className={styles.bulletRow}>
-              <HudGridBullet seed={i} className={styles.bulletGlyph} />
+              <span className={styles.bulletGlyph} aria-hidden="true" />
               <span>{item}</span>
             </li>
           ))}

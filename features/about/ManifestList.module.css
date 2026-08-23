@@ -7,13 +7,20 @@
 
 .row {
   display: grid;
-  grid-template-columns: 7rem 1fr auto;
-  align-items: baseline;
+  grid-template-columns: 0.5rem 7rem 1fr auto;
+  align-items: center;
   gap: var(--gap);
   padding: 0.5rem 0;
   border-bottom: 1px solid var(--border);
   font-family: var(--font-mono);
   font-size: var(--step--1);
+}
+
+.bullet {
+  width: 6px;
+  height: 6px;
+  background: var(--accent);
+  flex: none;
 }
 
 .key {

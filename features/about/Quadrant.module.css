@@ -19,6 +19,13 @@
   font-size: var(--step--1);
   color: var(--text-dim);
   letter-spacing: 0.02em;
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.eyebrowCluster {
+  margin-top: -1px; /* optical centering against the mono text's cap-height */
 }
 
 .heading {

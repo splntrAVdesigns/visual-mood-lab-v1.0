@@ -1,0 +1,101 @@
+.cluster {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  vertical-align: middle;
+}
+
+/* --- bars: drawLevelBars, a sine-driven level meter in the source ---- */
+
+.bars {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 10px;
+}
+
+.bar {
+  width: 2px;
+  height: 3px;
+  background: var(--accent);
+  animation: hudBarPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes hudBarPulse {
+  0%,
+  100% {
+    height: 3px;
+    opacity: 0.5;
+  }
+  50% {
+    height: 10px;
+    opacity: 1;
+  }
+}
+
+/* --- led: drawLedMatrix, a chase-lit grid in the source -------------- */
+
+.led {
+  display: grid;
+  grid-template-columns: repeat(4, 2.4px);
+  grid-template-rows: repeat(3, 2.4px);
+  gap: 1px;
+}
+
+.ledCell {
+  width: 2.4px;
+  height: 2.4px;
+  background: var(--border-hi);
+  animation: hudLedChase 1.9s linear infinite;
+}
+
+@keyframes hudLedChase {
+  0%,
+  80%,
+  100% {
+    background: var(--border-hi);
+  }
+  10% {
+    background: var(--accent);
+  }
+}
+
+/* --- dial: drawDialKnob, a rotating needle in the source -------------- */
+
+.dial {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--border-hi);
+  border-radius: 50%;
+  flex: none;
+}
+
+.dialNeedle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 1px;
+  background: var(--accent);
+  transform-origin: 0 50%;
+  animation: hudDialSpin 3s linear infinite;
+}
+
+@keyframes hudDialSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar,
+  .ledCell,
+  .dialNeedle {
+    animation: none;
+  }
+}

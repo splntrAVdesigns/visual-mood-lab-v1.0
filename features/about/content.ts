@@ -33,12 +33,16 @@ export interface ManifestRow {
 }
 
 /**
- * The five-step "how to actually begin" strip rendered directly under
- * the Hero (see StartStrip.tsx) — Concept sells the idea of the board,
- * this tells a first-time visitor what to literally do first.
+ * The "how to actually begin" strip rendered directly under the Hero
+ * (see StartStrip.tsx) — Concept sells the idea of the board, this tells
+ * a first-time visitor what to literally do first. The first entry is a
+ * lead-in question, not a literal step — same arrow-chain format as the
+ * rest, but framed as "here's the pitch in one line" before the actual
+ * instructions start.
  */
 export const startCopy = {
   steps: [
+    "What's this app about?",
     'Pick a tile',
     'Tune it',
     'Manipulate it live',
@@ -112,7 +116,7 @@ export const brandCopy = {
     'Every tool ships when it\u2019s actually ready, not on a schedule \u2014 built independently, tested obsessively, released the moment it earns a place in someone else\u2019s workflow. More tools are in development.',
   ],
   /** Same treatment as conceptCopy.applications — a short, skimmable
-      list under the prose, using the same HudGridBullet glyph so the
+      list under the prose, using the same plain square bullet so the
       device reads as a consistent part of the page's language rather
       than a one-off used in a single quadrant. */
   pillars: [
