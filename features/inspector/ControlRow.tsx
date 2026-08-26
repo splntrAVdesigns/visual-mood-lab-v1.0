@@ -14,6 +14,7 @@ import { Vec3ControlRow } from './controls/Vec3Control';
 import { TextControlRow } from './controls/TextControl';
 import { TriggerControlRow } from './controls/TriggerControl';
 import { TextureControlRow } from './controls/TextureControl';
+import { FontControlRow } from './controls/FontControl';
 
 interface ControlRowProps {
   control: Control;
@@ -39,6 +40,20 @@ interface ControlRowProps {
  */
 export function ControlRow({ control, value, dirty, onChange, onReset }: ControlRowProps) {
   const modulated = useInspectorStore((st) => Boolean(st.mod[control.id]));
+
+  // A `disabled` control (e.g. Blend mode, ahead of real layer compositing
+  // — see its schema comment) is still shown, so people can see it's
+  // coming rather than wondering if it vanished, but is genuinely inert:
+  // pointer-events off at the row level (belt-and-suspenders alongside
+  // SelectControlRow forwarding `disabled` to the native <select> itself).
+  // Field renders the "Future feature" badge next to the label.
+  if (control.disabled) {
+    return (
+      <div className={s.controlRow} data-disabled="true">
+        <ControlBody control={control} value={value} dirty={false} onChange={() => {}} onReset={() => {}} />
+      </div>
+    );
+  }
 
   return (
     <div className={s.controlRow} data-modulated={modulated ? 'true' : undefined}>
@@ -71,5 +86,7 @@ function ControlBody({ control, value, dirty, onChange, onReset }: ControlRowPro
       return <TriggerControlRow control={control} onChange={onChange} />;
     case 'texture':
       return <TextureControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />;
+    case 'font':
+      return <FontControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />;
   }
 }

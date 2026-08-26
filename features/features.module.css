@@ -1871,6 +1871,15 @@
   border-left: 1px solid var(--accent);
 }
 
+/* A `disabled` control (e.g. Blend mode ahead of real layer compositing —
+   see Control.disabled's doc) stays visible, greyed and inert, rather than
+   being removed from the panel outright. pointer-events belt-and-suspenders
+   the underlying <select>'s own `disabled` attribute. */
+.controlRow[data-disabled='true'] {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
 .modulatedValue {
   font-family: var(--font-mono);
   font-size: var(--step--1);
@@ -2209,6 +2218,107 @@
   color: var(--text-mute);
   text-align: center;
   padding: var(--space-3);
+}
+
+/* ------------------------------------------------------------------ *
+ * Font picker
+ * ------------------------------------------------------------------ */
+
+.fontPicker {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.fontTrigger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: var(--control-h);
+  padding: 0 var(--space-2);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: left;
+  font-size: var(--step--1);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fontTrigger:hover {
+  border-color: var(--border-hi);
+}
+
+.fontTrigger:disabled {
+  color: var(--text-mute);
+  cursor: not-allowed;
+}
+
+.fontMenu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: var(--space-2);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.fontGroup + .fontGroup {
+  margin-top: var(--space-2);
+}
+
+.fontGroupLabel {
+  padding: var(--space-1) var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fontOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-1);
+  border-radius: var(--radius);
+  font-size: var(--step-1);
+  color: var(--text);
+  text-align: left;
+}
+
+.fontOption:hover,
+.fontOption[data-active='true'] {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.fontNoteBadge {
+  flex: none;
+  padding: 1px 6px;
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+.fontMenuEmpty {
+  padding: var(--space-3);
+  font-size: var(--step--2);
+  color: var(--text-mute);
+  text-align: center;
 }
 
 /* ------------------------------------------------------------------ *

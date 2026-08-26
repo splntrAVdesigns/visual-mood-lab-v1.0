@@ -29,6 +29,18 @@ export class ShaderRenderer implements AssetRenderer {
   private pendingEvents: string[] = [];
   private seed = 0;
 
+  /** Source + cache key, kept around so render() can recompile after a
+      context loss — see compiledGeneration's doc below. */
+  private source: string | null = null;
+  private compileKey: string | null = null;
+  /** The stage's `generation` at the time `compiled` was last produced.
+      GLStage.generation only ticks on webglcontextrestored (see its doc);
+      a mismatch here means this instance's `compiled` program handle
+      predates the loss and is dead, even though nothing has told this
+      instance so — WebGL doesn't throw on a stale handle, it silently
+      no-ops, so this check is the only thing that catches it. */
+  private compiledGeneration = -1;
+
   /** Ping-pong backbuffer for feedback shaders. Allocated lazily. */
   private backbuffer: HTMLCanvasElement | null = null;
   private backCtx: CanvasRenderingContext2D | null = null;
@@ -69,7 +81,24 @@ export class ShaderRenderer implements AssetRenderer {
     if (signal.aborted) return;
     el.appendChild(canvas);
 
-    const result = stage.compile(asset.id + ':' + (asset.updatedAt ?? ''), asset.source);
+    this.source = asset.source;
+    this.compileKey = asset.id + ':' + (asset.updatedAt ?? '');
+    this.compileFromSource(stage);
+
+    this.usesBackbuffer = /\bu_prevFrame\b|\bu_backbuffer\b/.test(asset.source);
+    this.schema = asset.schema ?? null;
+    this.params = this.schema ? { ...defaultsOf(this.schema), ...(asset.params ?? {}) } : {};
+  }
+
+  /** Compiles (or fetches the cached program for) this shader's current
+      source and records the stage generation it was compiled against.
+      Shared by mount() and render()'s post-context-loss recompile so the
+      two paths can't drift — same fallback-to-hazard-stripes behavior
+      either way. */
+  private compileFromSource(stage: NonNullable<ReturnType<typeof getGLStage>>): void {
+    if (!this.source || !this.compileKey) return;
+
+    const result = stage.compile(this.compileKey, this.source);
 
     if (!result.ok || !result.program) {
       this.error = result.error ?? 'Shader failed to compile';
@@ -79,10 +108,7 @@ export class ShaderRenderer implements AssetRenderer {
     } else {
       this.compiled = result.program;
     }
-
-    this.usesBackbuffer = /\bu_prevFrame\b|\bu_backbuffer\b/.test(asset.source);
-    this.schema = asset.schema ?? null;
-    this.params = this.schema ? { ...defaultsOf(this.schema), ...(asset.params ?? {}) } : {};
+    this.compiledGeneration = stage.generation;
   }
 
   render(ctx: RenderContext): void {
@@ -90,6 +116,17 @@ export class ShaderRenderer implements AssetRenderer {
 
     const stage = getGLStage();
     if (!stage || stage.isLost) return;
+
+    // The context came back from a loss since this instance last compiled
+    // — `this.compiled` is a dead WebGLProgram handle at this point (see
+    // compiledGeneration's doc). Recompile before touching it; textures
+    // don't need the same treatment, since uploadTexture() already
+    // recreates whatever key it's asked for lazily, every frame, in
+    // applyReserved/applyParams below.
+    if (stage.generation !== this.compiledGeneration) {
+      this.compileFromSource(stage);
+      if (!this.compiled) return;
+    }
 
     const scale = this.quality === 'full' ? Math.min(ctx.pixelRatio, 2) : 1;
 
@@ -165,7 +202,13 @@ export class ShaderRenderer implements AssetRenderer {
     }
 
     const back = this.backbuffer
-      ? stage.uploadTexture(`${this.assetId}:back`, this.backbuffer)
+      // force: true — this canvas is the same object reference every
+      // frame by design (captureBackbuffer mutates it in place), so the
+      // cache's default "skip if the source reference is unchanged"
+      // optimization would misread that as nothing to upload and freeze
+      // the feedback effect after its first frame. See uploadTexture's
+      // doc in context-pool.ts.
+      ? stage.uploadTexture(`${this.assetId}:back`, this.backbuffer, { force: true })
       : stage.getFallbackTexture();
     if (back) {
       set('u_prevFrame', back);

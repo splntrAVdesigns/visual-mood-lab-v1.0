@@ -1,8 +1,9 @@
 'use client';
 
 import { useActionState, useMemo, useState } from 'react';
-import { TextInput, Button } from '@/components/ui';
+import { TextInput, Button, Tooltip } from '@/components/ui';
 import { signupAction, loginWithGitHubAction, loginWithAppleAction, type FormState } from './actions';
+import { appleSignInEnabled } from '@/lib/auth/flags';
 import {
   usernameSchema,
   emailSchema,
@@ -214,9 +215,11 @@ export function SignupForm({ enabled }: { enabled: boolean }) {
       </form>
 
       <form action={loginWithAppleAction} style={{ marginTop: 'var(--space-3)' }}>
-        <Button type="submit" variant="outline" block disabled={!enabled}>
-          Continue with Apple
-        </Button>
+        <Tooltip content="Not available yet — pending Apple Developer review">
+          <Button type="submit" variant="outline" block disabled={!enabled || !appleSignInEnabled}>
+            Continue with Apple
+          </Button>
+        </Tooltip>
       </form>
 
       <p className={s.footer}>

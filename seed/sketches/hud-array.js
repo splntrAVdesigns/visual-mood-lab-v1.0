@@ -24,75 +24,139 @@
 
 export const params = {
   hudMode: {
-    kind: 'select', label: 'HUD mode', default: 'radial',
+    kind: 'select', label: 'HUD mode', group: 'mode', default: 'radial',
     options: [
       { value: 'radial', label: '3D Radial' },
       { value: 'alpha', label: 'Alpha' },
       { value: 'delta', label: 'Delta' },
+      { value: 'sigma', label: 'Sigma' },
     ],
   },
 
-  scale: { kind: 'slider', label: 'Scale', min: 0.5, max: 1.4, step: 0.01, default: 1.0 },
-  pointerParallax: { kind: 'toggle', label: 'Pointer parallax', default: true, hint: 'The whole HUD subtly tracks the pointer, like a targeting system.' },
-  glow: { kind: 'slider', label: 'Glow', min: 0, max: 2, step: 0.01, default: 0.8 },
-  accentColor: { kind: 'color', label: 'Accent', default: { r: 0.6, g: 0.95, b: 1.0, a: 1 } },
-  dimColor: { kind: 'color', label: 'Dim elements', default: { r: 0.6, g: 0.95, b: 1.0, a: 0.35 } },
-  bgColor: { kind: 'color', label: 'Background', default: { r: 0.02, g: 0.03, b: 0.05, a: 1 } },
+  // Colors first, then the two truly global controls (Scale, Glow) —
+  // both apply regardless of mode, so both sit above every per-mode
+  // section rather than buried inside Radial's own control list where
+  // Scale/Glow used to live.
+  accentColor: { kind: 'color', label: 'Accent', group: 'colors', default: { r: 0.6, g: 0.95, b: 1.0, a: 1 } },
+  dimColor: { kind: 'color', label: 'Dim elements', group: 'colors', default: { r: 0.6, g: 0.95, b: 1.0, a: 0.35 } },
+  bgColor: { kind: 'color', label: 'Background', group: 'colors', default: { r: 0.02, g: 0.03, b: 0.05, a: 1 } },
 
-  // --- Radial mode ---
-  // Grouped by which ring/element each control affects, not by when it
-  // was added — rotation speeds first (the original set), then each
-  // ring's own shape controls together, shared/general controls last.
-  outerRingSpeed: { kind: 'slider', label: 'Outer ring speed', min: -60, max: 60, step: 1, default: 8, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'radial'] } },
-  segmentRingSpeed: { kind: 'slider', label: 'Segment arc speed', min: -60, max: 60, step: 1, default: -14, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'radial'] } },
-  tickRingSpeed: { kind: 'slider', label: 'Outer dot ring speed', min: -90, max: 90, step: 1, default: 22, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'radial'] } },
-  scanDotSpeed: { kind: 'slider', label: 'Scan dot speed', min: -180, max: 180, step: 1, default: -60, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'radial'] } },
-  dataBandSpeed: { kind: 'slider', label: 'Dot ring pulse speed', min: 0, max: 4, step: 0.01, default: 1.2, modulatable: true, showIf: { equals: ['hudMode', 'radial'] } },
+  scale: { kind: 'slider', label: 'Scale', group: 'global', min: 0.5, max: 1.4, step: 0.01, default: 1.0 },
+  glow: { kind: 'slider', label: 'Glow', group: 'global', min: 0, max: 2, step: 0.01, default: 0.8 },
 
-  segmentCount: { kind: 'stepper', label: 'Segment count', min: 8, max: 32, step: 1, default: 18, showIf: { equals: ['hudMode', 'radial'] } },
-  segmentRoundness: { kind: 'slider', label: 'Segment roundness', min: 0, max: 1, step: 0.02, default: 0.5, showIf: { equals: ['hudMode', 'radial'] }, hint: '0 = flat-ended blocks, 1 = fully rounded pills.' },
+  // --- Radial mode — Motion (every *Speed control, plus the zoom-pulse
+  // and signature-band rates: anything that's a rate of change rather
+  // than a static shape/size/color) ---
+  outerRingSpeed: { kind: 'slider', label: 'Outer ring speed', group: 'radialMotion', min: -60, max: 60, step: 1, default: 8, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'radial'] } },
+  segmentRingSpeed: { kind: 'slider', label: 'Segment arc speed', group: 'radialMotion', min: -60, max: 60, step: 1, default: -14, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'radial'] } },
+  tickRingSpeed: { kind: 'slider', label: 'Outer dot ring speed', group: 'radialMotion', min: -90, max: 90, step: 1, default: 22, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'radial'] } },
+  scanDotSpeed: { kind: 'slider', label: 'Scan dot speed', group: 'radialMotion', min: -180, max: 180, step: 1, default: -60, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'radial'] } },
+  dataBandSpeed: { kind: 'slider', label: 'Dot ring pulse speed', group: 'radialMotion', min: 0, max: 4, step: 0.01, default: 1.2, modulatable: true, showIf: { equals: ['hudMode', 'radial'] } },
+  radialZoomPulseSpeed: { kind: 'slider', label: 'Zoom pulse speed', group: 'radialMotion', min: 0.1, max: 4, step: 0.05, default: 1.2, modulatable: true, showIf: { equals: ['hudMode', 'radial'] } },
+  radialBandSpeedA: { kind: 'slider', label: 'Band A speed', group: 'radialMotion', min: -90, max: 90, step: 1, default: 14, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'radial'] } },
+  radialBandSpeedB: { kind: 'slider', label: 'Band B speed', group: 'radialMotion', min: -90, max: 90, step: 1, default: -19, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'radial'] } },
 
-  tickerCount: { kind: 'stepper', label: 'Outer ticker count', min: 4, max: 40, step: 1, default: 16, showIf: { equals: ['hudMode', 'radial'] } },
-  tickerHeight: { kind: 'slider', label: 'Outer ticker height', min: 0.02, max: 0.25, step: 0.005, default: 0.10, showIf: { equals: ['hudMode', 'radial'] } },
-  tickerThickness: { kind: 'slider', label: 'Outer ticker thickness', min: 0.5, max: 4, step: 0.1, default: 2, showIf: { equals: ['hudMode', 'radial'] } },
+  // --- Radial mode — Visual (shape, size, count, color: everything that
+  // ISN'T a rate) ---
+  segmentCount: { kind: 'stepper', label: 'Segment count', group: 'radialVisual', min: 8, max: 32, step: 1, default: 18, showIf: { equals: ['hudMode', 'radial'] } },
+  segmentRoundness: { kind: 'slider', label: 'Segment roundness', group: 'radialVisual', min: 0, max: 1, step: 0.02, default: 0.5, showIf: { equals: ['hudMode', 'radial'] }, hint: '0 = flat blocks, 1 = fully rounded pills.' },
+  tickerCount: { kind: 'stepper', label: 'Outer ticker count', group: 'radialVisual', min: 4, max: 40, step: 1, default: 16, showIf: { equals: ['hudMode', 'radial'] } },
+  tickerHeight: { kind: 'slider', label: 'Outer ticker height', group: 'radialVisual', min: 0.02, max: 0.25, step: 0.005, default: 0.10, showIf: { equals: ['hudMode', 'radial'] }, hint: 'Base height for the minor ticks.' },
+  tickerThickness: { kind: 'slider', label: 'Outer ticker thickness', group: 'radialVisual', min: 0.5, max: 4, step: 0.1, default: 2, showIf: { equals: ['hudMode', 'radial'] }, hint: 'Base stroke weight for the minor ticks.' },
+  // Accent markers: every Nth tick in the outer ring is upsized and
+  // alternates between a filled inward-pointing triangle and a thick
+  // bar, so the ring reads as a logical repeating sequence (a batch of
+  // thin/short minor ticks, then one accent, then another batch, then
+  // the other accent shape) rather than one uniform ring of identical
+  // marks. `tickerAccentScale` multiplies both height and thickness
+  // for the accent tick only — the minor ticks stay driven purely by
+  // tickerHeight / tickerThickness above.
+  tickerAccentEvery: { kind: 'stepper', label: 'Accent marker every', group: 'radialVisual', min: 2, max: 10, step: 1, default: 4, showIf: { equals: ['hudMode', 'radial'] }, hint: 'Every Nth tick becomes an oversized accent.' },
+  tickerAccentScale: { kind: 'slider', label: 'Accent marker scale', group: 'radialVisual', min: 1, max: 3, step: 0.05, default: 1.8, showIf: { equals: ['hudMode', 'radial'] }, hint: 'How much bigger the accent is than a minor tick.' },
+  dotSize: { kind: 'slider', label: 'Dot size', group: 'radialVisual', min: 0.5, max: 3, step: 0.05, default: 1.0, showIf: { equals: ['hudMode', 'radial'] }, hint: 'Scales the scan-dot and outer dot rings together.' },
+  lineThickness: { kind: 'slider', label: 'Line thickness', group: 'radialVisual', min: 0.5, max: 3, step: 0.05, default: 1.0, showIf: { equals: ['hudMode', 'radial'] }, hint: 'Scales the outer ring line and its ticks.' },
+  // Zoom-pulse: only the segmented arc ring breathes now — the outer
+  // ring/tickers and both dot rings all stay geometrically fixed, per
+  // direct instruction (motion-smoothness + fewer per-frame recomputes
+  // on the busiest draw in this mode). Amount defaults to 0 (off), same
+  // convention as cube-transform.js's Breathe control.
+  radialZoomPulseAmount: { kind: 'slider', label: 'Zoom pulse amount', group: 'radialVisual', min: 0, max: 0.4, step: 0.01, default: 0, modulatable: true, hint: 'How far the segmented ring scales in/out. 0 = off.', showIf: { equals: ['hudMode', 'radial'] } },
+  // Radial's own version of Delta's "signature band" — separate params
+  // from Delta's own (see lib below) so each mode's look stays tunable
+  // independently, matching every other per-mode constant in this file.
+  radialBandArc: { kind: 'slider', label: 'Signature band arc', group: 'radialVisual', min: 60, max: 180, step: 1, default: 130, unit: 'deg', showIf: { equals: ['hudMode', 'radial'] }, hint: '90 = quarter circle, 180 = half circle.' },
+  radialBandRadius: { kind: 'slider', label: 'Signature band radius', group: 'radialVisual', min: 0.4, max: 0.95, step: 0.01, default: 0.72, showIf: { equals: ['hudMode', 'radial'] }, hint: 'Fraction of ring radius, dot ring (0.62) to segmented ring (1.0).' },
+  radialBandWeight: { kind: 'slider', label: 'Signature band weight', group: 'radialVisual', min: 0.5, max: 4, step: 0.1, default: 1.6, showIf: { equals: ['hudMode', 'radial'] } },
+  radialBandColor: { kind: 'color', label: 'Signature band color', group: 'radialVisual', default: { r: 1.0, g: 0.35, b: 0.25, a: 0.85 }, showIf: { equals: ['hudMode', 'radial'] } },
 
-  dotSize: { kind: 'slider', label: 'Dot size', min: 0.5, max: 3, step: 0.05, default: 1.0, showIf: { equals: ['hudMode', 'radial'] }, hint: 'Scales both the scan-dot ring and the outer dot ring together.' },
-  lineThickness: { kind: 'slider', label: 'Line thickness', min: 0.5, max: 3, step: 0.05, default: 1.0, showIf: { equals: ['hudMode', 'radial'] }, hint: 'Scales the outer ring line and its tick marks.' },
+  // --- Alpha mode — Motion ---
+  panelDriftSpeed: { kind: 'slider', label: 'Panel drift speed', group: 'alphaMotion', min: 0, max: 2, step: 0.01, default: 0.4, modulatable: true, showIf: { equals: ['hudMode', 'alpha'] } },
+  scanlineSpeed: { kind: 'slider', label: 'Scanline speed', group: 'alphaMotion', min: 0, max: 3, step: 0.01, default: 0.8, unit: 'px/s×100', modulatable: true, showIf: { equals: ['hudMode', 'alpha'] } },
 
-  // --- Alpha mode ---
-  panelCount: { kind: 'stepper', label: 'Panel count', min: 2, max: 6, step: 1, default: 4, showIf: { equals: ['hudMode', 'alpha'] } },
-  panelDriftSpeed: { kind: 'slider', label: 'Panel drift speed', min: 0, max: 2, step: 0.01, default: 0.4, modulatable: true, showIf: { equals: ['hudMode', 'alpha'] } },
-  scanlineSpeed: { kind: 'slider', label: 'Scanline speed', min: 0, max: 3, step: 0.01, default: 0.8, unit: 'px/s×100', modulatable: true, showIf: { equals: ['hudMode', 'alpha'] } },
-  panelOpacity: { kind: 'slider', label: 'Panel opacity', min: 0.1, max: 0.9, step: 0.01, default: 0.4, showIf: { equals: ['hudMode', 'alpha'] } },
-  panelBorderWeight: { kind: 'slider', label: 'Panel border weight', min: 0.5, max: 4, step: 0.1, default: 1, showIf: { equals: ['hudMode', 'alpha'] } },
-  scanlineWeight: { kind: 'slider', label: 'Scanline weight', min: 0.5, max: 4, step: 0.1, default: 1.5, showIf: { equals: ['hudMode', 'alpha'] } },
-  panelGridDensity: { kind: 'stepper', label: 'Panel grid density', min: 2, max: 14, step: 1, default: 6, showIf: { equals: ['hudMode', 'alpha'] } },
-  microIconGap: { kind: 'slider', label: 'Micro-icon spacing', min: 16, max: 40, step: 1, default: 24, unit: 'px', showIf: { equals: ['hudMode', 'alpha'] }, hint: 'Spacing between the bars / LED / dial icons in the centered bottom row.' },
+  // --- Alpha mode — Visual ---
+  panelCount: { kind: 'stepper', label: 'Panel count', group: 'alphaVisual', min: 2, max: 6, step: 1, default: 4, showIf: { equals: ['hudMode', 'alpha'] } },
+  panelOpacity: { kind: 'slider', label: 'Panel opacity', group: 'alphaVisual', min: 0.1, max: 0.9, step: 0.01, default: 0.4, showIf: { equals: ['hudMode', 'alpha'] } },
+  panelBorderWeight: { kind: 'slider', label: 'Panel border weight', group: 'alphaVisual', min: 0.5, max: 4, step: 0.1, default: 1, showIf: { equals: ['hudMode', 'alpha'] } },
+  scanlineWeight: { kind: 'slider', label: 'Scanline weight', group: 'alphaVisual', min: 0.5, max: 4, step: 0.1, default: 1.5, showIf: { equals: ['hudMode', 'alpha'] } },
+  panelGridDensity: { kind: 'stepper', label: 'Panel grid density', group: 'alphaVisual', min: 2, max: 14, step: 1, default: 6, showIf: { equals: ['hudMode', 'alpha'] } },
+  microIconGap: { kind: 'slider', label: 'Micro-icon spacing', group: 'alphaVisual', min: 16, max: 40, step: 1, default: 24, unit: 'px', showIf: { equals: ['hudMode', 'alpha'] }, hint: 'Spacing between the bottom-row micro icons.' },
 
-  // --- Delta mode ---
-  horizonBobSpeed: { kind: 'slider', label: 'Horizon bob speed', min: 0, max: 2, step: 0.01, default: 0.35, modulatable: true, showIf: { equals: ['hudMode', 'delta'] } },
-  horizonBobAmount: { kind: 'slider', label: 'Horizon bob amount', min: 0, max: 15, step: 0.5, default: 4, unit: 'deg', showIf: { equals: ['hudMode', 'delta'] } },
-  reticlePulseSpeed: { kind: 'slider', label: 'Reticle pulse speed', min: 0, max: 4, step: 0.01, default: 1.4, modulatable: true, showIf: { equals: ['hudMode', 'delta'] } },
-  tickerSpeed: { kind: 'slider', label: 'Readout ticker speed', min: 0, max: 5, step: 0.01, default: 1.0, modulatable: true, showIf: { equals: ['hudMode', 'delta'] } },
-  ladderCount: { kind: 'stepper', label: 'Pitch ladder count', min: 1, max: 8, step: 1, default: 4, showIf: { equals: ['hudMode', 'delta'] } },
-  ladderSpacing: { kind: 'slider', label: 'Pitch ladder spacing', min: 10, max: 40, step: 1, default: 22, unit: 'px', showIf: { equals: ['hudMode', 'delta'] } },
-  bracketLength: { kind: 'slider', label: 'Corner bracket length', min: 8, max: 32, step: 1, default: 16, unit: 'px', showIf: { equals: ['hudMode', 'delta'] } },
-  bracketWeight: { kind: 'slider', label: 'Corner bracket weight', min: 1, max: 4, step: 0.1, default: 2, showIf: { equals: ['hudMode', 'delta'] } },
-  outerRingSpeedDelta: { kind: 'slider', label: 'Outer ring speed', min: -60, max: 60, step: 1, default: 5, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'delta'] } },
-  outerRingColor: { kind: 'color', label: 'Outer ring color', default: { r: 0.6, g: 0.95, b: 1.0, a: 0.45 }, showIf: { equals: ['hudMode', 'delta'] } },
-  outerRingOpacity: { kind: 'slider', label: 'Outer ring opacity', min: 0, max: 1, step: 0.02, default: 1, showIf: { equals: ['hudMode', 'delta'] }, hint: '0 hides it entirely.' },
+  // --- Delta mode — Motion ---
+  horizonBobSpeed: { kind: 'slider', label: 'Horizon bob speed', group: 'deltaMotion', min: 0, max: 2, step: 0.01, default: 0.35, modulatable: true, showIf: { equals: ['hudMode', 'delta'] } },
+  reticlePulseSpeed: { kind: 'slider', label: 'Reticle pulse speed', group: 'deltaMotion', min: 0, max: 4, step: 0.01, default: 1.4, modulatable: true, showIf: { equals: ['hudMode', 'delta'] } },
+  tickerSpeed: { kind: 'slider', label: 'Readout ticker speed', group: 'deltaMotion', min: 0, max: 5, step: 0.01, default: 1.0, modulatable: true, showIf: { equals: ['hudMode', 'delta'] } },
+  outerRingSpeedDelta: { kind: 'slider', label: 'Outer ring speed', group: 'deltaMotion', min: -60, max: 60, step: 1, default: 5, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'delta'] } },
+  deltaBandSpeedA: { kind: 'slider', label: 'Band A speed', group: 'deltaMotion', min: -90, max: 90, step: 1, default: 16, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'delta'] } },
+  deltaBandSpeedB: { kind: 'slider', label: 'Band B speed', group: 'deltaMotion', min: -90, max: 90, step: 1, default: -11, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'delta'] } },
 
+  // --- Delta mode — Visual ---
+  horizonBobAmount: { kind: 'slider', label: 'Horizon bob amount', group: 'deltaVisual', min: 0, max: 15, step: 0.5, default: 4, unit: 'deg', showIf: { equals: ['hudMode', 'delta'] } },
+  ladderCount: { kind: 'stepper', label: 'Pitch ladder count', group: 'deltaVisual', min: 1, max: 8, step: 1, default: 4, showIf: { equals: ['hudMode', 'delta'] } },
+  ladderSpacing: { kind: 'slider', label: 'Pitch ladder spacing', group: 'deltaVisual', min: 10, max: 40, step: 1, default: 22, unit: 'px', showIf: { equals: ['hudMode', 'delta'] } },
+  bracketLength: { kind: 'slider', label: 'Corner bracket length', group: 'deltaVisual', min: 8, max: 32, step: 1, default: 16, unit: 'px', showIf: { equals: ['hudMode', 'delta'] } },
+  bracketWeight: { kind: 'slider', label: 'Corner bracket weight', group: 'deltaVisual', min: 1, max: 4, step: 0.1, default: 2, showIf: { equals: ['hudMode', 'delta'] } },
+  outerRingColor: { kind: 'color', label: 'Outer ring color', group: 'deltaVisual', default: { r: 0.6, g: 0.95, b: 1.0, a: 0.45 }, showIf: { equals: ['hudMode', 'delta'] } },
+  outerRingOpacity: { kind: 'slider', label: 'Outer ring opacity', group: 'deltaVisual', min: 0, max: 1, step: 0.02, default: 1, showIf: { equals: ['hudMode', 'delta'] }, hint: '0 hides it entirely.' },
   // Two independently-rotating arc bands just inside the outer ring —
   // "signature bands." Each has its own speed/direction (set apart in
-  // the defaults below) so they continually pass each other instead of
+  // the defaults above) so they continually pass each other instead of
   // staying locked together; deltaBandArc controls how much of the ring
   // each one covers, from a quarter-circle up to a full half-circle.
-  deltaBandArc: { kind: 'slider', label: 'Signature band arc', min: 60, max: 180, step: 1, default: 130, unit: 'deg', showIf: { equals: ['hudMode', 'delta'] }, hint: 'Angular length of each rotating band — 90 is a quarter circle, 180 is a half circle.' },
-  deltaBandInset: { kind: 'slider', label: 'Signature band inset', min: 2, max: 30, step: 1, default: 10, unit: 'px', showIf: { equals: ['hudMode', 'delta'] }, hint: 'Gap between the bands and the outer ring, so they read as a distinct inner layer.' },
-  deltaBandWeight: { kind: 'slider', label: 'Signature band weight', min: 0.5, max: 4, step: 0.1, default: 1.6, showIf: { equals: ['hudMode', 'delta'] } },
-  deltaBandSpeedA: { kind: 'slider', label: 'Band A speed', min: -90, max: 90, step: 1, default: 16, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'delta'] } },
-  deltaBandSpeedB: { kind: 'slider', label: 'Band B speed', min: -90, max: 90, step: 1, default: -11, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'delta'] } },
-  deltaBandColor: { kind: 'color', label: 'Signature band color', default: { r: 1.0, g: 0.35, b: 0.25, a: 0.85 }, showIf: { equals: ['hudMode', 'delta'] } },
+  deltaBandArc: { kind: 'slider', label: 'Signature band arc', group: 'deltaVisual', min: 60, max: 180, step: 1, default: 130, unit: 'deg', showIf: { equals: ['hudMode', 'delta'] }, hint: '90 = quarter circle, 180 = half circle.' },
+  deltaBandInset: { kind: 'slider', label: 'Signature band inset', group: 'deltaVisual', min: 2, max: 30, step: 1, default: 10, unit: 'px', showIf: { equals: ['hudMode', 'delta'] }, hint: 'Gap between the bands and the outer ring.' },
+  deltaBandWeight: { kind: 'slider', label: 'Signature band weight', group: 'deltaVisual', min: 0.5, max: 4, step: 0.1, default: 1.6, showIf: { equals: ['hudMode', 'delta'] } },
+  deltaBandColor: { kind: 'color', label: 'Signature band color', group: 'deltaVisual', default: { r: 1.0, g: 0.35, b: 0.25, a: 0.85 }, showIf: { equals: ['hudMode', 'delta'] } },
+
+  // --- Sigma mode — curved panel plates, a small-block ring, a dash
+  // ring, and a triangular targeting reticle at center. The 4th HUD
+  // language, per direct instruction (curved panels / small blocks /
+  // dashes / triangular center reticle), added as a 4th `hudMode` value
+  // alongside Radial/Alpha/Delta rather than a separate seed asset —
+  // same file, same selector, same Motion/Visual grouping convention.
+
+  // --- Sigma mode — Motion ---
+  sigmaPanelSpeed: { kind: 'slider', label: 'Panel ring speed', group: 'sigmaMotion', min: -60, max: 60, step: 1, default: 6, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'sigma'] } },
+  sigmaBlockSpeed: { kind: 'slider', label: 'Block ring speed', group: 'sigmaMotion', min: -90, max: 90, step: 1, default: -18, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'sigma'] } },
+  sigmaDashSpeed: { kind: 'slider', label: 'Dash ring speed', group: 'sigmaMotion', min: -90, max: 90, step: 1, default: 26, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'sigma'] } },
+  sigmaReticleSpeed: { kind: 'slider', label: 'Reticle spin speed', group: 'sigmaMotion', min: -60, max: 60, step: 1, default: 0, unit: 'deg/s', modulatable: true, showIf: { equals: ['hudMode', 'sigma'] }, hint: 'Defaults to 0 — a still reticle often reads better as a targeting mark.' },
+
+  // --- Sigma mode — Visual ---
+  sigmaPanelCount: { kind: 'stepper', label: 'Panel count', group: 'sigmaVisual', min: 3, max: 8, step: 1, default: 5, showIf: { equals: ['hudMode', 'sigma'] } },
+  sigmaPanelArc: { kind: 'slider', label: 'Panel arc', group: 'sigmaVisual', min: 20, max: 70, step: 1, default: 42, unit: 'deg', showIf: { equals: ['hudMode', 'sigma'] }, hint: 'Angular width of each curved panel.' },
+  sigmaPanelWeight: { kind: 'slider', label: 'Panel weight', group: 'sigmaVisual', min: 4, max: 24, step: 1, default: 12, showIf: { equals: ['hudMode', 'sigma'] } },
+  sigmaBlockCount: { kind: 'stepper', label: 'Block count', group: 'sigmaVisual', min: 8, max: 40, step: 1, default: 20, showIf: { equals: ['hudMode', 'sigma'] } },
+  sigmaBlockSize: { kind: 'slider', label: 'Block size', group: 'sigmaVisual', min: 2, max: 14, step: 0.5, default: 6, unit: 'px', showIf: { equals: ['hudMode', 'sigma'] } },
+  sigmaDashCount: { kind: 'stepper', label: 'Dash count', group: 'sigmaVisual', min: 12, max: 60, step: 1, default: 30, showIf: { equals: ['hudMode', 'sigma'] } },
+  sigmaDashLength: { kind: 'slider', label: 'Dash length', group: 'sigmaVisual', min: 0.02, max: 0.15, step: 0.005, default: 0.05, showIf: { equals: ['hudMode', 'sigma'] } },
+  sigmaReticleSize: { kind: 'slider', label: 'Reticle size', group: 'sigmaVisual', min: 0.1, max: 0.4, step: 0.01, default: 0.22, showIf: { equals: ['hudMode', 'sigma'] }, hint: 'Fraction of the ring radius.' },
+  sigmaReticleWeight: { kind: 'slider', label: 'Reticle weight', group: 'sigmaVisual', min: 0.5, max: 4, step: 0.1, default: 1.6, showIf: { equals: ['hudMode', 'sigma'] } },
+
+  // Not mode-specific — applies regardless of which HUD mode is active.
+  // Pinned to its own group, declared last, so it always renders as the
+  // very last section in the drawer (below every mode's own controls,
+  // including each mode's own Signature Band color), per direct
+  // instruction, rather than sitting near the top where Scale/Glow live.
+  pointerParallax: { kind: 'toggle', label: 'Pointer parallax', group: 'interaction', default: true, hint: 'The whole HUD subtly tracks the pointer.' },
 };
 
 function hash(seed) {
@@ -111,6 +175,29 @@ export default function sketch(p, get) {
   // from p.frameCount, so speed changes take effect smoothly rather
   // than jumping.
   let outerAngle = 0, segmentAngle = 0, tickAngle = 0, scanDotAngle = 0;
+  let radialPulsePhase = 0;
+  // Chase-lit outer dot ring's brightness sweep position — previously
+  // driven straight off p.frameCount (see the chasePos fix below), which
+  // broke the "integrated from speed every frame" rule this comment
+  // describes for every other accumulator here: frameCount assumes a
+  // fixed 60fps, so on any frame it isn't (a busy tab, a temporary dip
+  // while another card promotes) the sweep's real-world speed visibly
+  // wobbled even though nothing the person did changed. Integrated by dt
+  // exactly like outerAngle etc. now, so it's frame-rate independent.
+  let chasePhase = 0;
+  // Radial's signature-band angles — separate accumulators from Delta's
+  // deltaBandAAngle/deltaBandBAngle (see radialBandArc's schema doc for
+  // why these are independently tunable rather than shared), started at
+  // different baked-in angles for the same reason Delta's are: so they
+  // never begin the loop aligned.
+  let radialBandAAngle = Math.PI * 0.4;
+  let radialBandBAngle = Math.PI * 1.3;
+  // See the segmented-ring call site in drawRadial for the full doc —
+  // caches the segmented ring's per-segment vertex geometry across
+  // frames since it only depends on {count, roundness, radius, weight},
+  // none of which change on a typical frame.
+  let segmentGeomCache = null;
+  let segmentGeomKey = '';
   let panelPhase = 0, scanlinePhase = 0;
   let horizonPhase = 0, reticlePhase = 0, tickerPhase = 0;
   let deltaRingAngle = 0;
@@ -120,6 +207,10 @@ export default function sketch(p, get) {
   // passing each other rather than staying locked together.
   let deltaBandAAngle = Math.PI * 0.15;
   let deltaBandBAngle = Math.PI * 1.05;
+  // Sigma's four independently-rotating elements — same "each moving
+  // part gets its own accumulator, integrated by dt" convention as
+  // every other mode in this file.
+  let sigmaPanelAngle = 0, sigmaBlockAngle = 0, sigmaDashAngle = 0, sigmaReticleAngle = 0;
   let cx = 0, cy = 0, radius = 0;
   const rand = hash(0xf00d);
   const panelSeeds = Array.from({ length: 8 }, () => ({ dx: (rand() - 0.5) * 40, dy: (rand() - 0.5) * 40, phase: rand() * 6.283 }));
@@ -164,11 +255,80 @@ export default function sketch(p, get) {
     return { x: nx * 10, y: ny * 10 };
   }
 
+  /**
+   * Scale multiplier for the Radial zoom-pulse. Only the segmented arc
+   * ring pulses now — the outer ring/tickers and both dot rings all stay
+   * geometrically fixed, per direct instruction: a single pulsing layer
+   * reads as a cleaner, more deliberate accent than the previous
+   * two-ring version, and skipping the extra per-frame recompute on the
+   * outer ring + its tickers (the most vertex-heavy element in this
+   * mode) is one less thing competing for frame budget on a busy board.
+   * No more per-ring phase offset either — with only one ring left,
+   * there was nothing left to offset it from (see radialZoomPulseOffset
+   * removal note where the segmented ring is drawn).
+   * Returns 1 (no-op) whenever Amount is 0, its default — consistent
+   * with this file's existing modulatable-radial controls, which stay
+   * fully inert until someone deliberately turns them on.
+   */
+  function radialPulseFactor() {
+    const amount = get('radialZoomPulseAmount');
+    if (amount <= 0) return 1;
+    return 1 + amount * Math.sin(radialPulsePhase);
+  }
+
   function ring(r, a0, a1, weight, col) {
     p.noFill();
     p.stroke(col.r, col.g, col.b, col.a);
     p.strokeWeight(weight);
     p.arc(0, 0, r * 2, r * 2, a0, a1);
+  }
+
+  /**
+   * Radial's Glow, done as ONE post-process bloom pass over the whole
+   * frame instead of per-shape `drawingContext.shadowBlur` — which is
+   * how the other three modes do it, and which is genuinely expensive:
+   * the browser recomputes a blur for every single stroke/fill made
+   * while shadowBlur is active, and Radial alone draws upward of 90
+   * shapes a frame (the segmented ring, both dot rings, the outer
+   * ticks). Reintroducing that cost right after the previous pass spent
+   * effort removing per-frame cost from this exact mode would directly
+   * undercut it.
+   *
+   * Standard bloom recipe instead: snapshot what was just drawn, blur
+   * ONE copy of it, composite that back on top with ADD blending. Cost
+   * is now O(1) per frame — one snapshot, one blur, one composite —
+   * regardless of how many shapes are in the HUD, rather than O(shapes).
+   *
+   * The blur buffer is kept at half resolution (glowLayer's own size)
+   * and drawn back stretched to full size — cheaper to blur (1/4 the
+   * pixels) and the extra softness from the upscale is desirable here,
+   * not a defect; bloom effects in real-time engines are conventionally
+   * done at reduced resolution for exactly this reason, not just as a
+   * shortcut.
+   */
+  let glowLayer = null;
+
+  function ensureGlowLayer() {
+    const w = Math.max(1, Math.round(p.width * 0.5));
+    const h = Math.max(1, Math.round(p.height * 0.5));
+    if (!glowLayer || glowLayer.width !== w || glowLayer.height !== h) {
+      if (glowLayer) glowLayer.remove();
+      glowLayer = p.createGraphics(w, h);
+    }
+  }
+
+  function applyRadialGlow(glowAmt, accent) {
+    ensureGlowLayer();
+    const snap = p.get(); // pixel snapshot of the frame as already drawn
+    glowLayer.clear();
+    glowLayer.image(snap, 0, 0, glowLayer.width, glowLayer.height); // downscale copy
+    glowLayer.filter(p.BLUR, 3 + glowAmt * 3);
+    p.push();
+    p.blendMode(p.ADD);
+    p.tint(accent.r * 255, accent.g * 255, accent.b * 255, 255 * Math.min(1, glowAmt));
+    p.image(glowLayer, 0, 0, p.width, p.height); // upscale back over the sharp frame
+    p.pop();
+    p.blendMode(p.BLEND); // belt-and-suspenders on top of push/pop's own state restore
   }
 
   // A thick arc segment with continuously adjustable end roundness.
@@ -209,33 +369,35 @@ export default function sketch(p, get) {
   // weight/2, at which point the two fillets meet and together form a
   // true semicircular cap — same continuous construction at every
   // roundness value, no special-casing the extremes.
-  function roundedSegment(r, a0, a1, weight, roundness, col) {
+  //
+  // Split into pure geometry (this function, returns a plain point
+  // list) and a separate draw step (drawSegmentPoints, below) so the
+  // Radial segmented ring can cache the point lists across frames —
+  // see segmentGeomCache's doc at that call site for why that matters.
+  function computeRoundedSegmentPoints(r, a0, a1, weight, roundness) {
     const rOut = r + weight / 2, rIn = r - weight / 2;
     const rad = Math.min(weight / 2, (weight / 2) * roundness);
     const pullOut = rOut > 0 ? rad / rOut : 0;
     const pullIn = rIn > 0 ? rad / rIn : 0;
     const steps = 6;
-
-    p.noStroke();
-    p.fill(col.r, col.g, col.b, col.a);
-    p.beginShape();
+    const pts = [];
 
     // Outer arc, a0 -> a1, pulled in at both ends.
     const oa0 = a0 + pullOut, oa1 = a1 - pullOut;
     for (let i = 0; i <= steps; i++) {
       const a = oa0 + (i / steps) * (oa1 - oa0);
-      p.vertex(Math.cos(a) * rOut, Math.sin(a) * rOut);
+      pts.push([Math.cos(a) * rOut, Math.sin(a) * rOut]);
     }
 
     if (rad > 0.01) {
       // Outer corner at a1: tangent = decreasing-angle arc direction, normal = inward.
-      for (const [px, py] of filletPoints(
+      for (const pt of filletPoints(
         Math.cos(a1) * rOut, Math.sin(a1) * rOut,
         Math.sin(a1), -Math.cos(a1), -Math.cos(a1), -Math.sin(a1), rad, steps
-      )) p.vertex(px, py);
+      )) pts.push(pt);
 
       // Short straight radial segment at angle a1, from (rOut-rad) to (rIn+rad).
-      p.vertex(Math.cos(a1) * (rIn + rad), Math.sin(a1) * (rIn + rad));
+      pts.push([Math.cos(a1) * (rIn + rad), Math.sin(a1) * (rIn + rad)]);
 
       // Inner corner at a1: tangent = decreasing-angle arc direction (same), normal = outward.
       // Need the normal-edge touch point first (continuing from the radial
@@ -246,39 +408,47 @@ export default function sketch(p, get) {
         Math.cos(a1) * rIn, Math.sin(a1) * rIn,
         Math.sin(a1), -Math.cos(a1), Math.cos(a1), Math.sin(a1), rad, steps
       ).reverse();
-      for (const [px, py] of f) p.vertex(px, py);
+      for (const pt of f) pts.push(pt);
     }
 
     // Inner arc, a1 -> a0 (reversed), pulled in the same way.
     const ia1 = a1 - pullIn, ia0 = a0 + pullIn;
     for (let i = 0; i <= steps; i++) {
       const a = ia1 - (i / steps) * (ia1 - ia0);
-      p.vertex(Math.cos(a) * rIn, Math.sin(a) * rIn);
+      pts.push([Math.cos(a) * rIn, Math.sin(a) * rIn]);
     }
 
     if (rad > 0.01) {
       // Inner corner at a0: tangent = increasing-angle arc direction, normal = outward.
-      for (const [px, py] of filletPoints(
+      for (const pt of filletPoints(
         Math.cos(a0) * rIn, Math.sin(a0) * rIn,
         -Math.sin(a0), Math.cos(a0), Math.cos(a0), Math.sin(a0), rad, steps
-      )) p.vertex(px, py);
+      )) pts.push(pt);
 
       // Short straight radial segment at angle a0, from (rIn+rad) to (rOut-rad).
-      p.vertex(Math.cos(a0) * (rOut - rad), Math.sin(a0) * (rOut - rad));
+      pts.push([Math.cos(a0) * (rOut - rad), Math.sin(a0) * (rOut - rad)]);
 
       // Outer corner at a0: tangent = increasing-angle arc direction, normal = inward, normal-first.
       const f = filletPoints(
         Math.cos(a0) * rOut, Math.sin(a0) * rOut,
         -Math.sin(a0), Math.cos(a0), -Math.cos(a0), -Math.sin(a0), rad, steps
       ).reverse();
-      for (const [px, py] of f) p.vertex(px, py);
+      for (const pt of f) pts.push(pt);
     }
 
+    return pts;
+  }
+
+  function drawSegmentPoints(pts, col) {
+    p.noStroke();
+    p.fill(col.r, col.g, col.b, col.a);
+    p.beginShape();
+    for (const [x, y] of pts) p.vertex(x, y);
     p.endShape(p.CLOSE);
   }
 
   // ---------------- Radial mode ----------------
-  function drawRadial(accent, dim, glowAmt) {
+  function drawRadial(accent, dim) {
     p.push();
     p.translate(cx, cy);
     p.rotate(0);
@@ -286,6 +456,11 @@ export default function sketch(p, get) {
     // Outer thin ring with floating tick marks. Labels that used to sit
     // outside these ticks are gone entirely now — removed per direct
     // instruction, not just pulled inward like the previous pass did.
+    // Fixed radius, no zoom-pulse — per direct instruction, only the
+    // segmented arc ring (below) breathes now. Keeps this ring and its
+    // full tick set (the most vertex-heavy draw in this mode) out of the
+    // per-frame pulse recompute entirely, which is both smoother to look
+    // at and cheaper to render.
     p.push();
     p.rotate(outerAngle);
     const lineThick = get('lineThickness');
@@ -293,34 +468,117 @@ export default function sketch(p, get) {
     const outerTicks = Math.round(get('tickerCount'));
     const tickHeight = get('tickerHeight');
     const tickWeight = get('tickerThickness');
+    const accentEvery = Math.max(2, Math.round(get('tickerAccentEvery')));
+    const accentScale = get('tickerAccentScale');
+    const angStep = p.TWO_PI / outerTicks;
+    const r0Base = radius * 1.18;
+    let accentIndex = 0;
     for (let i = 0; i < outerTicks; i++) {
-      const a = (i / outerTicks) * p.TWO_PI;
-      const r0 = radius * 1.18, r1 = radius * (1.18 + tickHeight);
-      const x0 = Math.cos(a) * r0, y0 = Math.sin(a) * r0;
-      const x1 = Math.cos(a) * r1, y1 = Math.sin(a) * r1;
-      p.stroke(accent.r, accent.g, accent.b, accent.a * 0.8);
-      p.strokeWeight(tickWeight);
-      p.line(x0, y0, x1, y1);
+      const a = i * angStep;
+      const isAccent = (i % accentEvery) === (accentEvery - 1);
+
+      if (!isAccent) {
+        const r1 = radius * (1.18 + tickHeight);
+        p.stroke(accent.r, accent.g, accent.b, accent.a * 0.8);
+        p.strokeWeight(tickWeight);
+        p.line(Math.cos(a) * r0Base, Math.sin(a) * r0Base, Math.cos(a) * r1, Math.sin(a) * r1);
+        continue;
+      }
+
+      // Accent marker — alternates shape each time one comes up, so the
+      // sequence reads as thin batch -> triangle -> thin batch -> thick
+      // bar -> repeat, rather than every accent looking identical.
+      const r1 = radius * (1.18 + tickHeight * accentScale);
+      const useTriangle = (accentIndex % 2) === 0;
+      accentIndex++;
+
+      if (useTriangle) {
+        const halfAng = angStep * 0.32;
+        p.noStroke();
+        p.fill(accent.r, accent.g, accent.b, accent.a * 0.95);
+        p.beginShape();
+        p.vertex(Math.cos(a) * r0Base, Math.sin(a) * r0Base);
+        p.vertex(Math.cos(a - halfAng) * r1, Math.sin(a - halfAng) * r1);
+        p.vertex(Math.cos(a + halfAng) * r1, Math.sin(a + halfAng) * r1);
+        p.endShape(p.CLOSE);
+      } else {
+        p.stroke(accent.r, accent.g, accent.b, accent.a * 0.95);
+        p.strokeWeight(tickWeight * accentScale);
+        p.line(Math.cos(a) * r0Base, Math.sin(a) * r0Base, Math.cos(a) * r1, Math.sin(a) * r1);
+      }
     }
     p.pop();
 
     // Segmented chunky arc ring — discrete rectangular blocks around a
-    // circle, rotating at its own independent speed.
+    // circle, rotating at its own independent speed. The only ring the
+    // zoom-pulse still touches — see radialPulseFactor's doc.
+    //
+    // This is where the reported stutter actually came from — not just
+    // the frameCount-vs-dt bug fixed last round (that fixed the chase
+    // ring's SPEED staying correct across dropped frames; it never made
+    // any frame cheaper to produce). Each segment's rounded-corner
+    // fillets are genuinely expensive geometry (computeRoundedSegmentPoints
+    // runs ~4 trig-heavy corner constructions per segment), and every
+    // segment's shape only depends on {count, roundness, weight, radius}
+    // — none of which change on a typical frame; ROTATION is handled
+    // entirely by the p.rotate(segmentAngle) transform below, not by
+    // recomputing vertex positions. Recomputing all 32 segments' full
+    // geometry from scratch every single frame regardless, even though
+    // nothing shape-relevant had changed, was pure wasted work competing
+    // for frame budget. Cached here: only rebuilt when the signature
+    // actually changes (radius keeps changing every frame same as
+    // before whenever the zoom-pulse is on — not a regression there,
+    // since that's already the cost the pulse feature signs up for).
     p.push();
     p.rotate(segmentAngle);
     const segN = Math.round(get('segmentCount'));
     const segGap = 0.35;
     const segRoundness = get('segmentRoundness');
+    const pulse1 = radialPulseFactor();
+    const segR = radius * pulse1;
+    const segWeight = radius * 0.16 * pulse1;
+    const segKey = `${segN}|${segRoundness}|${segR.toFixed(2)}|${segWeight.toFixed(2)}`;
+    if (segKey !== segmentGeomKey) {
+      segmentGeomCache = [];
+      for (let i = 0; i < segN; i++) {
+        const a0 = (i / segN) * p.TWO_PI;
+        const a1 = a0 + (p.TWO_PI / segN) * (1 - segGap);
+        segmentGeomCache.push(computeRoundedSegmentPoints(segR, a0, a1, segWeight, segRoundness));
+      }
+      segmentGeomKey = segKey;
+    }
     for (let i = 0; i < segN; i++) {
-      const a0 = (i / segN) * p.TWO_PI;
-      const a1 = a0 + (p.TWO_PI / segN) * (1 - segGap);
       const lit = (Math.floor((i + segmentAngle * 3) / 2) % 5) !== 0;
       const col = lit ? accent : dim;
-      roundedSegment(radius, a0, a1, radius * 0.16, segRoundness, col);
+      drawSegmentPoints(segmentGeomCache[i], col);
     }
     p.pop();
 
+    // Signature band arcs — ported from Delta on request (see
+    // radialBandArc's schema doc). Positioned as a fraction of the base
+    // `radius`, not `radius * pulse1` and not a flat pixel inset from
+    // the segmented ring — the original pixel-inset version couldn't
+    // reach anywhere near the inner dot ring (radius * 0.62, below) on
+    // most tile sizes, which is why the slider barely seemed to move it.
+    // Fraction-based keeps it consistent with every other ring in this
+    // file (0.62, 1.0, 1.14, 1.18 are all fractions of radius too), and
+    // stays stationary through the zoom pulse the same way, by using the
+    // base `radius` rather than a pulsed one.
+    const bandArc = get('radialBandArc') * (Math.PI / 180);
+    const bandR = radius * get('radialBandRadius');
+    const bandCol = get('radialBandColor');
+    p.noFill();
+    p.stroke(bandCol.r, bandCol.g, bandCol.b, bandCol.a);
+    p.strokeWeight(get('radialBandWeight'));
+    p.arc(0, 0, bandR * 2, bandR * 2, radialBandAAngle - bandArc / 2, radialBandAAngle + bandArc / 2);
+    p.arc(0, 0, bandR * 2, bandR * 2, radialBandBAngle - bandArc / 2, radialBandBAngle + bandArc / 2);
+
     // Inner dotted scan ring, opposite rotation for visual counter-motion.
+    // Not part of the zoom-pulse — the two dot rings stay stationary in
+    // radius (per direct instruction) so the pulse reads as one clean
+    // outer-layer breathing effect rather than the whole HUD pumping at
+    // once, and it's a little cheaper besides (no radialPulseFactor call
+    // per frame for these two).
     p.push();
     p.rotate(scanDotAngle);
     const dotN = 48;
@@ -344,12 +602,15 @@ export default function sketch(p, get) {
     // to be accumulated every frame in the main draw loop and then never
     // read anywhere in this function — a second, separate dead-control
     // bug. Both are fixed together here by giving tickAngle a real ring
-    // to drive.
+    // to drive. Also stationary against the zoom-pulse, same reasoning
+    // as the scan-dot ring above.
     p.push();
     p.rotate(tickAngle);
     const ringDotN = 40;
-    const chaseSpeed = get('dataBandSpeed');
-    const chasePos = (p.frameCount * 0.05 * chaseSpeed) % ringDotN;
+    // *3 matches the original frameCount-driven sweep's real-world speed
+    // at 60fps (frameCount * 0.05 == 3 units/sec at chaseSpeed 1), just
+    // integrated by dt now instead of assumed frame rate.
+    const chasePos = (chasePhase * 3) % ringDotN;
     for (let i = 0; i < ringDotN; i++) {
       const a = (i / ringDotN) * p.TWO_PI;
       const r = radius * 1.14;
@@ -363,6 +624,27 @@ export default function sketch(p, get) {
     }
     p.pop();
 
+    // Three dots encircling the centre readout in a fixed triangular
+    // formation. Deliberately synced to scanDotAngle — the same angle
+    // driving the inner dotted scan ring above — so this orbits at
+    // exactly that ring's speed rather than running its own clock, per
+    // direct instruction. It only orbits: there's no radialPulseFactor
+    // or frame-based size wobble here, so the triangle itself never
+    // grows/shrinks, it just rotates as one rigid shape.
+    p.push();
+    p.rotate(scanDotAngle);
+    const centreDotR = radius * 0.16;
+    // Bumped from 2.6 to 3.6 — "slightly thicker in diameter," per direct
+    // instruction.
+    const centreDotSize = 3.6 * dotSizeMult;
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * p.TWO_PI - p.HALF_PI; // one vertex pointing straight up
+      p.noStroke();
+      p.fill(accent.r, accent.g, accent.b, accent.a * 0.85);
+      p.circle(Math.cos(a) * centreDotR, Math.sin(a) * centreDotR, centreDotSize);
+    }
+    p.pop();
+
     // Centre readout.
     p.noStroke();
     p.fill(accent.r, accent.g, accent.b, accent.a * 0.7);
@@ -371,12 +653,7 @@ export default function sketch(p, get) {
     const val = (0.3 + 0.5 * (0.5 + 0.5 * Math.sin(p.frameCount * 0.015))).toFixed(2);
     p.text(val, 0, radius * 0.05);
 
-    if (glowAmt > 0) {
-      p.drawingContext.shadowBlur = 16 * glowAmt;
-      p.drawingContext.shadowColor = `rgba(${accent.r * 255},${accent.g * 255},${accent.b * 255},0.6)`;
-    }
     p.pop();
-    p.drawingContext.shadowBlur = 0;
   }
 
   // ---------------- Alpha mode ----------------
@@ -658,6 +935,126 @@ export default function sketch(p, get) {
     p.text(rightR.label + ' ' + rightVal, cx + bx + 4, cy);
   }
 
+  // ---------------- Sigma mode ----------------
+  // Curved panel plates, a small-block ring, a dash ring, and a
+  // triangular targeting reticle at center — the sci-fi HUD language
+  // from the reference screenshots (curved panels / small blocks /
+  // dashes / triangular center reticle), distinct from Radial's rings,
+  // Alpha's flat panels, and Delta's aviation horizon.
+  function drawSigma(accent, dim, glowAmt) {
+    p.push();
+    p.translate(cx, cy);
+
+    // shadowBlur set BEFORE the draw calls below, not after — Radial's
+    // glow control is currently dead code for exactly the inverted
+    // reason (see the sprint notes on that known issue), so this
+    // deliberately follows Alpha's (correct) placement instead.
+    if (glowAmt > 0) {
+      p.drawingContext.shadowBlur = 12 * glowAmt;
+      p.drawingContext.shadowColor = `rgba(${accent.r * 255},${accent.g * 255},${accent.b * 255},0.55)`;
+    }
+
+    // Curved panels — thick partial-arc "plates" with gaps between
+    // them, rotating as one group. Reuses the same `ring()` primitive
+    // Radial's outer ring uses (a stroked arc), just with a much
+    // heavier weight so it reads as a solid plate rather than a line.
+    p.push();
+    p.rotate(sigmaPanelAngle);
+    const panelN = Math.round(get('sigmaPanelCount'));
+    const panelArc = get('sigmaPanelArc') * (Math.PI / 180);
+    const panelWeight = get('sigmaPanelWeight');
+    const panelR = radius * 1.02;
+    for (let i = 0; i < panelN; i++) {
+      const a0 = (i / panelN) * p.TWO_PI;
+      const a1 = a0 + panelArc;
+      const lit = i % 3 !== 0;
+      ring(panelR, a0, a1, panelWeight, lit ? accent : dim);
+    }
+    p.pop();
+
+    // Small blocks — a ring of tiny filled squares, each rotated to
+    // face outward along its own radius, per direct instruction. Built
+    // as a manually-rotated quad (four vertex()s from precomputed
+    // cos/sin) rather than push()/rotate()/translate()/pop() per block —
+    // that's 4 p5 transform-stack calls × up to 40 blocks = 160 calls a
+    // frame for what's ultimately just "a small square at this angle."
+    // Computing the four corners directly is the same math p5's own
+    // rotate+translate would do internally, just without the matrix
+    // push/pop overhead repeated per block.
+    p.push();
+    p.rotate(sigmaBlockAngle);
+    const blockN = Math.round(get('sigmaBlockCount'));
+    const blockSize = get('sigmaBlockSize');
+    const blockR = radius * 0.82;
+    const halfB = blockSize / 2;
+    p.noStroke();
+    for (let i = 0; i < blockN; i++) {
+      const a = (i / blockN) * p.TWO_PI;
+      const ca = Math.cos(a), sa = Math.sin(a);
+      const lit = i % 4 === 0;
+      const col = lit ? accent : dim;
+      p.fill(col.r, col.g, col.b, col.a);
+      // Square centered at (blockR, 0) in the block's own unrotated
+      // frame, rotated by `a` about the origin: for a corner offset
+      // (ox, oy) from that center, the rotated point is
+      // ((blockR+ox)*ca - oy*sa, (blockR+ox)*sa + oy*ca).
+      p.beginShape();
+      p.vertex((blockR - halfB) * ca - (-halfB) * sa, (blockR - halfB) * sa + (-halfB) * ca);
+      p.vertex((blockR + halfB) * ca - (-halfB) * sa, (blockR + halfB) * sa + (-halfB) * ca);
+      p.vertex((blockR + halfB) * ca - (halfB) * sa, (blockR + halfB) * sa + (halfB) * ca);
+      p.vertex((blockR - halfB) * ca - (halfB) * sa, (blockR - halfB) * sa + (halfB) * ca);
+      p.endShape(p.CLOSE);
+    }
+    p.pop();
+
+    // Dashes — short radial tick marks on their own ring and their own
+    // independent rotation speed, per direct instruction.
+    p.push();
+    p.rotate(sigmaDashAngle);
+    const dashN = Math.round(get('sigmaDashCount'));
+    const dashLen = get('sigmaDashLength');
+    const dashR0 = radius * 0.92, dashR1 = radius * (0.92 + dashLen);
+    p.stroke(dim.r, dim.g, dim.b, dim.a);
+    p.strokeWeight(1.4);
+    for (let i = 0; i < dashN; i++) {
+      const a = (i / dashN) * p.TWO_PI;
+      p.line(Math.cos(a) * dashR0, Math.sin(a) * dashR0, Math.cos(a) * dashR1, Math.sin(a) * dashR1);
+    }
+    p.pop();
+
+    // Centre triangular reticle — a triangle outline plus a short
+    // outward tick at each corner, the standard targeting-reticle
+    // language, per direct instruction ("a reticle that is in a
+    // triangular shape in center"). Spin speed defaults to 0 — see
+    // the sigmaReticleSpeed hint for why a still reticle is the more
+    // typical read, but wired to its own accumulator the same as
+    // every other moving element here, so it's a real option, not a
+    // fixed decoration.
+    p.push();
+    p.rotate(sigmaReticleAngle);
+    const retR = radius * get('sigmaReticleSize');
+    const retW = get('sigmaReticleWeight');
+    p.noFill();
+    p.stroke(accent.r, accent.g, accent.b, accent.a);
+    p.strokeWeight(retW);
+    p.beginShape();
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * p.TWO_PI - p.HALF_PI;
+      p.vertex(Math.cos(a) * retR, Math.sin(a) * retR);
+    }
+    p.endShape(p.CLOSE);
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * p.TWO_PI - p.HALF_PI;
+      const x0 = Math.cos(a) * retR, y0 = Math.sin(a) * retR;
+      const x1 = Math.cos(a) * (retR * 1.35), y1 = Math.sin(a) * (retR * 1.35);
+      p.line(x0, y0, x1, y1);
+    }
+    p.pop();
+
+    p.drawingContext.shadowBlur = 0;
+    p.pop();
+  }
+
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
     p.colorMode(p.RGB, 1, 1, 1, 1);
@@ -675,6 +1072,10 @@ export default function sketch(p, get) {
     segmentAngle += get('segmentRingSpeed') * (Math.PI / 180) * dt;
     tickAngle += get('tickRingSpeed') * (Math.PI / 180) * dt;
     scanDotAngle += get('scanDotSpeed') * (Math.PI / 180) * dt;
+    chasePhase += get('dataBandSpeed') * dt;
+    radialPulsePhase += get('radialZoomPulseSpeed') * dt;
+    radialBandAAngle += get('radialBandSpeedA') * (Math.PI / 180) * dt;
+    radialBandBAngle += get('radialBandSpeedB') * (Math.PI / 180) * dt;
     panelPhase += get('panelDriftSpeed') * dt;
     scanlinePhase += get('scanlineSpeed') * dt;
     horizonPhase += get('horizonBobSpeed') * dt;
@@ -683,6 +1084,10 @@ export default function sketch(p, get) {
     deltaRingAngle += get('outerRingSpeedDelta') * (Math.PI / 180) * dt;
     deltaBandAAngle += get('deltaBandSpeedA') * (Math.PI / 180) * dt;
     deltaBandBAngle += get('deltaBandSpeedB') * (Math.PI / 180) * dt;
+    sigmaPanelAngle += get('sigmaPanelSpeed') * (Math.PI / 180) * dt;
+    sigmaBlockAngle += get('sigmaBlockSpeed') * (Math.PI / 180) * dt;
+    sigmaDashAngle += get('sigmaDashSpeed') * (Math.PI / 180) * dt;
+    sigmaReticleAngle += get('sigmaReticleSpeed') * (Math.PI / 180) * dt;
 
     const bg = get('bgColor');
     p.background(bg.r, bg.g, bg.b);
@@ -698,9 +1103,18 @@ export default function sketch(p, get) {
     const mode = get('hudMode');
     if (mode === 'alpha') drawAlpha(accent, dim, glowAmt);
     else if (mode === 'delta') drawDelta(accent, dim, glowAmt);
-    else drawRadial(accent, dim, glowAmt);
+    else if (mode === 'sigma') drawSigma(accent, dim, glowAmt);
+    else drawRadial(accent, dim);
 
     p.pop();
     p.drawingContext.shadowBlur = 0;
+
+    // Radial's Glow, as a single post-process bloom pass rather than
+    // per-shape shadowBlur — see applyRadialGlow's doc for why. Alpha,
+    // Delta, and Sigma keep their existing per-shape shadowBlur
+    // approach; not migrated in this pass, since that wasn't what was
+    // reported broken, and Radial is by far the most element-dense of
+    // the four (the one where per-shape blur cost is worst).
+    if (mode === 'radial' && glowAmt > 0) applyRadialGlow(glowAmt, accent);
   };
 }

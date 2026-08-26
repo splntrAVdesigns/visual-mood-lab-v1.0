@@ -3,9 +3,10 @@
 import { useEffect, useActionState, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Route } from 'next';
-import { TextInput, Button } from '@/components/ui';
+import { TextInput, Button, Tooltip } from '@/components/ui';
 import { loginAction, loginWithGitHubAction, loginWithAppleAction, type FormState } from './actions';
 import { emailSchema } from '@/lib/validation/auth';
+import { appleSignInEnabled } from '@/lib/auth/flags';
 import s from './auth.module.css';
 
 const initialState: FormState = {};
@@ -114,9 +115,11 @@ export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
 
       <form action={loginWithAppleAction} style={{ marginTop: 'var(--space-3)' }}>
         <input type="hidden" name="callbackUrl" value={callbackUrl} />
-        <Button type="submit" variant="outline" block>
-          Continue with Apple
-        </Button>
+        <Tooltip content="Not available yet — pending Apple Developer review">
+          <Button type="submit" variant="outline" block disabled={!appleSignInEnabled}>
+            Continue with Apple
+          </Button>
+        </Tooltip>
       </form>
 
       <p className={s.footer}>

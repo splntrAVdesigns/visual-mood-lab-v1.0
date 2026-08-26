@@ -22,9 +22,11 @@ import {
   createSnapshot,
   deleteSnapshot,
   downloadBlob,
+  downloadSnapshotImage,
   storeSnapshotCapture,
 } from '@/lib/persist/client';
 import { getPool } from '@/lib/render/pool';
+import { isVisible } from '@/renderers/control-schema';
 import s from '../features.module.css';
 
 /**
@@ -46,6 +48,7 @@ export function FocusedAssetOverlay() {
   const [showMod, setShowMod] = useState(false);
   const [showSound, setShowSound] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [downloadingSnapshot, setDownloadingSnapshot] = useState(false);
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -165,8 +168,15 @@ export function FocusedAssetOverlay() {
   if (!open || !asset) return null;
 
   const hasSource = Boolean(asset.source);
+  // Also gated on isVisible(c, params): a control hidden behind another
+  // mode's showIf (e.g. HUD Array's Delta-only speeds while Radial is
+  // active) is not something modulation should ever be able to target —
+  // routing to it is invisible-by-construction until the mode changes,
+  // which is exactly the "Alpha/Delta aren't audio-reactive" bug. Mirrors
+  // the identical isVisible filter InspectorDrawer's Controls tab already
+  // applies; this list just forgot to apply it too.
   const modulatableControls = (schema?.controls ?? []).filter(
-    (c) => c.modulatable === true && (c.kind === 'slider' || c.kind === 'stepper'),
+    (c) => c.modulatable === true && (c.kind === 'slider' || c.kind === 'stepper') && isVisible(c, params),
   );
   const canModulate = !asset.isSnapshot && modulatableControls.length > 0;
   // Snapshots stay excluded from Sound for the same reason they're excluded
@@ -226,6 +236,24 @@ export function FocusedAssetOverlay() {
     if (!ok) return;
     useBoardStore.getState().removeAsset(asset.itemId);
     closeAsset();
+  };
+
+  /**
+   * Re-download a previously-saved snapshot's image. saveSnapshot() above
+   * only ever fires a download at the moment of creation — reopening a
+   * snapshot later, with the Save-and-download button gone (see the
+   * !asset.isSnapshot guard on it below), left no way to get the file
+   * again short of deleting and recreating it. The image was never
+   * missing, just unreachable from here — this re-fetches the same
+   * posterUrl storeSnapshotCapture already persisted.
+   */
+  const downloadSnapshot = async () => {
+    if (!asset.isSnapshot || downloadingSnapshot) return;
+    setDownloadingSnapshot(true);
+    setSavedNote(null);
+    const ok = await downloadSnapshotImage(asset.posterUrl, `${asset.id}-${asset.itemId.slice(0, 8)}.png`);
+    setDownloadingSnapshot(false);
+    setSavedNote(ok ? null : 'Download failed');
   };
 
   // Uploaded media only. The seed library never ships image/svg/video
@@ -346,6 +374,14 @@ export function FocusedAssetOverlay() {
                 <Tooltip content="Save these settings as a snapshot and export a PNG">
                   <Button variant="ghost" onClick={saveSnapshot} disabled={saving}>
                     {saving ? 'Saving…' : 'Save snapshot'}
+                  </Button>
+                </Tooltip>
+              )}
+
+              {asset.isSnapshot && (
+                <Tooltip content="Download this snapshot's image again">
+                  <Button variant="ghost" onClick={downloadSnapshot} disabled={downloadingSnapshot}>
+                    {downloadingSnapshot ? 'Downloading…' : 'Download'}
                   </Button>
                 </Tooltip>
               )}

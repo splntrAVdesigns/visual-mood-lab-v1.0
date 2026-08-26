@@ -58,6 +58,26 @@ export class GLStage {
   private textures = new Map<string, WebGLTexture>();
   private errorProgram: CompiledProgram | null = null;
   private lost = false;
+  /**
+   * Bumped every time the context comes back from a loss. Textures
+   * self-heal for free — uploadTexture() lazily recreates whatever key it's
+   * asked for, and every renderer already calls it every frame — but a
+   * compiled WebGLProgram handle does not: the ShaderRenderer holding it
+   * has no way to know its `compiled` reference went stale the instant
+   * `programs.clear()` ran below, and WebGL silently no-ops draw calls
+   * against a dead program rather than throwing, so nothing in the render
+   * loop's own try/catch would ever catch it either. Renderers compare
+   * this against the generation they last compiled against (see
+   * shader.renderer.ts's `render()`) and recompile on mismatch — the
+   * actual fix for shader tiles going blank and staying blank after a
+   * context loss (GPU driver reset, laptop sleep/wake, mobile Safari
+   * reclaiming contexts) until manually scrolled off-screen and back.
+   */
+  private gen = 0;
+
+  get generation(): number {
+    return this.gen;
+  }
 
   constructor() {
     this.canvas = document.createElement('canvas');
@@ -94,6 +114,7 @@ export class GLStage {
       this.lost = true;
       this.programs.clear();
       this.textures.clear();
+      this.lastTextureSource.clear();
       this.errorProgram = null;
     });
 
@@ -101,6 +122,7 @@ export class GLStage {
       this.lost = false;
       this.vao = null;
       this.initQuad();
+      this.gen++;
     });
 
     this.initQuad();
@@ -218,9 +240,32 @@ export class GLStage {
    * Textures
    * ---------------------------------------------------------------- */
 
-  uploadTexture(key: string, source: TexImageSource): WebGLTexture | null {
+  /** Last source handed to uploadTexture() per key, by reference. Lets a
+      static texture-linked control skip its texImage2D re-upload on every
+      one of the ~60 frames/sec it's unchanged — see uploadTexture's doc. */
+  private lastTextureSource = new Map<string, TexImageSource>();
+
+  /**
+   * Uploads `source` to the texture cached at `key`, creating it on first
+   * use. By default, skips the actual `texImage2D` call when `source` is
+   * reference-identical to what this key was last uploaded — the common
+   * case for a texture control linked to a static poster image, which was
+   * otherwise being re-uploaded at full resolution on every single frame
+   * for no reason, whether or not it had actually changed.
+   *
+   * `force: true` opts out for feedback-shader backbuffers: those pass the
+   * exact same HTMLCanvasElement object every frame by design (only its
+   * pixel content changes, via drawImage in captureBackbuffer), so
+   * reference equality alone would wrongly look "unchanged" and the
+   * feedback effect would freeze after its first frame.
+   */
+  uploadTexture(key: string, source: TexImageSource, opts?: { force?: boolean }): WebGLTexture | null {
     const { gl } = this;
     let tex = this.textures.get(key) ?? null;
+
+    if (tex && !opts?.force && this.lastTextureSource.get(key) === source) {
+      return tex;
+    }
 
     if (!tex) {
       tex = gl.createTexture();
@@ -235,6 +280,7 @@ export class GLStage {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    this.lastTextureSource.set(key, source);
     return tex;
   }
 
@@ -296,6 +342,7 @@ export class GLStage {
     for (const t of this.textures.values()) gl.deleteTexture(t);
     this.programs.clear();
     this.textures.clear();
+    this.lastTextureSource.clear();
     gl.getExtension('WEBGL_lose_context')?.loseContext();
   }
 }

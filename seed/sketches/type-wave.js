@@ -1,5 +1,6 @@
 export const params = {
   text:       { kind: 'text', label: 'Text', default: 'FLUX', maxLength: 12, monospace: false, hint: 'Up to 12 characters.' },
+  font:       { kind: 'font', label: 'Font', default: 'orbitron' },
   amplitude:  { kind: 'slider', label: 'Amplitude', min: 0, max: 120, step: 1, default: 40, modulatable: true },
   frequency:  { kind: 'slider', label: 'Frequency', min: 0.05, max: 2, step: 0.01, default: 0.35, modulatable: true },
   noiseAmt:   { kind: 'slider', label: 'Noise Amount', min: 0, max: 80, step: 1, default: 18 },
@@ -47,6 +48,14 @@ export default function sketch(p, get) {
     let fontSize = Math.min(p.width, p.height) * 0.18;
     p.textSize(fontSize);
     p.textStyle(weight >= 700 ? p.BOLD : p.NORMAL);
+    // Embedded font, resolved against lib/fonts/manifest.ts and pushed in
+    // by the host (p5.renderer.ts) — see protocol.ts's `fonts` field doc.
+    // getEmbeddedFont is only defined once the sandbox runtime actually
+    // implements the receiving half of that bridge; guarded so this
+    // sketch still renders (just with the browser default face) against
+    // an older sandbox build that predates it.
+    const embeddedFont = typeof p.getEmbeddedFont === 'function' ? p.getEmbeddedFont(get('font')) : null;
+    p.textFont(embeddedFont || 'sans-serif');
 
     // Custom text can run much longer than the original 4-5 letter presets —
     // scale down if it would overflow the canvas width.

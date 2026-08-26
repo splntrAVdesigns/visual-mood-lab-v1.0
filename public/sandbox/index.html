@@ -44,6 +44,13 @@
   // no-op depending on the browser, neither of which is better than just
   // pausing until restoration actually happens.
   var contextLost = false;
+  // Latched once the sketch's own draw() throws — see the try/catch around
+  // userDraw.call(p) below for why this exists at all. Stays true for the
+  // rest of this instance's life (a fresh mount clears it, same as
+  // contextLost's recovery path is a genuinely different situation:
+  // recoverable vs. not). Checked in the same guard as contextLost so a
+  // failed sketch doesn't keep re-throwing into an already-reported error.
+  var drawFailed = false;
   // Backoff bookkeeping for webglcontextrestored — see the comment at that
   // listener for why unconditional recreation on every loss is unsafe.
   var lastRecoveryAt = 0;
@@ -70,6 +77,73 @@
   // explicitly on every message, not just when a new buffer arrives).
   var audioEnabled = false;
   var audioWaveform = null;
+  // Same idea as audioWaveform above, for the per-band scalars — see
+  // HostToSandbox's `bands` field doc in protocol.ts. Track-only, so
+  // this is null far more often than audioWaveform is (mic/synth-preset
+  // audio never sets it), which is intentional, not a bug to "fix" by
+  // falling back to something else here — the sketch is meant to see
+  // that distinction.
+  var audioBands = null;
+  // Full 64-bin frequency array, track OR mic — see HostToSandbox's
+  // `spectrum` doc in protocol.ts. audioSpectrumBinHz is the real Hz
+  // width of each bin (device sample rate dependent), sent alongside it
+  // so a sketch can bucket bins into actual Hz ranges rather than
+  // guessing a sample rate.
+  var audioSpectrum = null;
+  var audioSpectrumBinHz = 0;
+  // Embedded fonts — see lib/sandbox/protocol.ts's `fonts` field doc for
+  // why these arrive as base64 data: URLs rather than being fetched by
+  // this iframe itself (null-origin CORS problem). `fontDataUrls`
+  // persists across run() calls — a hot-reload of the sketch source
+  // shouldn't have to re-request font data the host already sent this
+  // session. `embeddedFonts` (the actual loaded p5.Font objects) does
+  // NOT persist — those belong to whichever p5 instance loaded them, and
+  // run() tears down and replaces `instance` on every call (a fresh
+  // canvas, a fresh WebGL context after recovery, etc.), so they're
+  // reloaded into each new instance from the retained data URLs instead
+  // of trusting a p5.Font object to remain valid past its own instance's
+  // lifetime.
+  var fontDataUrls = {};
+  var embeddedFonts = {};
+
+  /**
+   * Records newly-received font data and loads whichever entries aren't
+   * already loaded into the CURRENT instance. Safe to call before an
+   * instance exists yet (a 'fonts' message can arrive before 'init',
+   * depending on postMessage timing) — loadFontIntoCurrentInstance()
+   * below no-ops until `instance` is set, and loadAllKnownFontsIntoCurrentInstance()
+   * catches up every retained id once run() actually creates one.
+   */
+  function loadEmbeddedFonts(list) {
+    if (!list) return;
+    for (var i = 0; i < list.length; i++) {
+      var f = list[i];
+      if (!f || !f.id || !f.dataUrl) continue;
+      fontDataUrls[f.id] = f.dataUrl;
+      loadFontIntoCurrentInstance(f.id, f.dataUrl);
+    }
+  }
+
+  function loadFontIntoCurrentInstance(id, dataUrl) {
+    if (!instance || embeddedFonts[id]) return;
+    try {
+      // p.loadFont on a data: URL works the same as any other URL —
+      // decoding a data URL never triggers a CORS/origin check, so this
+      // is fine to call directly inside this null-origin sandbox.
+      instance.loadFont(dataUrl, function (f) { embeddedFonts[id] = f; });
+    } catch (e) {
+      // A bad font file shouldn't take the sketch down — p.getEmbeddedFont
+      // just keeps returning null for this id, same as "still loading."
+    }
+  }
+
+  function loadAllKnownFontsIntoCurrentInstance() {
+    for (var id in fontDataUrls) {
+      if (Object.prototype.hasOwnProperty.call(fontDataUrls, id)) {
+        loadFontIntoCurrentInstance(id, fontDataUrls[id]);
+      }
+    }
+  }
 
   /*
    * Pixel density is the difference between a smooth thumbnail and a
@@ -147,6 +221,10 @@
       try { instance.remove(); } catch (e) { /* already gone */ }
     }
     instance = null;
+    // Loaded p5.Font objects belong to the instance that's about to be
+    // gone — not fontDataUrls itself, which the host doesn't need to
+    // resend just because the sketch source reloaded.
+    embeddedFonts = {};
     var c = document.querySelectorAll('canvas');
     for (var i = 0; i < c.length; i++) c[i].remove();
   }
@@ -226,6 +304,43 @@
         // a sketch should treat the returned array as read-only.
         p.getAudioWaveform = function () {
           return audioEnabled ? audioWaveform : null;
+        };
+
+        // Per-band companion to getAudioWaveform above — see
+        // HostToSandbox's `bands` field doc in protocol.ts for why this
+        // is track-only and returns null far more often. A sketch checks
+        // this separately from getAudioWaveform(); getting a real
+        // waveform back doesn't guarantee band data came with it (mic
+        // and the synth preset never send bands at all).
+        p.getAudioBands = function () {
+          return audioEnabled ? audioBands : null;
+        };
+
+        // Full-resolution companion to getAudioBands above — see
+        // HostToSandbox's `spectrum` doc in protocol.ts. Track OR mic
+        // (unlike getAudioBands, which is track-only), null for the
+        // synth-preset case. p.getAudioSpectrumBinHz() gives the real Hz
+        // width of each bin so a sketch can bucket into actual frequency
+        // ranges instead of assuming a sample rate.
+        p.getAudioSpectrum = function () {
+          return audioEnabled ? audioSpectrum : null;
+        };
+
+        p.getAudioSpectrumBinHz = function () {
+          return audioEnabled ? audioSpectrumBinHz : 0;
+        };
+
+        // Resolves a font id (from lib/fonts/manifest.ts, selected via a
+        // `font`-kind control) to the p5.Font the host already pushed in
+        // — see loadEmbeddedFonts()'s doc above for the data: URL /
+        // null-origin reasoning. Returns null (not undefined, not a
+        // throw) while still loading, if that id was never sent, or if
+        // it failed to fetch host-side — every sketch that calls this
+        // already falls back to a plain CSS font-family string when it's
+        // falsy, so null is an expected, ordinary return value here, not
+        // an error state to guard against separately.
+        p.getEmbeddedFont = function (id) {
+          return embeddedFonts[id] || null;
         };
 
         // Run the sketch factory, which assigns p.setup / p.draw.
@@ -332,8 +447,30 @@
         }
 
         p.draw = function () {
-          if (paused || contextLost) return;
-          userDraw.call(p);
+          if (paused || contextLost || drawFailed) return;
+          /*
+           * p5.js has a well-known internal behavior: if the sketch's own
+           * draw() throws, p5 catches it, logs to console, and calls
+           * noLoop() to halt — silently, without re-throwing. That means
+           * window.onerror below never fires, so the host never finds
+           * out, and the canvas just freezes on whatever was last
+           * painted. If that happened mid-frame (background() painted,
+           * panels not yet drawn), it reads as a permanent black tile
+           * with no visible error anywhere — exactly the "silent
+           * failure" this project's own conventions call out as the
+           * thing to avoid. Wrapping the call here guarantees showError()
+           * fires (and the host sees a real error badge, not a dead
+           * animation) regardless of whether p5's own internal handling
+           * would have swallowed it.
+           */
+          try {
+            userDraw.call(p);
+          } catch (e) {
+            drawFailed = true;
+            showError('Sketch threw during draw(): ' + e.message, e.stack);
+            try { instance && instance.noLoop && instance.noLoop(); } catch (e2) { /* already gone */ }
+            return;
+          }
           frame++;
           fpsFrames++;
           var now = performance.now();
@@ -348,6 +485,15 @@
       showError('Sketch threw during setup: ' + e.message, e.stack);
       return;
     }
+
+    // Catch up the fresh instance on every font the host has already
+    // sent this session — a hot-reload of the sketch source (or a
+    // WebGL-recovery re-run) creates a brand new p5 instance, and the
+    // p.Font objects from the OLD one don't carry over (see teardown()'s
+    // embeddedFonts reset). The raw data URLs did carry over, in
+    // fontDataUrls, so this just re-runs p.loadFont() against them
+    // rather than needing the host to resend anything.
+    loadAllKnownFontsIntoCurrentInstance();
 
     /*
      * WebGL context-loss recovery. Only relevant to WEBGL-mode sketches —
@@ -460,10 +606,21 @@
       case 'init':
         params = msg.params || {};
         run(msg.source || '');
+        // Per protocol.ts's `fonts` field doc, `fonts` is attachable to
+        // `init` as well as sent standalone — the current host
+        // (p5.renderer.ts) always sends a separate 'fonts' message
+        // rather than attaching it here, but handling it on both is
+        // cheap and keeps this sandbox honoring the full documented
+        // contract rather than only the one shape the host happens to
+        // send today.
+        if (msg.fonts) loadEmbeddedFonts(msg.fonts);
         break;
       case 'params':
         if (msg.params) params = msg.params;
         else if (msg.id !== undefined) params[msg.id] = msg.value;
+        break;
+      case 'fonts':
+        loadEmbeddedFonts(msg.fonts);
         break;
       case 'event':
         if (instance && instance.onEvent) {
@@ -492,6 +649,9 @@
       case 'audioWaveform':
         audioEnabled = !!msg.enabled;
         audioWaveform = audioEnabled ? (msg.waveform || null) : null;
+        audioBands = audioEnabled ? (msg.bands || null) : null;
+        audioSpectrum = audioEnabled ? (msg.spectrum || null) : null;
+        audioSpectrumBinHz = audioEnabled ? (msg.spectrumBinHz || 0) : 0;
         break;
       case 'play': paused = false; if (instance && instance.loop) instance.loop(); break;
       case 'pause': paused = true; break;

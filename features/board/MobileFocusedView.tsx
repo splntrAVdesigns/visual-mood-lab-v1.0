@@ -21,6 +21,7 @@ import {
   createSnapshot,
   deleteSnapshot,
   downloadBlob,
+  downloadSnapshotImage,
   storeSnapshotCapture,
 } from '@/lib/persist/client';
 import { getPool } from '@/lib/render/pool';
@@ -62,6 +63,7 @@ export function MobileFocusedView() {
   const [showCode, setShowCode] = useState(false);
   const [pseudoFullscreen, setPseudoFullscreen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [downloadingSnapshot, setDownloadingSnapshot] = useState(false);
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const sheetRef = useRef<HTMLDivElement>(null);
 
@@ -111,8 +113,12 @@ export function MobileFocusedView() {
   if (!open || !asset) return null;
 
   const hasSource = Boolean(asset.source);
+  // Also gated on isVisible(c, params) — same fix and same reasoning as
+  // FocusedAssetOverlay's identical list; see that file's comment. Without
+  // it, a control hidden behind another mode's showIf could still be
+  // offered (and auto-assigned) as a modulation target while invisible.
   const modulatable = (schema?.controls ?? []).filter(
-    (c) => c.modulatable === true && (c.kind === 'slider' || c.kind === 'stepper'),
+    (c) => c.modulatable === true && (c.kind === 'slider' || c.kind === 'stepper') && isVisible(c, params),
   );
   const canModulate = !asset.isSnapshot && modulatable.length > 0;
   // See FocusedAssetOverlay's identical change for the full reasoning —
@@ -155,6 +161,18 @@ export function MobileFocusedView() {
     closeAsset();
   };
 
+  // See FocusedAssetOverlay's identical function for the full reasoning —
+  // this is the mobile twin of the same fix (per-snapshot re-download,
+  // since Save-and-download only ever fires once, at creation time).
+  const downloadSnapshot = async () => {
+    if (!asset.isSnapshot || downloadingSnapshot) return;
+    setDownloadingSnapshot(true);
+    setSavedNote(null);
+    const ok = await downloadSnapshotImage(asset.posterUrl, `${asset.id}-${asset.itemId.slice(0, 8)}.png`);
+    setDownloadingSnapshot(false);
+    setSavedNote(ok ? null : 'Download failed');
+  };
+
   return (
     <div
       className={s.mobileFocus}
@@ -193,6 +211,11 @@ export function MobileFocusedView() {
           <Button variant="ghost" active={showCode} onClick={() => setShowCode((v) => !v)}>
             <CodeIcon />
             Code
+          </Button>
+        )}
+        {asset.isSnapshot && (
+          <Button variant="ghost" onClick={downloadSnapshot} disabled={downloadingSnapshot}>
+            {downloadingSnapshot ? 'Downloading…' : 'Download'}
           </Button>
         )}
         {asset.isSnapshot && (

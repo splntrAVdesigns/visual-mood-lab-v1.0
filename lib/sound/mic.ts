@@ -181,7 +181,9 @@ async function acquireStream(): Promise<MicResult> {
   // and lib/modulation/bus.ts's rawSignal() already expect.
   analyser = ctx.createAnalyser();
   analyser.fftSize = 128;
-  analyser.smoothingTimeConstant = 0.75;
+  // Same 0.75 -> 0.4 change as track.ts's identical analyser, same
+  // reasoning — see that file's comment.
+  analyser.smoothingTimeConstant = 0.4;
   sourceNode.connect(analyser);
   freqData = new Float32Array(analyser.frequencyBinCount) as Float32Array<ArrayBuffer>;
 

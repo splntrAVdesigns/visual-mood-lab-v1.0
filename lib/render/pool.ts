@@ -8,7 +8,7 @@ import { normalizeSoundState } from '@/lib/sound/types';
 import { startTileAudio, stopTileAudio, stopAllTileAudio, updateTileAudio, isTileAudioActive, retriggerTileAudio } from '@/lib/sound/engine';
 import { unloadTrack, getTrackFrequencyData } from '@/lib/sound/track';
 import { disableMic, getMicFrequencyData, isMicEnabled } from '@/lib/sound/mic';
-import { HEARTBEAT_TIMEOUT_MS } from '@/lib/sandbox/protocol';
+import { STALL_RESUME_THRESHOLD_MS } from '@/lib/sandbox/protocol';
 
 /**
  * The renderer pool.
@@ -51,6 +51,16 @@ interface Entry {
       to `state === 'focused'`, synced via the pool's syncAudio() helper
       rather than left to callers to manage by hand. */
   soundState: SoundState;
+  /**
+   * Cached box size, updated by `resizeObserver` on layout change rather
+   * than read via `host.getBoundingClientRect()` on every single tick()
+   * frame for every live entry. getBoundingClientRect() forces a
+   * synchronous layout — cheap in isolation with the pool's small live
+   * ceiling, but avoidable, and free to avoid: ResizeObserver already
+   * batches and only fires on an actual size change.
+   */
+  size: { width: number; height: number };
+  resizeObserver: ResizeObserver;
 }
 
 export interface PoolFrameInfo {
@@ -150,6 +160,7 @@ class RendererPool {
       // promote() silently kept rendering into the original host here,
       // which is why the enlarged view showed nothing: the renderer never
       // moved. Tear down and remount into the new host instead.
+      existing.resizeObserver.disconnect();
       existing.controller.abort();
       existing.renderer.dispose();
       this.entries.delete(cardId);
@@ -180,7 +191,17 @@ class RendererPool {
     }
     const now = performance.now();
 
-    const entry: Entry = {
+    // Declared before the Entry it belongs to since the callback closes
+    // over `entry` — safe because ResizeObserver's first callback fires
+    // asynchronously, well after `entry` below is assigned.
+    let entry!: Entry;
+    const resizeObserver = new ResizeObserver((observed) => {
+      const box = observed[0]?.contentRect;
+      if (box) entry.size = { width: box.width, height: box.height };
+    });
+    resizeObserver.observe(host);
+
+    entry = {
       cardId,
       asset,
       renderer,
@@ -201,6 +222,12 @@ class RendererPool {
       // straight through handed an engine `notes: undefined`, which threw
       // the moment anything mapped over it. See that function's comment.
       soundState: normalizeSoundState(asset.sound),
+      // Zeroed until the observer's first callback lands — tick() already
+      // skips a zero-size entry exactly as it did with a fresh
+      // getBoundingClientRect() before layout settles, so this isn't a
+      // behavior change, just a different source for the same check.
+      size: { width: 0, height: 0 },
+      resizeObserver,
     };
 
     // Keyed by cardId, matching every read/delete elsewhere in this class
@@ -283,6 +310,7 @@ class RendererPool {
     // reading it.
     disableMic(cardId);
 
+    entry.resizeObserver.disconnect();
     entry.controller.abort();
     entry.renderer.dispose();
     this.entries.delete(cardId);
@@ -498,17 +526,28 @@ class RendererPool {
 
     // Raw, UNclamped gap since the last tick. A single slow frame is
     // normal and dt below already guards against it — but a gap past
-    // HEARTBEAT_TIMEOUT_MS can only mean requestAnimationFrame itself was
-    // suspended for the whole tab (backgrounded, minimized, laptop sleep,
-    // or a native modal like a file picker holding OS focus), since nothing
-    // else can stall a single rAF-driven loop that long. That's a whole-
-    // loop stall, not any one card hanging — see resumeFromStall's doc on
-    // AssetRenderer for the concrete bug this prevents (a healthy p5
-    // sketch's iframe getting torn down the instant the loop resumes,
-    // because its own heartbeat was throttled along with everything else
-    // and reads as stale the moment anyone checks it again).
+    // STALL_RESUME_THRESHOLD_MS can only mean requestAnimationFrame itself
+    // was suspended for the whole tab (backgrounded, minimized, laptop
+    // sleep, or a native modal like a file picker holding OS focus),
+    // since nothing else can stall a single rAF-driven loop that long.
+    // That's a whole-loop stall, not any one card hanging — see
+    // resumeFromStall's doc on AssetRenderer for the concrete bug this
+    // prevents (a healthy p5 sketch's iframe getting torn down the
+    // instant the loop resumes, because its own heartbeat was throttled
+    // along with everything else and reads as stale the moment anyone
+    // checks it again).
+    //
+    // Deliberately a smaller, separate threshold from HEARTBEAT_TIMEOUT_MS
+    // (the per-sandbox teardown check in p5.renderer.ts's render()) — see
+    // STALL_RESUME_THRESHOLD_MS's own doc in lib/sandbox/protocol.ts for
+    // the race this closes: the pool's own rAF and each iframe's
+    // independent heartbeat-sending setInterval can resume from a
+    // throttled tab at different rates, so triggering the resume here
+    // well before the stricter teardown threshold gives every sandbox's
+    // clock a chance to get re-armed first, regardless of exactly how
+    // far apart those two recovery rates land on a given browser.
     const rawGapMs = now - this.lastFrameAt;
-    const resumedFromStall = rawGapMs > HEARTBEAT_TIMEOUT_MS;
+    const resumedFromStall = rawGapMs > STALL_RESUME_THRESHOLD_MS;
 
     const dt = Math.min(rawGapMs / 1000, 0.1);
     this.lastFrameAt = now;
@@ -525,8 +564,11 @@ class RendererPool {
 
       if (resumedFromStall) entry.renderer.resumeFromStall?.();
 
-      const rect = entry.host.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) continue;
+      // Cached by `entry.resizeObserver`, not a fresh
+      // getBoundingClientRect() per entry per frame — see the field's doc
+      // on Entry. Same zero-size skip as before.
+      const { width, height } = entry.size;
+      if (width === 0 || height === 0) continue;
 
       const scaled = dt * this.globalSpeed;
       entry.frame++;
@@ -539,8 +581,8 @@ class RendererPool {
         time: entry.lastTime,
         delta: scaled,
         frame: entry.frame,
-        width: rect.width,
-        height: rect.height,
+        width,
+        height,
         pixelRatio: window.devicePixelRatio || 1,
         pointer: this.pointer,
         // This card's own uploaded track (Phase 4.9) takes priority when

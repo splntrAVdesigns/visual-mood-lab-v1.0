@@ -14,6 +14,7 @@
 
 export const params = {
   text: { kind: 'text', label: 'Text', default: 'MOOD', maxLength: 12, hint: 'Up to 12 characters.' },
+  font: { kind: 'font', label: 'Font', default: 'audiowide' },
   wordScale: { kind: 'slider', label: 'Word scale', min: 0.3, max: 3, step: 0.02, default: 1, hint: 'Scales the whole word — letter size, spacing, and jump distance all together.' },
 
   snapInterval: { kind: 'slider', label: 'Snap interval', min: 0.05, max: 1.0, step: 0.01, default: 0.18, unit: 's', modulatable: true, hint: 'How often each letter jumps to a new pose — lower is snappier.' },
@@ -111,11 +112,12 @@ export default function sketch(p, get) {
 
   p.windowResized = () => { p.resizeCanvas(p.windowWidth, p.windowHeight); };
 
-  function drawTileBackground(text, scale, color, opacity) {
+  function drawTileBackground(text, scale, color, opacity, font) {
     if (opacity <= 0) return;
     p.push();
     p.noStroke();
     p.fill(color.r, color.g, color.b, opacity * color.a);
+    p.textFont(font || 'sans-serif');
     p.textSize(28 * scale);
     p.textStyle(p.NORMAL);
     const cellW = 90 * scale, cellH = 70 * scale;
@@ -146,10 +148,15 @@ export default function sketch(p, get) {
     p.fill(0, 0, 0, 1 - trail);
     p.rect(0, 0, p.width, p.height);
 
+    // Resolved once per frame, up front, so both the tile background and
+    // the main echo letters below use the same face — see type-wave.js's
+    // identical guard doc for why this can be null on an older sandbox.
+    const embeddedFont = typeof p.getEmbeddedFont === 'function' ? p.getEmbeddedFont(get('font')) : null;
+
     const wordScale = get('wordScale');
     const tileOn = get('tileEffect');
     if (tileOn) {
-      drawTileBackground(currentText || 'MOOD', wordScale, get('baseColor'), get('tileOpacity'));
+      drawTileBackground(currentText || 'MOOD', wordScale, get('baseColor'), get('tileOpacity'), embeddedFont);
     }
 
     const snapInterval = get('snapInterval');
@@ -169,6 +176,7 @@ export default function sketch(p, get) {
     const weight = Math.round(get('fontWeight'));
     p.textStyle(weight >= 700 ? p.BOLD : p.NORMAL);
     p.textSize(64 * wordScale);
+    p.textFont(embeddedFont || 'sans-serif');
 
     const glowAmt = get('glow');
     const base = get('baseColor');

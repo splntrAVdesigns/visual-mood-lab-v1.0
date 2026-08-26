@@ -2,6 +2,7 @@ import type { Asset } from '@/types/asset';
 import type { ControlSchema, ParamState, ParamValue } from './control-schema';
 import { defaultsOf } from './control-schema';
 import { paramsToSchema } from '@/lib/sketch/params-to-schema';
+import { getFontEntry } from '@/lib/fonts/manifest';
 import {
   BOOT_TIMEOUT_MS,
   HEARTBEAT_TIMEOUT_MS,
@@ -12,8 +13,27 @@ import {
 import type { AssetRenderer, CaptureOpts, Quality, RenderContext } from './types';
 import { setTileHovering, pluckTileAudio, setTileEnergy, isTileAudioActive } from '@/lib/sound/engine';
 import { getWaveform } from '@/lib/sound/meter';
-import { hasTrack, getTrackWaveform } from '@/lib/sound/track';
-import { isMicEnabled, getMicWaveform } from '@/lib/sound/mic';
+import { hasTrack, getTrackWaveform, getTrackBand, getTrackFrequencyData } from '@/lib/sound/track';
+import { isMicEnabled, getMicWaveform, getMicFrequencyData } from '@/lib/sound/mic';
+import { getAudioContext } from '@/lib/sound/context';
+
+/**
+ * Fetches a same-origin static asset (this runs on the real page, not
+ * inside the sandbox, so there's no origin problem here) and converts it
+ * to a base64 `data:` URL — see pushFontsFor()'s doc for why that's the
+ * form that actually crosses into the null-origin sandbox usably.
+ */
+async function fetchAsDataUrl(url: string): Promise<string> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Font fetch failed: ${res.status} ${url}`);
+  const blob = await res.blob();
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error('FileReader failed'));
+    reader.readAsDataURL(blob);
+  });
+}
 
 /**
  * Runs a p5 sketch inside a sandboxed iframe.
@@ -64,6 +84,11 @@ export class P5Renderer implements AssetRenderer {
       audioWaveform message rather than either spamming it every frame or
       never announcing the change — see render()'s audio block. */
   private lastAudioActiveSent: boolean | null = null;
+
+  /** Font ids already sent to THIS iframe instance — see pushFontsFor()'s
+      doc. A fresh iframe per mount means this always starts empty; no
+      need to persist it beyond the instance's own lifetime. */
+  private sentFontIds = new Set<string>();
 
   constructor(assetId: string) {
     this.assetId = assetId;
@@ -145,6 +170,7 @@ export class P5Renderer implements AssetRenderer {
     this.lastHeartbeat = performance.now();
     this.initSentAt = performance.now();
     this.send({ type: 'init', source: asset.source, params: this.params as Record<string, unknown> });
+    void this.pushFontsFor(this.params);
   }
 
   private handle(msg: SandboxToHost): void {
@@ -166,6 +192,7 @@ export class P5Renderer implements AssetRenderer {
           this.schema = schema;
           this.params = { ...defaultsOf(schema), ...this.params };
           this.send({ type: 'params', params: this.params as Record<string, unknown> });
+          void this.pushFontsFor(this.params);
         }
         break;
       }
@@ -237,6 +264,64 @@ export class P5Renderer implements AssetRenderer {
     this.frameEl?.contentWindow?.postMessage(msg, '*');
   }
 
+  private isFontControl(controlId: string): boolean {
+    return this.schema?.controls.some((c) => c.id === controlId && c.kind === 'font') ?? false;
+  }
+
+  /**
+   * Resolves every `font`-kind control referenced in `changed` against
+   * the shared manifest (lib/fonts/manifest.ts), fetches whichever of
+   * those font ids haven't already been sent to this iframe instance,
+   * and pushes them across as base64 data URLs — see protocol.ts's
+   * `fonts` field doc for why data URLs specifically (the sandbox's
+   * null origin breaks a plain fetch of `/fonts/...` from inside it).
+   *
+   * Fire-and-forget by design: setParam()/setParams() are synchronous in
+   * the AssetRenderer contract (types.ts) and this shouldn't change
+   * that. The param value itself is already sent synchronously above,
+   * same as before — this only affects when the sketch's font visually
+   * swaps in, a little after the param write, exactly like a web font
+   * loading anywhere else.
+   *
+   * Only scans `changed`, not the full `this.params` — mount() and the
+   * 'schema' handler both pass the complete params object so nothing is
+   * missed on first load, while setParam() passes just the one control
+   * that changed so an unrelated slider tweak doesn't re-scan every font
+   * control on the schema.
+   */
+  private async pushFontsFor(changed: Partial<Record<string, unknown>>): Promise<void> {
+    if (!this.schema) return;
+
+    const toFetch: string[] = [];
+    for (const control of this.schema.controls) {
+      if (control.kind !== 'font') continue;
+      if (!(control.id in changed)) continue;
+      const value = changed[control.id];
+      const fontId = typeof value === 'string' ? value : null;
+      if (!fontId || this.sentFontIds.has(fontId)) continue;
+      toFetch.push(fontId);
+    }
+    if (toFetch.length === 0) return;
+
+    const resolved: Array<{ id: string; dataUrl: string }> = [];
+    for (const fontId of toFetch) {
+      const entry = getFontEntry(fontId);
+      const file = entry?.files[0];
+      if (!file) continue;
+      try {
+        const dataUrl = await fetchAsDataUrl(file.url);
+        resolved.push({ id: fontId, dataUrl });
+        this.sentFontIds.add(fontId);
+      } catch {
+        // A failed font fetch shouldn't take the sketch down — it just
+        // keeps whatever fallback the sketch's own p.getEmbeddedFont()
+        // resolution falls back to (see the sandbox-side contract doc).
+      }
+    }
+    if (resolved.length === 0 || this.disposed) return;
+    this.send({ type: 'fonts', fonts: resolved });
+  }
+
   render(ctx: RenderContext): void {
     if (this.disposed) return;
 
@@ -284,7 +369,33 @@ export class P5Renderer implements AssetRenderer {
         : micActive
           ? getMicWaveform()
           : getWaveform(this.cardId);
-      this.send({ type: 'audioWaveform', enabled: true, waveform: waveform ?? undefined });
+      // Track-only, per the field's own doc in protocol.ts — omitted
+      // entirely (not zeroed) for mic/synth-preset audio, which have no
+      // per-band split anywhere else in this codebase either.
+      const bands = trackActive
+        ? {
+            bass: getTrackBand(this.cardId, 'bass') ?? 0,
+            mid: getTrackBand(this.cardId, 'mid') ?? 0,
+            high: getTrackBand(this.cardId, 'high') ?? 0,
+          }
+        : undefined;
+      // Track OR mic (unlike `bands` above) — see protocol.ts's
+      // `spectrum` doc. Both getTrackFrequencyData()/getMicFrequencyData()
+      // already exist and return this exact shape; synth-preset audio has
+      // no frequency-domain tap anywhere in this codebase, so it's the
+      // one case that stays undefined here, same as `bands`.
+      const spectrum = trackActive
+        ? getTrackFrequencyData(this.cardId) ?? undefined
+        : micActive
+          ? getMicFrequencyData() ?? undefined
+          : undefined;
+      // 128, not a dynamically-read fftSize: both track.ts's and mic.ts's
+      // frequency analysers hardcode fftSize = 128 inline (64 bins) —
+      // matching that literal here rather than adding a new exported
+      // constant neither file currently has, since this is the same
+      // number they'd both need to change together if it ever moved.
+      const spectrumBinHz = spectrum ? getAudioContext().sampleRate / 128 : undefined;
+      this.send({ type: 'audioWaveform', enabled: true, waveform: waveform ?? undefined, bands, spectrum, spectrumBinHz });
       this.lastAudioActiveSent = true;
     } else if (this.lastAudioActiveSent !== false) {
       // Falling edge (or first frame with nothing active) — announce it
@@ -311,11 +422,13 @@ export class P5Renderer implements AssetRenderer {
   setParam(id: string, value: ParamValue): void {
     this.params[id] = value;
     this.send({ type: 'params', id, value });
+    if (this.isFontControl(id)) void this.pushFontsFor({ [id]: value });
   }
 
   setParams(params: ParamState): void {
     this.params = { ...this.params, ...params };
     this.send({ type: 'params', params: this.params as Record<string, unknown> });
+    void this.pushFontsFor(params);
   }
 
   emit(event: string): void {
@@ -388,5 +501,6 @@ export class P5Renderer implements AssetRenderer {
     for (const timer of this.captureTimers.values()) clearTimeout(timer);
     this.captureTimers.clear();
     this.captureWaiters.clear();
+    this.sentFontIds.clear();
   }
 }

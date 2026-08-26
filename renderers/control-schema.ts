@@ -190,6 +190,19 @@ interface ControlCommon {
   order?: number;
   /** Hidden behind the "Advanced" disclosure in the drawer. */
   advanced?: boolean;
+  /**
+   * Shown but inert — greyed out, its interactive control disabled, with
+   * `disabledLabel` (defaults to "Future feature") rendered as a badge
+   * next to the field label. For a control that exists in the schema
+   * (and therefore in saved params, for forward-compat) but has no real
+   * implementation behind it yet — e.g. Blend mode, ahead of Phase 5.5's
+   * actual multi-layer compositing pipeline. Distinct from removing the
+   * control entirely: the person can see it's coming rather than
+   * wondering if it silently vanished.
+   */
+  disabled?: boolean;
+  /** Badge text when `disabled` is true. Defaults to "Future feature". */
+  disabledLabel?: string;
   /** Eligible for the modulation bus (audio / LFO / MIDI). */
   modulatable?: boolean;
   /** Only shown when this predicate passes against current ParamState. */
@@ -298,10 +311,29 @@ export interface TextureControl extends ControlCommon {
   allowSelf?: boolean;
 }
 
+/**
+ * Picks an embedded font for a text-rendering asset (e.g. type-grid).
+ *
+ * Deliberately as thin as TextureControl above, for the same reason: the
+ * schema carries only a font id (`default`) plus an optional category
+ * filter, not the actual list of fonts. The list itself lives once, in
+ * `lib/fonts/manifest.ts` (backed by `public/fonts/manifest.json`), and
+ * FontControlRow resolves against it directly — adding a font to the
+ * library never touches this file.
+ */
+export interface FontControl extends ControlCommon {
+  kind: 'font';
+  /** Font id from lib/fonts/manifest.ts, e.g. 'rajdhani'. */
+  default: string;
+  /** Restrict the picker to one category. Omit (or 'any') to show every
+      embedded font regardless of category. */
+  category?: 'sans' | 'mono' | 'display' | 'serif' | 'any';
+}
+
 export type Control =
   | SliderControl | StepperControl | ToggleControl | ColorControl
   | SelectControl | XYControl | Vec3Control | TextControl
-  | TriggerControl | TextureControl;
+  | TriggerControl | TextureControl | FontControl;
 
 /* ------------------------------------------------------------------ *
  * Schema
@@ -370,9 +402,33 @@ export const BASE_CONTROLS: Control[] = [
     modulatable: true, binding: { target: 'element', property: 'opacity' },
   },
   {
+    // Disabled ahead of Phase 5.5 (Blend & Mask Mode): CSS mix-blend-mode
+    // needs a second real layer to composite against, and today a media
+    // tile is the only thing painted on the black board stage — most
+    // modes (multiply, overlay, color-dodge, luminosity) mathematically
+    // resolve to solid black against that backdrop, and the rest render
+    // indistinguishably from Normal. Left in the schema (not removed) so
+    // the control reappears with working behavior the moment real layer
+    // compositing exists, rather than needing to be re-added. Tint below
+    // is the working substitute in the meantime.
     id: 'blendMode', kind: 'select', label: 'Blend mode', group: 'appearance',
     default: 'normal', options: BLEND_MODES, order: 1,
     binding: { target: 'element', property: 'mixBlendMode' },
+    disabled: true, disabledLabel: 'Future feature',
+  },
+  {
+    // Unlike Blend mode above, this genuinely works today: the color
+    // swatch is its own layer blended directly against the image/video
+    // beneath it — real content, not the black board stage — so the
+    // blend actually has something to composite against.
+    id: 'tint', kind: 'color', label: 'Tint', group: 'appearance',
+    default: { r: 1, g: 1, b: 1, a: 1 }, order: 2, alpha: false,
+    binding: { target: 'element', property: 'tint' },
+  },
+  {
+    id: 'tintAmount', kind: 'slider', label: 'Tint amount', group: 'appearance',
+    default: 0, min: 0, max: 1, step: 0.01, order: 3,
+    modulatable: true, binding: { target: 'element', property: 'tintAmount' },
   },
   {
     id: 'scale', kind: 'slider', label: 'Scale', group: 'transform',
@@ -541,6 +597,17 @@ export function coerce(control: Control, value: ParamValue): ParamValue {
     }
     case 'texture':
       return typeof value === 'string' || value === null ? value : control.default;
+    case 'font':
+      // Deliberately not checked against lib/fonts/manifest.ts here — this
+      // module has no import of that registry (and shouldn't grow one just
+      // for this), so an id that's since been removed from the manifest
+      // falls through as a plain string rather than being caught at
+      // coerce()-time. FontControlRow and any sketch reading get('font')
+      // already resolve a missing id safely (getFontEntry() returning
+      // undefined, falling back to DEFAULT_FONT_ID) — this just guards the
+      // shape of the stored value, the same way 'texture' above only
+      // checks "string or null," not "asset actually exists."
+      return typeof value === 'string' ? value : control.default;
     case 'trigger':
       return null;
   }

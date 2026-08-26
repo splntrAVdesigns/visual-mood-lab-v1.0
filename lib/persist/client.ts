@@ -246,6 +246,35 @@ export function downloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Re-downloads an already-saved snapshot's stored image, for the "Download"
+ * button on a snapshot that's just being reopened — not created just now.
+ * saveSnapshot() only ever downloads at creation time (it has a live Blob
+ * from storeSnapshotCapture straight off the renderer), so reopening a
+ * snapshot later had no download affordance at all: the inspector's only
+ * button for an isSnapshot asset was Delete. The image itself was never
+ * missing — storeSnapshotCapture always persists a real posterUrl — this
+ * just fetches that same stored file back into a Blob so downloadBlob()
+ * can trigger the browser download exactly as it does at save time.
+ * Returns false (and lets the caller show its own failure message) rather
+ * than throwing, on either a network failure or a placeholder/missing URL.
+ */
+export async function downloadSnapshotImage(
+  posterUrl: string | undefined,
+  filename: string,
+): Promise<boolean> {
+  if (!posterUrl || isPlaceholderPoster(posterUrl)) return false;
+  try {
+    const res = await fetch(posterUrl);
+    if (!res.ok) return false;
+    const blob = await res.blob();
+    downloadBlob(blob, filename);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function deleteSnapshot(itemId: string): Promise<boolean> {
   try {
     const res = await fetch(`/api/boards/default/items/${itemId}`, { method: 'DELETE' });

@@ -34,7 +34,7 @@ export interface SketchParseResult {
 
 const VALID_KINDS = new Set([
   'slider', 'stepper', 'toggle', 'color', 'select',
-  'xy', 'vec3', 'text', 'trigger', 'texture',
+  'xy', 'vec3', 'text', 'trigger', 'texture', 'font',
 ]);
 
 /** Fields every kind needs beyond the common set. */
@@ -49,6 +49,7 @@ const REQUIRED: Record<string, string[]> = {
   text: ['default'],
   trigger: ['event'],
   texture: [],
+  font: ['default'],
 };
 
 export function paramsToSchema(

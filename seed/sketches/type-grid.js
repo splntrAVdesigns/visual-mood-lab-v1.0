@@ -3,6 +3,7 @@
 
 export const params = {
   text: { kind: 'text', label: 'Text', default: 'VISUAL MOOD LAB', maxLength: 64, monospace: true, hint: 'Characters are laid out cell by cell and repeat to fill the grid.' },
+  font: { kind: 'font', label: 'Font', default: 'jetbrains-mono' },
   cols: { kind: 'stepper', label: 'Columns', min: 2, max: 40, step: 1, default: 12 },
   rows: { kind: 'stepper', label: 'Rows', min: 1, max: 40, step: 1, default: 8 },
   sizeRatio: { kind: 'slider', label: 'Size ratio', min: 0.2, max: 1.6, step: 0.01, default: 0.82, hint: 'Glyph size relative to its cell.' },
@@ -25,7 +26,6 @@ export default function sketch(p, get) {
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
     p.colorMode(p.RGB, 1, 1, 1, 1);
-    p.textFont('monospace');
     p.textAlign(p.CENTER, p.CENTER);
   };
 
@@ -49,6 +49,12 @@ export default function sketch(p, get) {
     const alignMap = { top: p.TOP, center: p.CENTER, baseline: p.BASELINE };
     p.textAlign(p.CENTER, alignMap[get('align')] ?? p.CENTER);
     p.textSize(Math.min(cw, ch) * get('sizeRatio'));
+    // See type-wave.js's identical guard doc — falls back to the plain
+    // 'monospace' family (this tile's original hardcoded default) rather
+    // than the browser's serif/sans default, since the grid's whole
+    // identity depends on a fixed-width look while nothing's loaded yet.
+    const embeddedFont = typeof p.getEmbeddedFont === 'function' ? p.getEmbeddedFont(get('font')) : null;
+    p.textFont(embeddedFont || 'monospace');
     p.noStroke();
 
     let i = 0;

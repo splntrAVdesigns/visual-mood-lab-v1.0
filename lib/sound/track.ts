@@ -335,7 +335,16 @@ export async function loadTrack(
   // u_mid/u_high average bins 0-8/8-32/32-64) — see this file's top doc.
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 128;
-  analyser.smoothingTimeConstant = 0.75;
+  // 0.75 -> 0.4: the Web Audio API's own built-in smoothing on the raw
+  // FFT magnitudes, applied before any of this codebase's own reactivity
+  // shaping ever sees a sample. At 0.75 it was heavy enough to blur a
+  // kick/snare transient before Blocked Bands (or anything else reading
+  // getTrackBand/getTrackFrequencyData) had a chance to react to it — no
+  // amount of downstream tuning can recover detail this smoothed away
+  // upstream. 0.4 still takes the edge off raw per-sample jitter (this
+  // is a real FFT, not a hand-smoothed signal) without mushing
+  // transients into the surrounding audio the way 0.75 did.
+  analyser.smoothingTimeConstant = 0.4;
   tapGain.connect(analyser);
 
   // Separate node, NOT a second use of `analyser` above — see

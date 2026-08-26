@@ -11,6 +11,7 @@ import { SoundMeter } from './SoundMeter';
 import { TrackSection } from './TrackSection';
 import { NoteRack } from './controls/NoteRack';
 import { useTrackLoaded, useMicEnabled } from '@/lib/hooks/useTrackState';
+import { isVisible } from '@/renderers/control-schema';
 import type { ControlSchema, LfoShape, MusicalScale, SoundState } from '@/renderers/control-schema';
 import { useInspectorStore } from '@/stores';
 import s from '../features.module.css';
@@ -53,6 +54,7 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
   const setParam = useInspectorStore((st) => st.setParam);
   const mod = useInspectorStore((st) => st.mod);
   const setModulation = useInspectorStore((st) => st.setModulation);
+  const params = useInspectorStore((st) => st.params);
   const [collapsed, setCollapsed] = useState(false);
 
   const presets = getCompatiblePresets(schema);
@@ -109,8 +111,15 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
     const alreadyRouted = Object.values(mod).some((m) => m.source.startsWith('mic.'));
     if (alreadyRouted) return;
 
+    // Also gated on isVisible(c, params) — without it, this could target a
+    // control that belongs to a currently-inactive mode (e.g. HUD Array's
+    // Delta-only speeds while Radial is selected), which is invisible and
+    // has no on-screen effect. That was the root cause of "only one of a
+    // multi-mode tile's options reacts to audio": auto-assign always
+    // grabbed the first modulatable control in source-object order,
+    // regardless of whether it belonged to the mode actually showing.
     const modulatableControls = schema.controls.filter(
-      (c) => c.modulatable === true && (c.kind === 'slider' || c.kind === 'stepper'),
+      (c) => c.modulatable === true && (c.kind === 'slider' || c.kind === 'stepper') && isVisible(c, params),
     );
     if (modulatableControls.length === 0) return;
 
@@ -122,6 +131,45 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
       source: 'mic.rms',
       amount: current?.amount ?? 0.3,
       smoothing: current?.smoothing ?? 0,
+    });
+  };
+
+  // Same idea as autoAssignMicModulation above, triggered by a track
+  // finishing its load instead of Mic being enabled — see
+  // TrackSection.tsx's onTrackLoaded prop. Diverges from the mic version
+  // in two deliberate ways:
+  //
+  // 1. Prefers `waveAmplitude` specifically when the schema has it,
+  //    rather than an LFO-having control — a waveform display's own
+  //    amplitude reacting is the single most direct "this is now driven
+  //    by the music" signal, more so than swapping the source on
+  //    whatever happened to already be animating. Falls back to the
+  //    same LFO-preferring heuristic, then the first modulatable
+  //    control, for sketches that don't have a waveAmplitude-shaped
+  //    control at all.
+  // 2. Defaults `smoothing` to 0.25, not 0 — a track's Audio — Level
+  //    swings hard and fast on its own; landing with zero smoothing on
+  //    a freshly-auto-assigned route is exactly what read as "erratic
+  //    the moment audio starts." Mic's own 0 default stays as-is here;
+  //    that's a separate control surface this fix wasn't asked to touch.
+  const autoAssignTrackModulation = () => {
+    const alreadyRouted = Object.values(mod).some((m) => m.source.startsWith('audio.'));
+    if (alreadyRouted) return;
+
+    const modulatableControls = schema.controls.filter(
+      (c) => c.modulatable === true && (c.kind === 'slider' || c.kind === 'stepper') && isVisible(c, params),
+    );
+    if (modulatableControls.length === 0) return;
+
+    const preferred = modulatableControls.find((c) => c.id === 'waveAmplitude');
+    const lfoControl = modulatableControls.find((c) => mod[c.id]?.source.startsWith('lfo.'));
+    const target = preferred ?? lfoControl ?? modulatableControls[0];
+    const current = mod[target.id];
+
+    setModulation(target.id, {
+      source: 'audio.rms',
+      amount: current?.amount ?? 0.35,
+      smoothing: current?.smoothing ?? 0.25,
     });
   };
 
@@ -435,7 +483,7 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
   const body = (
     <div className={embedded ? s.modPanelListEmbedded : s.modPanelList}>
       {hasModulatableControls && (
-        <TrackSection itemId={itemId} schema={schema} />
+        <TrackSection itemId={itemId} schema={schema} onTrackLoaded={autoAssignTrackModulation} />
       )}
       {presetSection}
       {/* One shared location for Mic's error regardless of which of the

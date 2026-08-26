@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { ResetIcon } from './Icon';
 import { IconButton } from './Button';
+import { Badge } from './Badge';
 import s from './ui.module.css';
 
 interface FieldProps {
@@ -16,6 +17,10 @@ interface FieldProps {
   /** Shows the accent dot and enables the reset affordance. */
   dirty?: boolean;
   onReset?: () => void;
+  /** Small badge rendered right after the label — currently just "Future
+      feature" for a control that's schema-present but not yet implemented
+      (see Control.disabled in control-schema.ts). */
+  badge?: string;
   children: ReactNode;
 }
 
@@ -24,12 +29,15 @@ interface FieldProps {
  * this, which is what makes a shader panel and a video panel look like the
  * same product.
  */
-export function Field({ label, value, valueNode, hint, dirty, onReset, children }: FieldProps) {
+export function Field({ label, value, valueNode, hint, dirty, onReset, badge, children }: FieldProps) {
   return (
     <div className={s.field}>
       <div className={s.fieldHead}>
-        <span className={s.fieldLabel} data-dirty={dirty ? 'true' : undefined}>
-          {label}
+        <span className={s.fieldRow}>
+          <span className={s.fieldLabel} data-dirty={dirty ? 'true' : undefined}>
+            {label}
+          </span>
+          {badge && <Badge>{badge}</Badge>}
         </span>
         <span className={s.fieldRow}>
           {valueNode ?? (value !== undefined && <span className={s.fieldValue}>{value}</span>)}

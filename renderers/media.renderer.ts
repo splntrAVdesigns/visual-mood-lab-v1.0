@@ -17,7 +17,21 @@ export class MediaRenderer implements AssetRenderer {
 
   error: string | null = null;
 
+  /** Sized 1:1 with the host; carries transform + opacity so the media
+      element and the tint overlay move and fade together as one unit. */
+  private wrap: HTMLDivElement | null = null;
   private el: HTMLImageElement | HTMLVideoElement | null = null;
+  /**
+   * Tint overlay — a solid-colour layer blended against the real media
+   * beneath it via `mix-blend-mode: color`. This is the working
+   * substitute for Blend mode (see that control's `disabled` doc in
+   * control-schema.ts): Blend mode on the media element itself has
+   * nothing real to composite against once the poster fades out behind
+   * it (just the black board stage), so most of its options render solid
+   * black and the rest render unchanged. A swatch blended against the
+   * image *does* have real content underneath it, so it actually works.
+   */
+  private tintEl: HTMLDivElement | null = null;
   private schema: ControlSchema | null = null;
   private params: ParamState = {};
   private paused = false;
@@ -57,6 +71,16 @@ export class MediaRenderer implements AssetRenderer {
 
     this.el = el;
 
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden';
+    wrap.appendChild(el);
+    this.wrap = wrap;
+
+    const tintEl = document.createElement('div');
+    tintEl.style.cssText = 'position:absolute;inset:0;pointer-events:none';
+    wrap.appendChild(tintEl);
+    this.tintEl = tintEl;
+
     await new Promise<void>((resolve) => {
       const done = () => resolve();
       el.addEventListener(this.type === 'video' ? 'loadeddata' : 'load', done, { once: true });
@@ -68,7 +92,7 @@ export class MediaRenderer implements AssetRenderer {
     });
 
     if (signal.aborted || this.disposed) return;
-    host.appendChild(el);
+    host.appendChild(wrap);
     this.applyStyle();
   }
 
@@ -79,7 +103,8 @@ export class MediaRenderer implements AssetRenderer {
 
   private applyStyle(): void {
     const el = this.el;
-    if (!el || !this.schema) return;
+    const wrap = this.wrap;
+    if (!el || !wrap || !this.schema) return;
 
     const num = (id: string, fallback: number) => {
       const v = this.params[id];
@@ -89,13 +114,30 @@ export class MediaRenderer implements AssetRenderer {
     const offset = this.params.offset;
     const [ox, oy] = Array.isArray(offset) ? offset : [0, 0];
 
-    el.style.opacity = String(num('opacity', 1));
-    el.style.mixBlendMode = String(this.params.blendMode ?? 'normal');
-    el.style.transform = [
+    // Opacity and transform move to the wrapper, not the media element
+    // itself, so the tint overlay — a sibling, not a child of `el` —
+    // fades and moves in lockstep with it rather than staying pinned in
+    // place while the image underneath scales or slides away from it.
+    wrap.style.opacity = String(num('opacity', 1));
+    wrap.style.transform = [
       `translate(${(ox as number) * 100}%, ${(oy as number) * 100}%)`,
       `scale(${num('scale', 1)})`,
       `rotate(${num('rotation', 0)}deg)`,
     ].join(' ');
+
+    // Left wired even though the control is disabled in the UI (see its
+    // schema doc) — a value saved before this fix shipped still applies
+    // rather than silently reverting, and it costs nothing since new
+    // params can only ever be 'normal' with the control inert.
+    el.style.mixBlendMode = String(this.params.blendMode ?? 'normal');
+
+    if (this.tintEl) {
+      const amount = Math.max(0, Math.min(1, num('tintAmount', 0)));
+      const tint = (this.params.tint ?? { r: 1, g: 1, b: 1, a: 1 }) as RGBA;
+      this.tintEl.style.mixBlendMode = 'color';
+      this.tintEl.style.backgroundColor = rgbaToCss({ ...tint, a: 1 });
+      this.tintEl.style.opacity = String(amount);
+    }
 
     if (el instanceof HTMLVideoElement) {
       el.playbackRate = Math.max(0.0625, num('speed', 1));
@@ -147,7 +189,26 @@ export class MediaRenderer implements AssetRenderer {
     const canvas = document.createElement('canvas');
     canvas.width = w * scale;
     canvas.height = h * scale;
-    canvas.getContext('2d')?.drawImage(el, 0, 0, canvas.width, canvas.height);
+    const ctx2d = canvas.getContext('2d');
+    ctx2d?.drawImage(el, 0, 0, canvas.width, canvas.height);
+
+    // Bake the tint into the exported file — without this, a snapshot's
+    // downloaded PNG would silently drop the one appearance control that
+    // actually works (see Blend mode's `disabled` doc for why it isn't
+    // this one), which would read as the tint itself being broken.
+    // 'color' is a standard globalCompositeOperation value and matches
+    // the CSS mix-blend-mode applied on screen exactly, so what's
+    // downloaded matches what was on the board.
+    const amount = typeof this.params.tintAmount === 'number' ? this.params.tintAmount : 0;
+    if (ctx2d && amount > 0) {
+      const tint = (this.params.tint ?? { r: 1, g: 1, b: 1, a: 1 }) as RGBA;
+      ctx2d.save();
+      ctx2d.globalCompositeOperation = 'color';
+      ctx2d.globalAlpha = Math.max(0, Math.min(1, amount));
+      ctx2d.fillStyle = rgbaToCss({ ...tint, a: 1 });
+      ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+      ctx2d.restore();
+    }
 
     return new Promise((resolve) => canvas.toBlob(resolve, opts.type ?? 'image/png'));
   }
@@ -163,8 +224,10 @@ export class MediaRenderer implements AssetRenderer {
       this.el.removeAttribute('src');
       this.el.load();
     }
-    this.el?.remove();
     this.el = null;
+    this.tintEl = null;
+    this.wrap?.remove();
+    this.wrap = null;
   }
 }
 

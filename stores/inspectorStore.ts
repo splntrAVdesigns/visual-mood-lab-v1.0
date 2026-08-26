@@ -187,6 +187,20 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
       renderer?.emit(control.event);
     } else {
       renderer?.setParam(id, next);
+      // Keep the pool's baseParams in lockstep with every edit, not just
+      // resetParam's — setModState() restores any *non*-modulated control
+      // back to entry.baseParams whenever modulation is assigned/changed
+      // on ANY control on this asset (so an LFO-driven value doesn't
+      // freeze wherever it last landed). Without this, a plain edit here
+      // renders correctly in the moment but leaves baseParams stale at
+      // whatever it was hydrated as — invisible until the next modulation
+      // change silently force-restores the OLD value straight into the
+      // live renderer, even though the inspector (reading its own params
+      // state, untouched by any of this) still shows the edit as active.
+      // Confirmed exactly this way: HUD mode showing "Alpha" in the
+      // dropdown while the tile silently rendered Radial again the
+      // instant modulation was routed to an unrelated control.
+      getPool().setBaseParam(itemId, id, next);
       persist(itemId, isSnapshot || !isOwned, nextParams);
     }
   },

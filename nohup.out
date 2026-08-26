@@ -1775,3 +1775,52 @@ Error: listen EADDRINUSE: address already in use :::3000
 ⚠ metadataBase property in metadata export is not set for resolving social open graph or twitter images, using "http://localhost:3000". See https://nextjs.org/docs/app/api-reference/functions/generate-metadata#metadatabase
 [proxy] /about protected= false hasCookie= true
 [proxy] /about protected= false hasCookie= true
+⨯ Failed to start server
+Error: listen EADDRINUSE: address already in use :::3000
+    at <unknown> (Error: listen EADDRINUSE: address already in use :::3000)
+    at new Promise (<anonymous>) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+▲ Next.js 16.3.0
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.215:3000
+✓ Ready in 280ms
+✓ Running next.config.ts took 52ms
+▲ Next.js 16.3.0
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.215:3000
+✓ Ready in 291ms
+✓ Running next.config.ts took 56ms
+▲ Next.js 16.3.0
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.215:3000
+✓ Ready in 287ms
+✓ Running next.config.ts took 52ms
+▲ Next.js 16.3.0
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.215:3000
+✓ Ready in 271ms
+✓ Running next.config.ts took 48ms
+▲ Next.js 16.3.0
+- Local:         http://localhost:3000
+- Network:       http://192.168.1.215:3000
+✓ Ready in 292ms
+✓ Running next.config.ts took 52ms
+[proxy] / protected= true hasCookie= true
+⚠ metadataBase property in metadata export is not set for resolving social open graph or twitter images, using "http://localhost:3000". See https://nextjs.org/docs/app/api-reference/functions/generate-metadata#metadatabase
+[proxy] / protected= true hasCookie= true
+⨯ Failed to start server
+Error: listen EADDRINUSE: address already in use :::3000
+    at <unknown> (Error: listen EADDRINUSE: address already in use :::3000)
+    at new Promise (<anonymous>) {
+  code: 'EADDRINUSE',
+  errno: -48,
+  syscall: 'listen',
+  address: '::',
+  port: 3000
+}
+[proxy] / protected= true hasCookie= true

@@ -27,9 +27,15 @@ import s from '../features.module.css';
  * Static Intensity, Glitch Frequency, Motion Blur, and Phosphor Glow all
  * apply to BOTH draw paths (grain/burst/trail/glow work identically on
  * the real trace or the generated one), so none of them ever go inert.
- * What's left here is exactly the mock-only artifacts: the multi-layer
- * stack and the scanline roll bands, neither of which has a live-mode
- * equivalent.
+ * Waveform Layers/Layer Spread used to be here too, restricted to mock
+ * mode only — every render style now respects them live as well
+ * (duplicating the real trace across offset copies, same idea as the
+ * mock generator's phase-varied layers, just without the phase
+ * variation since there's only one real signal), so they're gone from
+ * this set entirely rather than staying as a special case. What's left
+ * is exactly the mock-only artifact still standing: the scanline roll
+ * bands (every color/width/motion control belongs to that one feature,
+ * scanlineColor included).
  *
  * Lives here rather than in lib/sound/ because this is inspector-layer
  * presentation knowledge about one specific tile's schema, not something
@@ -38,11 +44,17 @@ import s from '../features.module.css';
  * knowledge, it moves to the feature that owns it."
  */
 const STATIC_CHOIR_MOCK_ONLY_CONTROL_IDS = new Set([
-  'layers',
-  'layerSpread',
   'scanlines',
+  'scanlineColor',
   'scanlineWidth',
   'scanlineMotion',
+  // Both only ever affect the procedural mock generator's own math
+  // (waveValue()'s shape, and the lfoA/lfoB values LFO Rate drives) —
+  // live mode reads real audio samples directly and has never used
+  // either, so both were previously silently inert once Sound was on
+  // instead of visibly graying out like their mock-only siblings above.
+  'waveShape',
+  'lfoRate',
 ]);
 
 export function InspectorDrawer() {
@@ -171,9 +183,9 @@ export function InspectorDrawer() {
 
                 {!isCollapsed &&
                   rows.map((c) => {
-                    // Only ever true for Static Choir's own known
-                    // mock-only control ids, and only while Sound is on
-                    // — see the constant's doc above.
+                    // True for Static Choir's remaining mock-only
+                    // controls while Sound is on — see the constant's
+                    // doc above.
                     const inert = sound.enabled && STATIC_CHOIR_MOCK_ONLY_CONTROL_IDS.has(c.id);
                     return (
                       <div

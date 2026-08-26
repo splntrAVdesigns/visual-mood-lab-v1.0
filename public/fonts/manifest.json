@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "fonts": [
+    {
+      "id": "pigarnos-neue",
+      "family": "Pigarnos Neue",
+      "cssFamily": "Pigarnos Neue",
+      "source": "custom",
+      "category": "display",
+      "files": [
+        { "url": "/fonts/custom/pigarnos-neue/PigarnosNeue-Regular.ttf", "weight": "400", "style": "normal" }
+      ]
+    },
+    {
+      "id": "stardock",
+      "family": "Stardock",
+      "cssFamily": "Stardock",
+      "source": "custom",
+      "category": "display",
+      "files": [
+        { "url": "/fonts/custom/stardock/Stardock-Regular.woff", "weight": "400", "style": "normal" },
+        { "url": "/fonts/custom/stardock/Stardock-Regular.ttf", "weight": "400", "style": "normal" }
+      ]
+    },
+    {
+      "id": "next-sphere-black",
+      "family": "Next Sphere Black",
+      "cssFamily": "Next Sphere Black",
+      "source": "custom",
+      "category": "display",
+      "files": [
+        { "url": "/fonts/custom/next-sphere/NextSphere-Black.ttf", "weight": "900", "style": "normal" }
+      ]
+    },
+    {
+      "id": "next-sphere-thin",
+      "family": "Next Sphere Thin",
+      "cssFamily": "Next Sphere Thin",
+      "source": "custom",
+      "category": "display",
+      "files": [
+        { "url": "/fonts/custom/next-sphere/NextSphere-Thin.ttf", "weight": "100", "style": "normal" }
+      ]
+    },
+    {
+      "id": "universa-demo",
+      "family": "Universa",
+      "cssFamily": "Universa Demo",
+      "source": "custom",
+      "category": "display",
+      "files": [
+        { "url": "/fonts/custom/universa-demo/Universa-Demo.otf", "weight": "400", "style": "normal" }
+      ]
+    },
+    {
+      "id": "orbitron",
+      "family": "Orbitron",
+      "cssFamily": "Orbitron Variable",
+      "source": "google",
+      "category": "display",
+      "files": [
+        { "url": "/fonts/google/orbitron/Orbitron-Variable.ttf", "weight": "400 900", "style": "normal" }
+      ]
+    },
+    {
+      "id": "rajdhani",
+      "family": "Rajdhani",
+      "cssFamily": "Rajdhani",
+      "source": "google",
+      "category": "sans",
+      "files": [
+        { "url": "/fonts/google/rajdhani/Rajdhani-Regular.ttf", "weight": "400", "style": "normal" },
+        { "url": "/fonts/google/rajdhani/Rajdhani-SemiBold.ttf", "weight": "600", "style": "normal" }
+      ]
+    },
+    {
+      "id": "chakra-petch",
+      "family": "Chakra Petch",
+      "cssFamily": "Chakra Petch",
+      "source": "google",
+      "category": "sans",
+      "files": [
+        { "url": "/fonts/google/chakra-petch/ChakraPetch-Regular.ttf", "weight": "400", "style": "normal" },
+        { "url": "/fonts/google/chakra-petch/ChakraPetch-SemiBold.ttf", "weight": "600", "style": "normal" }
+      ]
+    },
+    {
+      "id": "audiowide",
+      "family": "Audiowide",
+      "cssFamily": "Audiowide",
+      "source": "google",
+      "category": "display",
+      "files": [
+        { "url": "/fonts/google/audiowide/Audiowide-Regular.ttf", "weight": "400", "style": "normal" }
+      ]
+    },
+    {
+      "id": "exo-2",
+      "family": "Exo 2",
+      "cssFamily": "Exo 2 Variable",
+      "source": "google",
+      "category": "sans",
+      "files": [
+        { "url": "/fonts/google/exo2/Exo2-Variable.ttf", "weight": "100 900", "style": "normal" }
+      ]
+    },
+    {
+      "id": "space-mono",
+      "family": "Space Mono",
+      "cssFamily": "Space Mono",
+      "source": "google",
+      "category": "mono",
+      "files": [
+        { "url": "/fonts/google/space-mono/SpaceMono-Regular.ttf", "weight": "400", "style": "normal" },
+        { "url": "/fonts/google/space-mono/SpaceMono-Bold.ttf", "weight": "700", "style": "normal" }
+      ]
+    },
+    {
+      "id": "inter",
+      "family": "Inter",
+      "cssFamily": "Inter Variable",
+      "source": "google",
+      "category": "sans",
+      "files": [
+        { "url": "/fonts/google/inter/Inter-Variable.ttf", "weight": "100 900", "style": "normal" }
+      ]
+    },
+    {
+      "id": "sora",
+      "family": "Sora",
+      "cssFamily": "Sora Variable",
+      "source": "google",
+      "category": "sans",
+      "files": [
+        { "url": "/fonts/google/sora/Sora-Variable.ttf", "weight": "100 800", "style": "normal" }
+      ]
+    },
+    {
+      "id": "syne",
+      "family": "Syne",
+      "cssFamily": "Syne Variable",
+      "source": "google",
+      "category": "display",
+      "files": [
+        { "url": "/fonts/google/syne/Syne-Variable.ttf", "weight": "400 800", "style": "normal" }
+      ]
+    },
+    {
+      "id": "jetbrains-mono",
+      "family": "JetBrains Mono",
+      "cssFamily": "JetBrains Mono Variable",
+      "source": "google",
+      "category": "mono",
+      "files": [
+        { "url": "/fonts/google/jetbrains-mono/JetBrainsMono-Variable.ttf", "weight": "100 800", "style": "normal" }
+      ]
+    }
+  ]
+}

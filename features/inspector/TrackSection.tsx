@@ -33,6 +33,10 @@ import s from '../features.module.css';
 interface TrackSectionProps {
   itemId: string;
   schema: ControlSchema;
+  /** Called once a track finishes loading successfully — see
+      SoundPanel.tsx's autoAssignTrackModulation for what this wires up.
+      Optional so this component doesn't require a caller that cares. */
+  onTrackLoaded?: () => void;
 }
 
 // A bare 'audio/*' MIME wildcard is not reliably recognized by iOS
@@ -66,12 +70,14 @@ function formatDuration(seconds: number): string {
  * gone on reload — see that file's doc for why that's a deliberate v1
  * scope decision rather than a missing persistence step.
  */
-export function TrackSection({ itemId, schema }: TrackSectionProps) {
+export function TrackSection({ itemId, schema, onTrackLoaded }: TrackSectionProps) {
   const meta = useTrackMeta(itemId);
   const mod = useInspectorStore((st) => st.mod);
   const setModulation = useInspectorStore((st) => st.setModulation);
   const sound = useInspectorStore((st) => st.sound);
   const setSoundState = useInspectorStore((st) => st.setSoundState);
+  const params = useInspectorStore((st) => st.params);
+  const setParam = useInspectorStore((st) => st.setParam);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -130,6 +136,22 @@ export function TrackSection({ itemId, schema }: TrackSectionProps) {
     // already captured the pre-upload value (sound.enabled, above) so
     // "Remove track" below can hand it back exactly as it was.
     if (sound.enabled) setSoundState({ ...sound, enabled: false });
+
+    // Scanlines (Static Choir, or any sketch with the same control) is a
+    // mock-only artifact — never rendered once real audio is driving the
+    // trace (see InspectorDrawer.tsx's STATIC_CHOIR_MOCK_ONLY_CONTROL_IDS,
+    // which already grays the control out at this point) but the toggle
+    // itself kept whatever value it had from mock-mode testing, so
+    // reopening the tile after a track load could still show it "on"
+    // even though it's had zero visual effect since the upload finished.
+    // Checking the schema for the control id, not hardcoding "Static
+    // Choir" by name, so this keeps working for any future sketch that
+    // reuses the same convention.
+    if (schema.controls.some((c) => c.id === 'scanlines') && params.scanlines) {
+      setParam('scanlines', false);
+    }
+
+    onTrackLoaded?.();
   };
 
   // The file input must be the thing that opens the native picker (tap ->

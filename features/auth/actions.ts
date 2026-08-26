@@ -20,7 +20,7 @@ import { getDb } from '@/lib/db/client';
 import { users, accounts } from '@/lib/db/schema.auth';
 import { hashPassword } from '@/lib/auth/hash';
 import { signupRateLimit, resetPasswordRateLimit } from '@/lib/auth/rate-limit';
-import { signupEnabled } from '@/lib/auth/flags';
+import { signupEnabled, appleSignInEnabled } from '@/lib/auth/flags';
 import { requireUser } from '@/lib/auth';
 import { signupSchema, passwordSchema } from '@/lib/validation/auth';
 import {
@@ -84,6 +84,14 @@ export async function loginWithGitHubAction(formData: FormData): Promise<void> {
 }
 
 export async function loginWithAppleAction(formData: FormData): Promise<void> {
+  // Defense in depth alongside the disabled button in LoginForm/SignupForm:
+  // the button being unclickable doesn't stop a request posted directly to
+  // this action, bypassing the UI entirely. Apple Sign-In isn't cleared by
+  // Apple Developer review yet, so this must refuse even when reached
+  // directly. Silent no-op (no redirect, no session) rather than a thrown
+  // error — there's no error UI wired to this action to surface one to,
+  // and the disabled button already tells a real user why nothing happens.
+  if (!appleSignInEnabled) return;
   const callbackUrl = String(formData.get('callbackUrl') ?? '/');
   await signIn('apple', { redirectTo: callbackUrl });
 }

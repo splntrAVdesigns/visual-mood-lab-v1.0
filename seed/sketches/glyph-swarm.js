@@ -1,5 +1,6 @@
 export const params = {
   text:          { kind: 'text', label: 'Word', default: 'BLOOM', maxLength: 12, hint: 'Up to 12 characters.' },
+  font:          { kind: 'font', label: 'Font', default: 'syne' },
   charSet:       { kind: 'select', label: 'Particle Glyph', options: [
                      { label: 'Dot', value: 'DOT' },
                      { label: 'Letters', value: 'LETTERS' },
@@ -43,6 +44,12 @@ export default function sketch(p, get) {
   let dragging = false;
   let lastDisturbTime = -999;
   let lastCharSet = null;
+  // The font materially changes the mask shape particles form (unlike
+  // type-wave/echo-type, where swapping fonts just redraws differently
+  // next frame) — tracked by object identity so a rebuild fires exactly
+  // once when p.getEmbeddedFont(id) actually resolves to something new,
+  // not on every frame the id merely stays the same while still loading.
+  let lastFont = null;
 
   // Debounces the particle-count rebuild so an in-progress slider drag
   // (which can emit intermediate values before settling on a step) doesn't
@@ -51,7 +58,7 @@ export default function sketch(p, get) {
   let pendingCountSince = 0;
   const REBUILD_DEBOUNCE_MS = 220;
 
-  function buildTargets(word) {
+  function buildTargets(word, font) {
     const w = p.width;
     const h = p.height;
     mask = p.createGraphics(w, h);
@@ -59,6 +66,7 @@ export default function sketch(p, get) {
     mask.fill(255);
     mask.noStroke();
     mask.textAlign(p.CENTER, p.CENTER);
+    mask.textFont(font || 'sans-serif');
     let fontSize = Math.min(w, h) * 0.22;
     mask.textSize(fontSize);
     mask.textStyle(p.BOLD);
@@ -106,7 +114,8 @@ export default function sketch(p, get) {
     currentWord = (String(get('text') || 'BLOOM').trim().slice(0, 12) || 'BLOOM').toUpperCase();
     lastW = p.width;
     lastH = p.height;
-    targets = buildTargets(currentWord);
+    lastFont = typeof p.getEmbeddedFont === 'function' ? p.getEmbeddedFont(get('font')) : null;
+    targets = buildTargets(currentWord, lastFont);
     particles = initParticles(get('particleCount'));
   };
 
@@ -125,6 +134,12 @@ export default function sketch(p, get) {
   p.touchMoved = () => { lastDisturbTime = p.millis() / 1000; return false; };
 
   p.draw = () => {
+    // See type-wave.js's identical guard doc for why this can be null.
+    // Resolved once up front so every rebuild path below (resize, word
+    // change, and the dedicated font-change check further down) all use
+    // the exact same reference for this frame.
+    const embeddedFont = typeof p.getEmbeddedFont === 'function' ? p.getEmbeddedFont(get('font')) : null;
+
     // p.windowResized only fires on a genuine browser `window resize`
     // event. Entering Fullscreen apparently resizes this sketch's canvas
     // through the host/sandbox bridge directly (a postMessage-driven call
@@ -137,7 +152,7 @@ export default function sketch(p, get) {
     if (p.width !== lastW || p.height !== lastH) {
       lastW = p.width;
       lastH = p.height;
-      targets = buildTargets(currentWord);
+      targets = buildTargets(currentWord, embeddedFont);
       particles = initParticles(get('particleCount'));
     }
 
@@ -145,8 +160,14 @@ export default function sketch(p, get) {
     const word = (rawText.slice(0, 12) || 'BLOOM').toUpperCase();
     if (word !== currentWord) {
       currentWord = word;
-      targets = buildTargets(currentWord);
+      targets = buildTargets(currentWord, embeddedFont);
+    } else if (embeddedFont !== lastFont) {
+      // Word's the same, but the resolved font object changed — either a
+      // different font finished loading, or the person picked a
+      // different one. Same rebuild, just a different trigger.
+      targets = buildTargets(currentWord, embeddedFont);
     }
+    lastFont = embeddedFont;
 
     const wantCount = Math.round(get('particleCount') / 100) * 100;
     if (wantCount !== particles.length) {

@@ -7,7 +7,7 @@
  */
 
 export interface HostToSandbox {
-  type: 'init' | 'params' | 'event' | 'resize' | 'play' | 'pause' | 'quality' | 'capture' | 'audioWaveform';
+  type: 'init' | 'params' | 'event' | 'resize' | 'play' | 'pause' | 'quality' | 'capture' | 'audioWaveform' | 'fonts';
   source?: string;
   params?: Record<string, unknown>;
   id?: string;
@@ -40,6 +40,80 @@ export interface HostToSandbox {
    * switched off.
    */
   waveform?: Float32Array;
+  /**
+   * Per-band scalars off this card's own TRACK specifically — bass/mid/
+   * high, each auto-gained 0..1 (see lib/sound/track.ts's getTrackBand()
+   * doc for the auto-gain reasoning). Deliberately track-only, not
+   * track/mic/synth-preset like `waveform` above: mic and the synth
+   * preset don't have a per-band split anywhere in this codebase today
+   * (lib/sound/mic.ts's getMicBand exists but lib/sound/meter.ts's synth
+   * tap only ever exposed a single collapsed level), and the existing
+   * Audio — Bass/Mid/High modulation sources already carry the same
+   * `requiresTrack: true` restriction in lib/modulation/bus.ts's
+   * MOD_SOURCES — this mirrors that same, already-established line
+   * rather than drawing a new one. Omitted (not just zeroed) whenever no
+   * track is active, so a sketch can tell "no band data" apart from
+   * "silence" and fall back to its own non-band-aware behavior, the same
+   * way `waveform` being omitted already works.
+   */
+  bands?: { bass: number; mid: number; high: number };
+  /**
+   * The full 64-bin frequency array off this card's own active source —
+   * track OR mic (unlike `bands` above, which is track-only; both
+   * lib/sound/track.ts's getTrackFrequencyData() and lib/sound/mic.ts's
+   * getMicFrequencyData() already return this exact shape, so both slot
+   * in here with no new engine-level work). Each bin is 0..1, same
+   * normalization as `bands`. Omitted (not zeroed) whenever the active
+   * source has no frequency data available (the synth-preset case —
+   * lib/sound/meter.ts's tap only ever exposed a single collapsed
+   * level), so a sketch can fall back the same way it already does for
+   * `bands` being absent.
+   *
+   * Exists for Static Choir's Blocked Bands render style, which buckets
+   * these 64 linear bins into log-spaced Hz ranges for a genuine
+   * multi-band EQ display — `bands`' fixed 3-way bass/mid/high split
+   * doesn't have enough resolution for that. Generic plumbing any sketch
+   * can read via p.getAudioSpectrum(), not specific to one tile.
+   */
+  spectrum?: Float32Array;
+  /**
+   * Hz per bin in `spectrum` above — i.e. getAudioContext().sampleRate /
+   * 128 (the shared analyser's fftSize). Sent alongside `spectrum`
+   * rather than assumed on the sandbox side because AudioContext sample
+   * rate varies by device/OS (44100 and 48000 are both common) and a
+   * sketch bucketing bins into real Hz ranges needs the actual value to
+   * do that correctly, not a guess. 0 whenever `spectrum` is omitted.
+   */
+  spectrumBinHz?: number;
+  /**
+   * Embedded font files for a `font`-kind control (see
+   * renderers/control-schema.ts's FontControl and lib/fonts/manifest.ts),
+   * keyed by manifest id, each as a base64 `data:` URL rather than a
+   * plain `/fonts/...` path.
+   *
+   * This frame runs with `sandbox="allow-scripts"` and deliberately
+   * WITHOUT `allow-same-origin` (see p5.renderer.ts's iframe setup doc) —
+   * it has a null/opaque origin. A plain `fetch('/fonts/...')` from
+   * inside it sends an `Origin: null` header, and since the static
+   * font files aren't served with an `Access-Control-Allow-Origin`
+   * header permitting that, the browser blocks the sandbox from reading
+   * the response even though the request itself resolves fine — a
+   * same-origin-looking path that actually fails as a cross-origin read.
+   * `data:` URLs sidestep this entirely: decoding one never involves a
+   * network origin check at all, so it works the same regardless of the
+   * frame's own origin. The host (p5.renderer.ts) does the actual
+   * `fetch()` — from the real page, not the sandbox, so no origin
+   * problem there — converts the result to a data URL, and sends the
+   * string across, same as everything else in this protocol.
+   *
+   * Sent two ways: once per referenced font id inside `init`'s payload
+   * (so text renders correctly from first paint), and again via a
+   * standalone `fonts`-typed message whenever a `font` control's value
+   * changes to an id the sandbox hasn't been sent yet. The sandbox
+   * should key its own loaded-font cache by id and treat a repeat send
+   * of an id it already has as a no-op.
+   */
+  fonts?: Array<{ id: string; dataUrl: string }>;
 }
 
 export interface SandboxToHost {
@@ -95,9 +169,35 @@ export interface SandboxToHost {
   energy?: number;
 }
 
-/** Missed heartbeats past this and the host tears the frame down. */
-export const HEARTBEAT_TIMEOUT_MS = 2000;
+/** Missed heartbeats past this and the host tears the frame down.
+    Doubled from the original 2000ms — see STALL_RESUME_THRESHOLD_MS's
+    doc for why 2000ms wasn't enough safety margin on its own. */
+export const HEARTBEAT_TIMEOUT_MS = 4000;
 export const HEARTBEAT_INTERVAL_MS = 500;
+
+/**
+ * Separate, smaller threshold for the pool's own "did requestAnimationFrame
+ * itself just get suspended for the whole tab" detection (see
+ * lib/render/pool.ts's tick() and resumeFromStall's doc on
+ * AssetRenderer) — deliberately well under HEARTBEAT_TIMEOUT_MS, not
+ * the same number.
+ *
+ * The pool's own rAF-driven tick() and each sandboxed iframe's
+ * independent heartbeat-sending setInterval are throttled by the
+ * browser separately, not necessarily by the same amount — a native
+ * file-picker dialog closing can let the parent tab's rAF resume
+ * noticeably sooner than a given iframe's own setInterval catches back
+ * up. With both checks sharing one threshold, a dialog held open for a
+ * gap that landed just under it could leave the pool concluding nothing
+ * stalled (so resumeFromStall() never fires) while that same sandbox's
+ * own lastHeartbeat was still stale enough, once its heartbeat did
+ * arrive late, to trip the teardown check in render() before anyone
+ * re-armed the clock. Triggering resumeFromStall() at a meaningfully
+ * lower gap re-arms every sandbox's clock well ahead of the stricter
+ * teardown threshold, closing that race regardless of exactly how far
+ * apart the two throttling curves happen to drift on a given browser.
+ */
+export const STALL_RESUME_THRESHOLD_MS = 1200;
 
 /**
  * Cache-busting version for public/sandbox/index.html — see
@@ -107,7 +207,7 @@ export const HEARTBEAT_INTERVAL_MS = 500;
  * itself changes, so the browser can't keep serving a stale cached copy
  * that's missing whatever bridge function or protocol change just shipped.
  */
-export const SANDBOX_RUNTIME_VERSION = '2026-08-15-1';
+export const SANDBOX_RUNTIME_VERSION = '2026-08-25-3';
 
 /**
  * How long to wait after sending `init` before declaring the sketch dead.
