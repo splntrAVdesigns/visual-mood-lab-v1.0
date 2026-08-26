@@ -203,6 +203,19 @@ interface ControlCommon {
   disabled?: boolean;
   /** Badge text when `disabled` is true. Defaults to "Future feature". */
   disabledLabel?: string;
+  /**
+   * Shown, and visible, but greyed out and inert whenever this predicate
+   * passes against current ParamState — the conditional counterpart to
+   * `disabled` above. `disabled` is a fixed schema-authoring-time flag
+   * ("this doesn't exist yet"); `disabledIf` is for a control that's
+   * perfectly real but doesn't apply to whatever the sibling control it
+   * depends on is currently set to — e.g. a global "layers" control that
+   * a specific render style ignores entirely. Distinct from `showIf`:
+   * hiding a control that still has a meaningful (if unused) saved value
+   * reads as "did my setting get lost", where greying it out with its
+   * current value still visible doesn't.
+   */
+  disabledIf?: ControlPredicate;
   /** Eligible for the modulation bus (audio / LFO / MIDI). */
   modulatable?: boolean;
   /** Only shown when this predicate passes against current ParamState. */
@@ -616,6 +629,14 @@ export function coerce(control: Control, value: ParamValue): ParamValue {
 /** Evaluate a control's showIf predicate against current state. */
 export function isVisible(control: Control, state: ParamState): boolean {
   return control.showIf ? evalPredicate(control.showIf, state) : true;
+}
+
+/** Evaluate a control's disabledIf predicate against current state —
+    the conditional counterpart to isVisible above, see disabledIf's own
+    doc on ControlCommon for why this is a separate flag rather than
+    reusing showIf inverted. */
+export function isDisabledByState(control: Control, state: ParamState): boolean {
+  return control.disabledIf ? evalPredicate(control.disabledIf, state) : false;
 }
 
 export function evalPredicate(p: ControlPredicate, state: ParamState): boolean {

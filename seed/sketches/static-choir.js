@@ -23,7 +23,7 @@ export const params = {
   waveAmplitude:    { kind: 'slider', label: 'Wave Amplitude', min: 0, max: 200, step: 1, default: 90, modulatable: true },
   waveFrequency:    { kind: 'slider', label: 'Wave Frequency', min: 0.5, max: 4, step: 0.05, default: 1, modulatable: true, hint: 'Idle oscillator speed (mock mode) or horizontal zoom on the captured buffer (most live styles). On Blocked Bands, this instead controls how fast the columns respond — 1 is the tuned default, lower is more mellow/smoothed, higher is snappier.' },
   harmonicMix:      { kind: 'slider', label: 'Harmonic Mix', min: 0, max: 1, step: 0.01, default: 0.25 },
-  layers:           { kind: 'stepper', label: 'Waveform Layers', min: 1, max: 7, step: 1, default: 2, hint: 'How many copies stack, offset from each other.' },
+  layers:           { kind: 'stepper', label: 'Waveform Layers', min: 1, max: 7, step: 1, default: 2, hint: 'How many copies stack, offset from each other.', disabledIf: { equals: ['renderStyle', 'BLOCKED_BANDS'] } },
   layerSpread:      { kind: 'slider', label: 'Layer Spread', min: 0, max: 1, step: 0.01, default: 0.3, hint: 'Spacing between stacked layers — on Blocked Bands, this instead spaces the columns apart from each other.' },
   lfoRate:          { kind: 'slider', label: 'LFO Rate', min: 0.02, max: 1, step: 0.01, default: 0.12 },
   glitchFrequency:  { kind: 'slider', label: 'Glitch Frequency', min: 0, max: 1, step: 0.01, default: 0.15, hint: 'Chance per second of a jolt burst.' },
@@ -118,6 +118,27 @@ const BLOCKED_DECAY = 0.22;
 // enough to reliably catch actual digital silence (a paused/not-yet-
 // started track, or true silence between tracks).
 const BLOCKED_SILENCE_THRESHOLD = 0.03;
+
+/**
+ * Layer cap for the four "dense" render styles — RADIAL, RADIAL_GRADIENT,
+ * MIRRORED, PARTICLES — independent of the global Waveform Layers
+ * slider's own 1-7 range. LINE, RIBBON, and GRADIENT_BANDS do fine at
+ * the slider's full range and aren't capped at all; BLOCKED_BANDS
+ * doesn't use layers in the first place (its own `layers` control is
+ * disabledIf'd off entirely — see that param's schema entry).
+ *
+ * Was RADIAL_LAYER_CAP (7, Radial/Radial Gradient only) for one round —
+ * raised to 7 on request, then reverted back to 3 and extended to
+ * Mirrored/Particles per direct instruction once actual "cheaper
+ * per-layer draw" work was in scope instead. Each of these four styles'
+ * per-layer cost is real: Radial/Radial Gradient are trig-per-vertex
+ * polar sampling (Radial Gradient additionally a full gradient-filled
+ * path per layer, the single most expensive per-layer draw in this
+ * file); Mirrored and Particles both redraw their own per-pixel/per-dot
+ * pass per layer per pass (glitch mode runs 3 passes). None of the
+ * three uncapped styles carry that same per-layer weight.
+ */
+const DENSE_LAYER_CAP = 3;
 
 export default function sketch(p, get) {
   let rowOffsets = [];
@@ -1099,7 +1120,7 @@ export default function sketch(p, get) {
       // above on why 'lighter' additive blending picks up more of the
       // visual load, letting the blur radius itself (the expensive part)
       // shrink without the glow reading as weaker overall.
-      const glowLayerDivisor = renderStyle === 'RADIAL_GRADIENT' ? Math.sqrt(Math.min(layerCount, 3)) : 1;
+      const glowLayerDivisor = renderStyle === 'RADIAL_GRADIENT' ? Math.sqrt(Math.min(layerCount, DENSE_LAYER_CAP)) : 1;
       p.drawingContext.shadowBlur = phosphorGlow * effectWeight * 14 / glowLayerDivisor;
       p.drawingContext.shadowColor = `rgba(${tint.r * 255}, ${tint.g * 255}, ${tint.b * 255}, 0.9)`;
       // 'lighter' additive blending is only safe for thin/sparse content
@@ -1130,9 +1151,12 @@ export default function sketch(p, get) {
     }
 
     if (renderStyle === 'MIRRORED') {
+      // Same cap and reasoning as Radial/Radial Gradient below — see
+      // DENSE_LAYER_CAP's doc.
+      const denseLayerCount = Math.min(layerCount, DENSE_LAYER_CAP);
       for (const pass of passes) {
-        for (let i = 0; i < layerCount; i++) {
-          const layerOffset = layerCount > 1 ? (i / (layerCount - 1) - 0.5) * p.height * layerSpread : 0;
+        for (let i = 0; i < denseLayerCount; i++) {
+          const layerOffset = denseLayerCount > 1 ? (i / (denseLayerCount - 1) - 0.5) * p.height * layerSpread : 0;
           renderMirroredLayer(cachedAmpFn, i, midY + layerOffset, pass.dx, pass.color, pass.alpha);
         }
       }
@@ -1146,9 +1170,12 @@ export default function sketch(p, get) {
         }
       }
     } else if (renderStyle === 'PARTICLES') {
+      // Same cap and reasoning as Radial/Radial Gradient below — see
+      // DENSE_LAYER_CAP's doc.
+      const denseLayerCount = Math.min(layerCount, DENSE_LAYER_CAP);
       const bandAmpFn = bandedAmpFn(cachedAmpFn, bands);
-      for (let i = 0; i < layerCount; i++) {
-        const layerOffset = layerCount > 1 ? (i / (layerCount - 1) - 0.5) * p.height * layerSpread : 0;
+      for (let i = 0; i < denseLayerCount; i++) {
+        const layerOffset = denseLayerCount > 1 ? (i / (denseLayerCount - 1) - 0.5) * p.height * layerSpread : 0;
         renderParticlesLayer(bandAmpFn, i, midY + layerOffset, 0, tint, 235, get('particleSpacing'), get('particleSize'));
       }
     } else if (renderStyle === 'RADIAL') {
@@ -1159,7 +1186,7 @@ export default function sketch(p, get) {
       // below), so this stays smooth well past where the flat styles
       // would still be fine at the full 1-10 range. Other styles keep
       // the full range; this cap is local to Radial/Radial Gradient only.
-      const radialLayerCount = Math.min(layerCount, 3);
+      const radialLayerCount = Math.min(layerCount, DENSE_LAYER_CAP);
       // Sampled once, not once per layer — every layer reads the
       // identical live trace, so there's nothing layer-specific about
       // the sample-and-blend pass itself, only about where each ring
@@ -1188,7 +1215,7 @@ export default function sketch(p, get) {
       // a full gradient-filled path, the single most expensive per-layer
       // draw of any style in this file, so this is where the cap matters
       // most.
-      const radialLayerCount = Math.min(layerCount, 3);
+      const radialLayerCount = Math.min(layerCount, DENSE_LAYER_CAP);
       // Same one-sample-pass-reused-across-layers fix as Radial above —
       // every live layer reads the identical trace, so sampleLayer just
       // hands back the same precomputed array regardless of i. steps
@@ -1330,7 +1357,7 @@ export default function sketch(p, get) {
         // Same reasoning as drawLiveWaveform's identical divisor and
         // radius, and the same additiveSafe/PARTICLES carve-outs — see
         // its comments.
-        const glowLayerDivisor = renderStyle === 'RADIAL_GRADIENT' ? Math.sqrt(Math.min(layers, 3)) : 1;
+        const glowLayerDivisor = renderStyle === 'RADIAL_GRADIENT' ? Math.sqrt(Math.min(layers, DENSE_LAYER_CAP)) : 1;
         p.drawingContext.shadowBlur = phosphorGlow * effectWeight * 14 / glowLayerDivisor;
         p.drawingContext.shadowColor = `rgba(${pass.color.r * 255}, ${pass.color.g * 255}, ${pass.color.b * 255}, 0.9)`;
         const additiveSafe = !isDenseStyle;
@@ -1381,8 +1408,11 @@ export default function sketch(p, get) {
         };
 
         if (renderStyle === 'MIRRORED') {
-          for (let layer = 0; layer < layers; layer++) {
-            const layerOffset = layers > 1 ? (layer / (layers - 1) - 0.5) * p.height * layerSpread : 0;
+          // Same cap as live mode's own MIRRORED branch — see
+          // DENSE_LAYER_CAP's doc.
+          const denseLayerCount = Math.min(layers, DENSE_LAYER_CAP);
+          for (let layer = 0; layer < denseLayerCount; layer++) {
+            const layerOffset = denseLayerCount > 1 ? (layer / (denseLayerCount - 1) - 0.5) * p.height * layerSpread : 0;
             renderMirroredLayer(ampFn, layer, p.height / 2 + layerOffset, pass.dx, pass.color, pass.alpha);
           }
         } else if (renderStyle === 'RIBBON') {
@@ -1394,9 +1424,12 @@ export default function sketch(p, get) {
         } else if (renderStyle === 'PARTICLES') {
           // Particles skips the chromatic glitch split (see Glitch
           // Frequency's hint) — draw once per layer regardless of pass.
+          // Same cap as live mode's own PARTICLES branch — see
+          // DENSE_LAYER_CAP's doc.
           if (pass.dx === 0) {
-            for (let layer = 0; layer < layers; layer++) {
-              const layerOffset = layers > 1 ? (layer / (layers - 1) - 0.5) * p.height * layerSpread : 0;
+            const denseLayerCount = Math.min(layers, DENSE_LAYER_CAP);
+            for (let layer = 0; layer < denseLayerCount; layer++) {
+              const layerOffset = denseLayerCount > 1 ? (layer / (denseLayerCount - 1) - 0.5) * p.height * layerSpread : 0;
               renderParticlesLayer(ampFn, layer, p.height / 2 + layerOffset, 0, tint, 220, get('particleSpacing'), get('particleSize'));
             }
           }
@@ -1404,7 +1437,7 @@ export default function sketch(p, get) {
           if (pass.dx === 0) {
             const baseRadius = Math.min(p.width, p.height) * get('radialBaseSize');
             // Same cap as live mode's own RADIAL branch — see its comment.
-            const radialLayerCount = Math.min(layers, 3);
+            const radialLayerCount = Math.min(layers, DENSE_LAYER_CAP);
             for (let layer = 0; layer < radialLayerCount; layer++) {
               const layerRadius = baseRadius + layer * baseRadius * layerSpread * 0.6;
               renderRadialLayer(ampFn, layer, layerRadius, waveAmplitude, p.width / 2, p.height / 2, tint, 220, 2);
@@ -1422,7 +1455,7 @@ export default function sketch(p, get) {
             const baseRadius = Math.min(p.width, p.height) * get('radialBaseSizeGradient');
             // Same cap and step reduction as live mode's own
             // RADIAL_GRADIENT branch — see its comments.
-            const radialLayerCount = Math.min(layers, 3);
+            const radialLayerCount = Math.min(layers, DENSE_LAYER_CAP);
             const steps = 70;
             drawRadialGradientHalo(
               (layer) => radialSamples(ampFn, layer, steps, v => radialScale(Math.max(0, v), baseRadius, waveAmplitude)),

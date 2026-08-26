@@ -9,7 +9,7 @@ import {
   usePlaybackStore,
 } from '@/stores';
 import { ASSET_TYPE_BADGE } from '@/types/asset';
-import { groupedControls, isVisible } from '@/renderers/control-schema';
+import { groupedControls, isVisible, isDisabledByState } from '@/renderers/control-schema';
 import { ControlRow } from '@/features/inspector/ControlRow';
 import { ModulationPanel } from '@/features/inspector/ModulationPanel';
 import { SoundPanel } from '@/features/inspector/SoundPanel';
@@ -300,6 +300,7 @@ export function MobileFocusedView() {
                       dirty={dirty.has(c.id)}
                       onChange={(v) => setParam(c.id, v)}
                       onReset={() => resetParam(c.id)}
+                      forceDisabled={isDisabledByState(c, params)}
                     />
                   ))}
                 </section>

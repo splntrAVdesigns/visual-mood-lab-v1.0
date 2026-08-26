@@ -61,6 +61,13 @@ export default function sketch(p, get) {
   function buildTargets(word, font) {
     const w = p.width;
     const h = p.height;
+    // Dispose the previous mask before creating a new one — every
+    // rebuild (resize, word change, font change) was creating a fresh
+    // full-canvas-size p5.Graphics buffer with no cleanup of the one it
+    // replaced. Not the direct cause of the reported freeze (each one
+    // individually still worked), but a real accumulating leak across a
+    // session with several font swaps, and worth closing regardless.
+    if (mask && mask.remove) mask.remove();
     mask = p.createGraphics(w, h);
     mask.background(0);
     mask.fill(255);
@@ -91,6 +98,30 @@ export default function sketch(p, get) {
     return pts;
   }
 
+  /**
+   * Wraps buildTargets() so a bad embedded font — a corrupt file, a
+   * malformed glyph, anything opentype.js chokes on when p5 hands it to
+   * a p5.Graphics buffer rather than the main canvas — can't take the
+   * whole sketch down with it. Without this, an exception anywhere in
+   * buildTargets() (or the mask.text()/loadPixels() calls inside it)
+   * propagates straight out of draw(), and once draw() throws once it
+   * stops being called again — every symptom in "frozen, no motion,
+   * word never forms, nothing reacts to any control" is exactly what a
+   * dead draw() loop looks like from the outside, regardless of which
+   * line actually threw. Falls back to whatever targets/particles
+   * already existed (last known good state) rather than an empty or
+   * partially-built array, and logs once so a real problem is still
+   * visible in devtools instead of silently doing nothing.
+   */
+  function safeRebuildTargets(word, font) {
+    try {
+      return buildTargets(word, font);
+    } catch (err) {
+      console.error('[glyph-swarm] buildTargets failed, keeping previous formation:', err);
+      return targets;
+    }
+  }
+
   function initParticles(count) {
     const arr = [];
     for (let i = 0; i < count; i++) {
@@ -115,7 +146,7 @@ export default function sketch(p, get) {
     lastW = p.width;
     lastH = p.height;
     lastFont = typeof p.getEmbeddedFont === 'function' ? p.getEmbeddedFont(get('font')) : null;
-    targets = buildTargets(currentWord, lastFont);
+    targets = safeRebuildTargets(currentWord, lastFont);
     particles = initParticles(get('particleCount'));
   };
 
@@ -152,7 +183,7 @@ export default function sketch(p, get) {
     if (p.width !== lastW || p.height !== lastH) {
       lastW = p.width;
       lastH = p.height;
-      targets = buildTargets(currentWord, embeddedFont);
+      targets = safeRebuildTargets(currentWord, embeddedFont);
       particles = initParticles(get('particleCount'));
     }
 
@@ -160,7 +191,7 @@ export default function sketch(p, get) {
     const word = (rawText.slice(0, 12) || 'BLOOM').toUpperCase();
     if (word !== currentWord) {
       currentWord = word;
-      targets = buildTargets(currentWord, embeddedFont);
+      targets = safeRebuildTargets(currentWord, embeddedFont);
       // Reassigns every particle's targetIdx bounded to the NEW targets
       // array — same as the resize branch above. This was already
       // missing here before any of this round's font work (a latent
@@ -184,7 +215,7 @@ export default function sketch(p, get) {
       // commonly produce a different mask point count (more/less pixel
       // coverage), so this needs the identical reinit, not just the
       // rebuild.
-      targets = buildTargets(currentWord, embeddedFont);
+      targets = safeRebuildTargets(currentWord, embeddedFont);
       particles = initParticles(get('particleCount'));
     }
     lastFont = embeddedFont;

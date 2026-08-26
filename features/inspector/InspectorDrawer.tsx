@@ -10,7 +10,7 @@ import {
   ResetIcon,
   Tooltip,
 } from '@/components/ui';
-import { groupedControls, isVisible, type ParamValue } from '@/renderers/control-schema';
+import { groupedControls, isVisible, isDisabledByState, type ParamValue } from '@/renderers/control-schema';
 import { selectSelectedAsset, useBoardStore, useInspectorStore } from '@/stores';
 import { ASSET_TYPE_BADGE } from '@/types/asset';
 import { WAVE_SHAPE_CONTROL_ID, waveShapeValueToLfoShape } from '@/lib/sound/types';
@@ -200,6 +200,7 @@ export function InspectorDrawer() {
                           dirty={dirty.has(c.id)}
                           onChange={(v) => handleParamChange(c.id, v)}
                           onReset={() => resetParam(c.id)}
+                          forceDisabled={isDisabledByState(c, params)}
                         />
                       </div>
                     );

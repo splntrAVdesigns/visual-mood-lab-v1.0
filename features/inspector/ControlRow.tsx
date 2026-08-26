@@ -22,6 +22,16 @@ interface ControlRowProps {
   dirty: boolean;
   onChange: (value: ParamValue) => void;
   onReset: () => void;
+  /**
+   * Computed by the caller via isDisabledByState(control, params), same
+   * as isVisible(control, params) already is for filtering which rows
+   * render at all — this component never receives the full ParamState
+   * itself (only its own control's value), so a disabledIf predicate
+   * that reads a SIBLING control (e.g. Waveform Layers disabled based
+   * on Render Style) can't be evaluated in here. Distinct from
+   * `control.disabled`, the static always-off case below.
+   */
+  forceDisabled?: boolean;
 }
 
 /**
@@ -38,7 +48,7 @@ interface ControlRowProps {
  * when a control IS modulated — that stays a useful at-a-glance signal — it
  * just no longer owns any interaction of its own.
  */
-export function ControlRow({ control, value, dirty, onChange, onReset }: ControlRowProps) {
+export function ControlRow({ control, value, dirty, onChange, onReset, forceDisabled }: ControlRowProps) {
   const modulated = useInspectorStore((st) => Boolean(st.mod[control.id]));
 
   // A `disabled` control (e.g. Blend mode, ahead of real layer compositing
@@ -47,7 +57,15 @@ export function ControlRow({ control, value, dirty, onChange, onReset }: Control
   // pointer-events off at the row level (belt-and-suspenders alongside
   // SelectControlRow forwarding `disabled` to the native <select> itself).
   // Field renders the "Future feature" badge next to the label.
-  if (control.disabled) {
+  //
+  // `forceDisabled` (from disabledIf, evaluated by the caller — see this
+  // prop's own doc) hits the exact same inert rendering path, but keeps
+  // showing the control's actual current value rather than the
+  // `disabled`-only "Future feature" badge, since a disabledIf control
+  // is a real, working control that just doesn't apply to whatever the
+  // render style (or whichever sibling control it depends on) is
+  // currently set to — not a stubbed-out future feature.
+  if (control.disabled || forceDisabled) {
     return (
       <div className={s.controlRow} data-disabled="true">
         <ControlBody control={control} value={value} dirty={false} onChange={() => {}} onReset={() => {}} />
