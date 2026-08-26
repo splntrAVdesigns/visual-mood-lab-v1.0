@@ -1003,7 +1003,29 @@ export default function sketch(p, get) {
     const midY = p.height / 2;
     const sampleCount = audio.length;
     const windowLength = Math.max(8, Math.floor(sampleCount / Math.max(0.25, waveFrequency)));
-    const triggerOffset = findTriggerOffset(audio);
+    // Trigger-sync (finding a rising zero-crossing and starting the
+    // sampled window there) exists to stop the LINEAR styles' trace from
+    // visibly jittering left-right frame to frame — x=0 is the screen's
+    // left edge, an unremarkable place for the trace to sit near zero.
+    //
+    // On RADIAL / RADIAL_GRADIENT, x=0 isn't an edge — radialSamples()
+    // wraps x=0..p.width onto angle=0..2π, so x=0 is one specific,
+    // fully-visible point on a continuous 360° shape. Pinning it to a
+    // zero-crossing EVERY frame means that one angle is always sampling
+    // an amplitude at (or extremely near) zero, permanently — a
+    // structural dead zone at a fixed position on the ring, not
+    // occasional flatness that moves around. That's what was reported as
+    // "one side only emits low end" / an asymmetric circle: it isn't a
+    // frequency-distribution issue (this whole sampling path is
+    // time-domain, not frequency-domain — see liveAmpAt's doc), it's this
+    // trigger point landing on the same angle every single frame.
+    // Skipping trigger-sync for just these two styles removes the
+    // permanent pinch; the trade-off is the pattern can "swim" very
+    // slightly frame to frame the way it briefly did on the linear styles
+    // before trigger-sync existed — far less objectionable than a fixed
+    // dead zone on a shape that's supposed to read as symmetric.
+    const isRadialStyle = renderStyle === 'RADIAL' || renderStyle === 'RADIAL_GRADIENT';
+    const triggerOffset = isRadialStyle ? 0 : findTriggerOffset(audio);
 
     const passes = glitching
       ? [

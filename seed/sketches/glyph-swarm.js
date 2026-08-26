@@ -161,11 +161,31 @@ export default function sketch(p, get) {
     if (word !== currentWord) {
       currentWord = word;
       targets = buildTargets(currentWord, embeddedFont);
+      // Reassigns every particle's targetIdx bounded to the NEW targets
+      // array — same as the resize branch above. This was already
+      // missing here before any of this round's font work (a latent
+      // bug: a big word -> small word swap could already have left
+      // particle.targetIdx pointing past the end of a newly-shrunk
+      // targets array), and the font-swap branch below inherited the
+      // exact same gap. The draw loop's only guard is `if
+      // (targets.length)` — is the array non-empty — not whether THIS
+      // particle's own index is still in range, so a stale
+      // out-of-bounds targetIdx reads `undefined` and `target.x` throws
+      // — exactly the reported "Cannot read properties of undefined
+      // (reading 'x')". Reinitializing particles on every targets
+      // rebuild, not just on resize, closes both the reported bug and
+      // this latent one with the same fix.
+      particles = initParticles(get('particleCount'));
     } else if (embeddedFont !== lastFont) {
       // Word's the same, but the resolved font object changed — either a
       // different font finished loading, or the person picked a
-      // different one. Same rebuild, just a different trigger.
+      // different one. Same rebuild, same reasoning as the word-change
+      // branch just above — a different font's glyph shapes very
+      // commonly produce a different mask point count (more/less pixel
+      // coverage), so this needs the identical reinit, not just the
+      // rebuild.
       targets = buildTargets(currentWord, embeddedFont);
+      particles = initParticles(get('particleCount'));
     }
     lastFont = embeddedFont;
 
