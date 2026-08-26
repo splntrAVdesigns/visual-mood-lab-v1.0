@@ -23,7 +23,25 @@ export const params = {
   waveAmplitude:    { kind: 'slider', label: 'Wave Amplitude', min: 0, max: 200, step: 1, default: 90, modulatable: true },
   waveFrequency:    { kind: 'slider', label: 'Wave Frequency', min: 0.5, max: 4, step: 0.05, default: 1, modulatable: true, hint: 'Idle oscillator speed (mock mode) or horizontal zoom on the captured buffer (most live styles). On Blocked Bands, this instead controls how fast the columns respond — 1 is the tuned default, lower is more mellow/smoothed, higher is snappier.' },
   harmonicMix:      { kind: 'slider', label: 'Harmonic Mix', min: 0, max: 1, step: 0.01, default: 0.25 },
-  layers:           { kind: 'stepper', label: 'Waveform Layers', min: 1, max: 7, step: 1, default: 2, hint: 'How many copies stack, offset from each other.', disabledIf: { equals: ['renderStyle', 'BLOCKED_BANDS'] } },
+  layers:           { kind: 'stepper', label: 'Waveform Layers', min: 1, max: 7, step: 1, default: 2, hint: 'How many copies stack, offset from each other.', disabledIf: { equals: ['renderStyle', 'BLOCKED_BANDS'] },
+                       // Keep this `3` in sync with DENSE_LAYER_CAP further
+                       // down this file by hand — can't reference the
+                       // constant directly here, since this params object
+                       // literal is evaluated before that declaration is
+                       // reached. Drives BOTH what the slider actually lets
+                       // you drag to on these four styles AND a cascading
+                       // reclamp in inspectorStore.setParam: switching
+                       // Render Style TO one of these while Layers is above
+                       // 3 snaps the stored value down immediately, so the
+                       // displayed number always matches what's actually
+                       // rendering rather than continuing to show 7 while
+                       // only 3 layers exist.
+                       maxIf: [{ if: { any: [
+                         { equals: ['renderStyle', 'RADIAL'] },
+                         { equals: ['renderStyle', 'RADIAL_GRADIENT'] },
+                         { equals: ['renderStyle', 'MIRRORED'] },
+                         { equals: ['renderStyle', 'PARTICLES'] },
+                       ] }, max: 3 }] },
   layerSpread:      { kind: 'slider', label: 'Layer Spread', min: 0, max: 1, step: 0.01, default: 0.3, hint: 'Spacing between stacked layers — on Blocked Bands, this instead spaces the columns apart from each other.' },
   lfoRate:          { kind: 'slider', label: 'LFO Rate', min: 0.02, max: 1, step: 0.01, default: 0.12 },
   glitchFrequency:  { kind: 'slider', label: 'Glitch Frequency', min: 0, max: 1, step: 0.01, default: 0.15, hint: 'Chance per second of a jolt burst.' },
@@ -614,17 +632,16 @@ export default function sketch(p, get) {
     // it" — the gradient existed, it just never had room to visibly
     // transition across the shape actually being filled.
     //
-    // layerOffset's own range (see the per-layer loop below) is
-    // symmetric, +/- baseRadius*0.15*layerSpread at the two extremes —
-    // computing that same bound here means the gradient's stops cover
-    // every layer's own ring, from the innermost layer's inner edge out
-    // to the outermost layer's peak deviation, so the full color
-    // transition is visible across whichever layers are actually drawn
-    // rather than being computed per layer (one shared gradient reused
-    // across the loop stays cheap regardless of layer count).
-    const maxLayerOffsetAbs = layerCount > 1 ? baseRadius * 0.15 * layerSpread : 0;
-    const gradientInner = Math.max(0, baseRadius - maxLayerOffsetAbs + minGap);
-    const gradientOuter = baseRadius + maxLayerOffsetAbs + minGap + maxDeviation;
+    // layerOffset's own range (see the per-layer loop below) now runs
+    // 0 .. +baseRadius*0.3*layerSpread — one-directional, matching
+    // Radial's own layerRadius formula (`baseRadius + i * ... `, i=0 at
+    // exactly baseRadius) rather than the symmetric +/-0.15 span this
+    // used to have. Computing that same bound here means the gradient's
+    // stops still cover every layer's own ring, from the anchor layer's
+    // inner edge out to the outermost layer's peak deviation.
+    const maxLayerOffset = layerCount > 1 ? baseRadius * 0.3 * layerSpread : 0;
+    const gradientInner = Math.max(0, baseRadius + minGap);
+    const gradientOuter = baseRadius + maxLayerOffset + minGap + maxDeviation;
     const gradient = ctx.createRadialGradient(
       ccx, ccy, gradientInner,
       ccx, ccy, gradientOuter,
@@ -636,20 +653,31 @@ export default function sketch(p, get) {
     // accumulated density in the middle of the stack stays roughly
     // constant instead of the whole halo just getting flatly brighter —
     // floor of 35 keeps a single layer (Layers = 1) clearly visible.
-    // The LAST layer drawn (i === layerCount - 1, the one that ends up
-    // on top since later draws composite over earlier ones) stays fully
-    // solid instead — reported as "top layer should remain solid, no
-    // transparency" — so there's always one crisp, fully-opaque ring
-    // anchoring the shape regardless of how many trailing/fainter
-    // layers sit behind it.
+    // Layer 0 — the anchor, sitting exactly at baseRadius with no
+    // offset — stays fully solid; layers 1..N-1 (the "additional" ones)
+    // build progressively fainter and OUTWARD from there. Was inverted:
+    // the solid anchor was `i === layerCount - 1` (the OUTERMOST layer
+    // under the old symmetric offset), meaning it read as "the original
+    // pushed to the outside, with additional layers stacking inside it"
+    // — exactly backwards from Radial's own structure, where layer 0 is
+    // the unmoved anchor and every additional layer builds strictly
+    // outward from it. Matches that now: layer 0 anchors in place,
+    // solid; everything else extends outside it.
     const passAlpha = Math.max(35, Math.round(150 / Math.max(1, layerCount)));
     ctx.save();
     ctx.fillStyle = gradient;
-    for (let i = 0; i < layerCount; i++) {
+    // Drawn in REVERSE index order — layerCount-1 down to 0 — so the
+    // solid anchor (i === 0, positioned at baseRadius with zero offset)
+    // is the LAST thing painted and ends up on top, fully crisp and
+    // unobscured, exactly as it was when it held that role at the
+    // opposite end of the index range. Only the draw order flipped here;
+    // the actual position/opacity assignment per index (set above) is
+    // unchanged by this loop direction.
+    for (let i = layerCount - 1; i >= 0; i--) {
       const raw = sampleLayer(i);
-      const layerOffset = layerCount > 1 ? (i / (layerCount - 1) - 0.5) * baseRadius * 0.3 * layerSpread : 0;
+      const layerOffset = layerCount > 1 ? (i / (layerCount - 1)) * baseRadius * 0.3 * layerSpread : 0;
       const ringBase = baseRadius + layerOffset;
-      ctx.globalAlpha = i === layerCount - 1 ? 1 : passAlpha / 255;
+      ctx.globalAlpha = i === 0 ? 1 : passAlpha / 255;
       ctx.beginPath();
       // Outer boundary — its own fully closed loop, not one continuous
       // path stitched together with the inner edge. That distinction is

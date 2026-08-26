@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { ControlSchema, ModState, Modulation, ParamState, ParamValue, SoundState } from '@/renderers/control-schema';
-import { coerce, defaultsOf, hydrate } from '@/renderers/control-schema';
+import { coerce, defaultsOf, effectiveMax, hydrate } from '@/renderers/control-schema';
 import { getPool } from '@/lib/render/pool';
 import { DEFAULT_SOUND_STATE, normalizeSoundState } from '@/lib/sound/types';
 import { useBoardStore } from './boardStore';
@@ -175,34 +175,74 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
     const control = schema?.controls.find((c) => c.id === id);
     if (!control) return;
 
-    const next = coerce(control, value);
+    const next = coerce(control, value, params);
     const nextDirty = new Set(dirty);
     nextDirty.add(id);
     const nextParams = { ...params, [id]: next };
+
+    // Cascading reclamp: this edit can change ANOTHER control's true max
+    // via that control's own maxIf (e.g. Waveform Layers capping lower
+    // once Render Style becomes Radial) — walk every control with a
+    // maxIf and re-clamp its stored value against the new effective max
+    // right now, in the same update, rather than waiting for the person
+    // to touch that control directly. Without this, the displayed value
+    // (7) could sit there being a flat-out lie about what's actually
+    // rendering (3) until something else happened to touch it.
+    // Excludes `id` itself — its own coerce() call above already
+    // clamped it against whatever its max is post-edit.
+    const clampedIds: string[] = [];
+    if (schema) {
+      for (const sibling of schema.controls) {
+        if (sibling.id === id || !sibling.maxIf) continue;
+        const cap = effectiveMax(sibling, nextParams);
+        const curVal = nextParams[sibling.id];
+        if (cap !== undefined && typeof curVal === 'number' && curVal > cap) {
+          nextParams[sibling.id] = cap;
+          nextDirty.add(sibling.id);
+          clampedIds.push(sibling.id);
+        }
+      }
+    }
+
     set({ params: nextParams, dirty: nextDirty });
 
     if (!itemId) return;
     const renderer = getPool().get(itemId);
     if (control.kind === 'trigger') {
       renderer?.emit(control.event);
-    } else {
-      renderer?.setParam(id, next);
-      // Keep the pool's baseParams in lockstep with every edit, not just
-      // resetParam's — setModState() restores any *non*-modulated control
-      // back to entry.baseParams whenever modulation is assigned/changed
-      // on ANY control on this asset (so an LFO-driven value doesn't
-      // freeze wherever it last landed). Without this, a plain edit here
-      // renders correctly in the moment but leaves baseParams stale at
-      // whatever it was hydrated as — invisible until the next modulation
-      // change silently force-restores the OLD value straight into the
-      // live renderer, even though the inspector (reading its own params
-      // state, untouched by any of this) still shows the edit as active.
-      // Confirmed exactly this way: HUD mode showing "Alpha" in the
-      // dropdown while the tile silently rendered Radial again the
-      // instant modulation was routed to an unrelated control.
-      getPool().setBaseParam(itemId, id, next);
-      persist(itemId, isSnapshot || !isOwned, nextParams);
+      // Triggers are fire-and-forget, never persisted (see pool.ts's
+      // own doc on the same distinction) — and can't produce a
+      // clampedIds entry themselves (a trigger's coerced value is
+      // always null, never a number a maxIf comparison would match),
+      // so there's nothing from the cascade above worth persisting
+      // here either. Matches the original early-return shape exactly.
+      return;
     }
+    renderer?.setParam(id, next);
+    // Keep the pool's baseParams in lockstep with every edit, not just
+    // resetParam's — setModState() restores any *non*-modulated control
+    // back to entry.baseParams whenever modulation is assigned/changed
+    // on ANY control on this asset (so an LFO-driven value doesn't
+    // freeze wherever it last landed). Without this, a plain edit here
+    // renders correctly in the moment but leaves baseParams stale at
+    // whatever it was hydrated as — invisible until the next modulation
+    // change silently force-restores the OLD value straight into the
+    // live renderer, even though the inspector (reading its own params
+    // state, untouched by any of this) still shows the edit as active.
+    // Confirmed exactly this way: HUD mode showing "Alpha" in the
+    // dropdown while the tile silently rendered Radial again the
+    // instant modulation was routed to an unrelated control.
+    getPool().setBaseParam(itemId, id, next);
+    // Any sibling(s) reclamped above need the exact same treatment —
+    // pushed to the live renderer and kept in baseParams lockstep — or
+    // the cascading fix above only ever touches the inspector's own
+    // display, leaving the actual live render still showing the old,
+    // uncapped value.
+    for (const clampedId of clampedIds) {
+      renderer?.setParam(clampedId, nextParams[clampedId]);
+      getPool().setBaseParam(itemId, clampedId, nextParams[clampedId]);
+    }
+    persist(itemId, isSnapshot || !isOwned, nextParams);
   },
 
   resetParam: (id) => {

@@ -216,6 +216,22 @@ interface ControlCommon {
    * current value still visible doesn't.
    */
   disabledIf?: ControlPredicate;
+  /**
+   * Overrides this control's declared `max` (slider/stepper only) when
+   * a predicate matches, evaluated in order — first match wins, falling
+   * back to the control's own `max` if none match. For a control whose
+   * true range depends on a sibling — e.g. Waveform Layers capping
+   * lower for certain Render Style values — rather than being fixed at
+   * authoring time. See effectiveMax() below. `inspectorStore`'s
+   * `setParam` re-clamps this control's stored value against the new
+   * effective max whenever a control referenced in one of these
+   * predicates changes, not just when the person touches this control
+   * directly — without that, a stale value (e.g. displaying 7 when
+   * only 3 can actually render) could linger after switching to a
+   * style that caps lower, until the person happened to touch the
+   * slider itself.
+   */
+  maxIf?: Array<{ if: ControlPredicate; max: number }>;
   /** Eligible for the modulation bus (audio / LFO / MIDI). */
   modulatable?: boolean;
   /** Only shown when this predicate passes against current ParamState. */
@@ -565,13 +581,22 @@ export function hydrate(schema: ControlSchema, saved: ParamState | undefined): P
 }
 
 /** Clamp / validate an incoming value against its control. Never throws. */
-export function coerce(control: Control, value: ParamValue): ParamValue {
+export function coerce(control: Control, value: ParamValue, state?: ParamState): ParamValue {
   switch (control.kind) {
     case 'slider':
     case 'stepper': {
       const n = typeof value === 'number' ? value : Number(value);
       if (!Number.isFinite(n)) return control.default;
-      const clamped = clamp(n, control.min, control.max);
+      // `state` is optional — hydrate() (building state from scratch)
+      // and applyModulation() (routing restricted to controls that
+      // don't currently use maxIf anyway) both call coerce() without
+      // it, and fall back to the plain declared max exactly as before.
+      // Only inspectorStore.setParam, which always has the current
+      // ParamState on hand, passes it — closing the gap where dragging
+      // this control directly (rather than switching to the render
+      // style that caps it) could still exceed its true current max.
+      const max = state ? (effectiveMax(control, state) ?? control.max) : control.max;
+      const clamped = clamp(n, control.min, max);
       return control.kind === 'stepper' ? Math.round(clamped) : clamped;
     }
     case 'toggle':
@@ -637,6 +662,21 @@ export function isVisible(control: Control, state: ParamState): boolean {
     reusing showIf inverted. */
 export function isDisabledByState(control: Control, state: ParamState): boolean {
   return control.disabledIf ? evalPredicate(control.disabledIf, state) : false;
+}
+
+/** Resolves a control's true current max — its own declared `max`
+    (slider/stepper only; undefined for every other kind) unless a
+    maxIf entry's predicate matches current state, in which case that
+    entry's max wins. First matching entry in the array wins; see
+    maxIf's own doc on ControlCommon for why this needs to exist
+    separately from the plain `max` field at all. */
+export function effectiveMax(control: Control, state: ParamState): number | undefined {
+  const base = control.kind === 'slider' || control.kind === 'stepper' ? control.max : undefined;
+  if (!control.maxIf) return base;
+  for (const entry of control.maxIf) {
+    if (evalPredicate(entry.if, state)) return entry.max;
+  }
+  return base;
 }
 
 export function evalPredicate(p: ControlPredicate, state: ParamState): boolean {
