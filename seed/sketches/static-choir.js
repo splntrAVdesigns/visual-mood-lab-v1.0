@@ -50,6 +50,7 @@ export const params = {
   tint:             { kind: 'color', label: 'Wave Tint', default: { r: 0.85, g: 0.9, b: 0.95, a: 1 } },
   tint2:            { kind: 'color', label: 'Wave Tint 2', default: { r: 0.55, g: 0.35, b: 0.95, a: 1 }, hint: 'Far end of the gradient.', showIf: { equals: ['renderStyle', 'GRADIENT_BANDS'] } },
   tint2Radial:      { kind: 'color', label: 'Wave Tint 2', default: { r: 0.55, g: 0.35, b: 0.95, a: 1 }, hint: 'Outer end of the gradient (or, in Blocked Bands, the high-band color — Wave Tint is the low end).', showIf: { any: [{ equals: ['renderStyle', 'RADIAL_GRADIENT'] }, { equals: ['renderStyle', 'BLOCKED_BANDS'] }] } },
+  layerTint:        { kind: 'color', label: 'Layer Color', default: { r: 0, g: 0.83, b: 1, a: 1 }, hint: 'Color for layers 2 and up — layer 1 (the solid anchor) keeps Wave Tint / Wave Tint 2.', showIf: { equals: ['renderStyle', 'RADIAL_GRADIENT'] } },
   ribbonThickness:  { kind: 'slider', label: 'Ribbon Thickness', min: 1, max: 24, step: 0.5, default: 10, hint: 'Max width at full amplitude.', showIf: { equals: ['renderStyle', 'RIBBON'] } },
   particleSize:     { kind: 'slider', label: 'Particle Size', min: 1, max: 10, step: 0.5, default: 3, showIf: { equals: ['renderStyle', 'PARTICLES'] } },
   particleSpacing:  { kind: 'stepper', label: 'Particle Spacing', min: 2, max: 16, step: 1, default: 5, unit: 'px', hint: 'Lower is denser.', showIf: { equals: ['renderStyle', 'PARTICLES'] } },
@@ -604,7 +605,7 @@ export default function sketch(p, get) {
    * computes each layer's own phase-varied samples, matching every
    * other style's mock behavior.
    */
-  function drawRadialGradientHalo(sampleLayer, steps, layerCount, baseRadius, layerSpread, ccx, ccy, colorNear, colorFar) {
+  function drawRadialGradientHalo(sampleLayer, steps, layerCount, baseRadius, layerSpread, ccx, ccy, colorNear, colorFar, layerColor) {
     const maxDeviation = baseRadius * 0.55;
     const ctx = p.drawingContext;
     // Guaranteed minimum gap before the outer edge is even allowed to
@@ -619,53 +620,43 @@ export default function sketch(p, get) {
     // collapse structurally impossible, the same fix as before.
     const minGap = Math.max(4, baseRadius * 0.06);
 
-    // Gradient stops now tied to the ring's own actual visible geometry,
-    // not an arbitrary wider span. The previous version ran the
-    // gradient from baseRadius*0.4 out to baseRadius+maxDeviation — a
-    // much bigger radius range than the ring itself ever occupies (the
-    // ring's true inner edge sits up near `baseRadius`, well past that
-    // 0.4 inner stop, and the inner-circle cutout below removes
-    // everything closer in than that anyway). The visible band only
-    // ever sampled a thin outer slice of that gradient's total
-    // transition, which is why it read as flat/solid instead of a real
-    // gradient. Reported as "should have an actual color gradient in
-    // it" — the gradient existed, it just never had room to visibly
-    // transition across the shape actually being filled.
-    //
-    // layerOffset's own range (see the per-layer loop below) now runs
-    // 0 .. +baseRadius*0.3*layerSpread — one-directional, matching
-    // Radial's own layerRadius formula (`baseRadius + i * ... `, i=0 at
-    // exactly baseRadius) rather than the symmetric +/-0.15 span this
-    // used to have. Computing that same bound here means the gradient's
-    // stops still cover every layer's own ring, from the anchor layer's
-    // inner edge out to the outermost layer's peak deviation.
+    // Gradient stops tied to the ring's own actual visible geometry.
+    // Tightened further per direct instruction ("closer to the circular
+    // path, slightly tighter") — the outer stop previously reached a
+    // full baseRadius*0.55 past the ring's own layer span (maxDeviation
+    // at its full, rarely-reached peak-amplitude value), so on typical
+    // signal the color transition was mostly happening in radius space
+    // the ring never actually occupies — a slow, barely-visible fade
+    // rather than a transition that reads as belonging to the ring
+    // itself. Halving that reach keeps the gradient anchored to
+    // radius the ring realistically reaches on normal audio, not its
+    // theoretical maximum.
     const maxLayerOffset = layerCount > 1 ? baseRadius * 0.3 * layerSpread : 0;
     const gradientInner = Math.max(0, baseRadius + minGap);
-    const gradientOuter = baseRadius + maxLayerOffset + minGap + maxDeviation;
+    const gradientOuter = baseRadius + maxLayerOffset + minGap + maxDeviation * 0.5;
     const gradient = ctx.createRadialGradient(
       ccx, ccy, gradientInner,
       ccx, ccy, gradientOuter,
     );
     gradient.addColorStop(0, `rgba(${colorNear.r * 255}, ${colorNear.g * 255}, ${colorNear.b * 255}, ${colorNear.a})`);
     gradient.addColorStop(1, `rgba(${colorFar.r * 255}, ${colorFar.g * 255}, ${colorFar.b * 255}, ${colorFar.a})`);
+    const layerFill = `rgba(${layerColor.r * 255}, ${layerColor.g * 255}, ${layerColor.b * 255}, ${layerColor.a})`;
 
     // Passes get proportionally lighter as Layers goes up, so the total
     // accumulated density in the middle of the stack stays roughly
-    // constant instead of the whole halo just getting flatly brighter —
-    // floor of 35 keeps a single layer (Layers = 1) clearly visible.
+    // constant instead of the whole halo just getting flatly brighter.
+    // Floor raised from 35 to 90 per direct instruction ("opacity is
+    // too drastic") — additional layers were dropping close to
+    // invisible at higher layer counts; still visibly fainter than the
+    // solid anchor, just not to the point of vanishing.
     // Layer 0 — the anchor, sitting exactly at baseRadius with no
-    // offset — stays fully solid; layers 1..N-1 (the "additional" ones)
-    // build progressively fainter and OUTWARD from there. Was inverted:
-    // the solid anchor was `i === layerCount - 1` (the OUTERMOST layer
-    // under the old symmetric offset), meaning it read as "the original
-    // pushed to the outside, with additional layers stacking inside it"
-    // — exactly backwards from Radial's own structure, where layer 0 is
-    // the unmoved anchor and every additional layer builds strictly
-    // outward from it. Matches that now: layer 0 anchors in place,
-    // solid; everything else extends outside it.
-    const passAlpha = Math.max(35, Math.round(150 / Math.max(1, layerCount)));
+    // offset — stays fully solid and keeps the existing Tint/Tint 2
+    // radial gradient; layers 1..N-1 (the "additional" ones) build
+    // progressively outward from there in the new, separate Layer
+    // Color, per direct instruction, so they read as clearly distinct
+    // from the anchor rather than fainter copies of the same color.
+    const passAlpha = Math.max(90, Math.round(180 / Math.max(1, layerCount)));
     ctx.save();
-    ctx.fillStyle = gradient;
     // Drawn in REVERSE index order — layerCount-1 down to 0 — so the
     // solid anchor (i === 0, positioned at baseRadius with zero offset)
     // is the LAST thing painted and ends up on top, fully crisp and
@@ -678,6 +669,7 @@ export default function sketch(p, get) {
       const layerOffset = layerCount > 1 ? (i / (layerCount - 1)) * baseRadius * 0.3 * layerSpread : 0;
       const ringBase = baseRadius + layerOffset;
       ctx.globalAlpha = i === 0 ? 1 : passAlpha / 255;
+      ctx.fillStyle = i === 0 ? gradient : layerFill;
       ctx.beginPath();
       // Outer boundary — its own fully closed loop, not one continuous
       // path stitched together with the inner edge. That distinction is
@@ -1250,7 +1242,7 @@ export default function sketch(p, get) {
       // trimmed from 100 for the same reason as Radial's own cut above.
       const steps = 70;
       const raw = radialSamples(cachedAmpFn, 0, steps, v => radialScale(Math.max(0, v), baseRadius, waveAmplitude));
-      drawRadialGradientHalo(() => raw, steps, radialLayerCount, baseRadius, layerSpread, p.width / 2, p.height / 2, tint, tint2Radial);
+      drawRadialGradientHalo(() => raw, steps, radialLayerCount, baseRadius, layerSpread, p.width / 2, p.height / 2, tint, tint2Radial, get('layerTint'));
     } else if (renderStyle === 'BLOCKED_BANDS') {
       const tint2Radial = get('tint2Radial');
       const peakHoldEnabled = get('peakHoldEnabled');
@@ -1487,7 +1479,7 @@ export default function sketch(p, get) {
             const steps = 70;
             drawRadialGradientHalo(
               (layer) => radialSamples(ampFn, layer, steps, v => radialScale(Math.max(0, v), baseRadius, waveAmplitude)),
-              steps, radialLayerCount, baseRadius, layerSpread, p.width / 2, p.height / 2, tint, tint2Radial,
+              steps, radialLayerCount, baseRadius, layerSpread, p.width / 2, p.height / 2, tint, tint2Radial, get('layerTint'),
             );
           }
         } else if (renderStyle === 'BLOCKED_BANDS') {

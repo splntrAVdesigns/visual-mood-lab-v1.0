@@ -1,6 +1,5 @@
 export const params = {
   text:          { kind: 'text', label: 'Word', default: 'BLOOM', maxLength: 12, hint: 'Up to 12 characters.' },
-  font:          { kind: 'font', label: 'Font', default: 'syne' },
   charSet:       { kind: 'select', label: 'Particle Glyph', options: [
                      { label: 'Dot', value: 'DOT' },
                      { label: 'Letters', value: 'LETTERS' },
@@ -44,12 +43,6 @@ export default function sketch(p, get) {
   let dragging = false;
   let lastDisturbTime = -999;
   let lastCharSet = null;
-  // The font materially changes the mask shape particles form (unlike
-  // type-wave/echo-type, where swapping fonts just redraws differently
-  // next frame) — tracked by object identity so a rebuild fires exactly
-  // once when p.getEmbeddedFont(id) actually resolves to something new,
-  // not on every frame the id merely stays the same while still loading.
-  let lastFont = null;
 
   // Debounces the particle-count rebuild so an in-progress slider drag
   // (which can emit intermediate values before settling on a step) doesn't
@@ -58,22 +51,28 @@ export default function sketch(p, get) {
   let pendingCountSince = 0;
   const REBUILD_DEBOUNCE_MS = 220;
 
-  function buildTargets(word, font) {
+  /**
+   * Font selection was tried in an earlier round and removed — this tile
+   * uses whatever the browser's default sans-serif is (no explicit
+   * `mask.textFont()` call at all, same as before font support existed).
+   * Not because embedding fonts didn't work in principle — three other
+   * typography tiles use the exact same shared bridge successfully — but
+   * because this tile's own word-shape mask is rebuilt via a p5.Graphics
+   * buffer, and font swaps there kept surfacing edge cases (a crash from
+   * a resized mask leaving particle indices out of bounds, then a
+   * regression from a since-reverted `mask.remove()` cleanup silently
+   * breaking every subsequent rebuild once caught by the safety net
+   * below) that weren't worth the feature for a tile whose actual point
+   * is the particle formation, not typography. Per direct instruction.
+   */
+  function buildTargets(word) {
     const w = p.width;
     const h = p.height;
-    // Dispose the previous mask before creating a new one — every
-    // rebuild (resize, word change, font change) was creating a fresh
-    // full-canvas-size p5.Graphics buffer with no cleanup of the one it
-    // replaced. Not the direct cause of the reported freeze (each one
-    // individually still worked), but a real accumulating leak across a
-    // session with several font swaps, and worth closing regardless.
-    if (mask && mask.remove) mask.remove();
     mask = p.createGraphics(w, h);
     mask.background(0);
     mask.fill(255);
     mask.noStroke();
     mask.textAlign(p.CENTER, p.CENTER);
-    mask.textFont(font || 'sans-serif');
     let fontSize = Math.min(w, h) * 0.22;
     mask.textSize(fontSize);
     mask.textStyle(p.BOLD);
@@ -99,23 +98,18 @@ export default function sketch(p, get) {
   }
 
   /**
-   * Wraps buildTargets() so a bad embedded font — a corrupt file, a
-   * malformed glyph, anything opentype.js chokes on when p5 hands it to
-   * a p5.Graphics buffer rather than the main canvas — can't take the
-   * whole sketch down with it. Without this, an exception anywhere in
-   * buildTargets() (or the mask.text()/loadPixels() calls inside it)
-   * propagates straight out of draw(), and once draw() throws once it
-   * stops being called again — every symptom in "frozen, no motion,
-   * word never forms, nothing reacts to any control" is exactly what a
-   * dead draw() loop looks like from the outside, regardless of which
-   * line actually threw. Falls back to whatever targets/particles
-   * already existed (last known good state) rather than an empty or
-   * partially-built array, and logs once so a real problem is still
-   * visible in devtools instead of silently doing nothing.
+   * Wraps buildTargets() so nothing in the mask-build/pixel-scan path can
+   * take the whole sketch down with it — once draw() throws it stops
+   * being called again, which is exactly what "frozen, no motion, word
+   * never updates" looks like from the outside, regardless of which line
+   * actually threw. Falls back to whatever targets already existed
+   * (last known good formation) rather than an empty array, and logs
+   * once so a real problem stays visible in devtools instead of quietly
+   * doing nothing forever.
    */
-  function safeRebuildTargets(word, font) {
+  function safeRebuildTargets(word) {
     try {
-      return buildTargets(word, font);
+      return buildTargets(word);
     } catch (err) {
       console.error('[glyph-swarm] buildTargets failed, keeping previous formation:', err);
       return targets;
@@ -145,8 +139,7 @@ export default function sketch(p, get) {
     currentWord = (String(get('text') || 'BLOOM').trim().slice(0, 12) || 'BLOOM').toUpperCase();
     lastW = p.width;
     lastH = p.height;
-    lastFont = typeof p.getEmbeddedFont === 'function' ? p.getEmbeddedFont(get('font')) : null;
-    targets = safeRebuildTargets(currentWord, lastFont);
+    targets = safeRebuildTargets(currentWord);
     particles = initParticles(get('particleCount'));
   };
 
@@ -165,12 +158,6 @@ export default function sketch(p, get) {
   p.touchMoved = () => { lastDisturbTime = p.millis() / 1000; return false; };
 
   p.draw = () => {
-    // See type-wave.js's identical guard doc for why this can be null.
-    // Resolved once up front so every rebuild path below (resize, word
-    // change, and the dedicated font-change check further down) all use
-    // the exact same reference for this frame.
-    const embeddedFont = typeof p.getEmbeddedFont === 'function' ? p.getEmbeddedFont(get('font')) : null;
-
     // p.windowResized only fires on a genuine browser `window resize`
     // event. Entering Fullscreen apparently resizes this sketch's canvas
     // through the host/sandbox bridge directly (a postMessage-driven call
@@ -183,7 +170,7 @@ export default function sketch(p, get) {
     if (p.width !== lastW || p.height !== lastH) {
       lastW = p.width;
       lastH = p.height;
-      targets = safeRebuildTargets(currentWord, embeddedFont);
+      targets = safeRebuildTargets(currentWord);
       particles = initParticles(get('particleCount'));
     }
 
@@ -191,34 +178,16 @@ export default function sketch(p, get) {
     const word = (rawText.slice(0, 12) || 'BLOOM').toUpperCase();
     if (word !== currentWord) {
       currentWord = word;
-      targets = safeRebuildTargets(currentWord, embeddedFont);
+      targets = safeRebuildTargets(currentWord);
       // Reassigns every particle's targetIdx bounded to the NEW targets
-      // array — same as the resize branch above. This was already
-      // missing here before any of this round's font work (a latent
-      // bug: a big word -> small word swap could already have left
-      // particle.targetIdx pointing past the end of a newly-shrunk
-      // targets array), and the font-swap branch below inherited the
-      // exact same gap. The draw loop's only guard is `if
-      // (targets.length)` — is the array non-empty — not whether THIS
-      // particle's own index is still in range, so a stale
-      // out-of-bounds targetIdx reads `undefined` and `target.x` throws
-      // — exactly the reported "Cannot read properties of undefined
-      // (reading 'x')". Reinitializing particles on every targets
-      // rebuild, not just on resize, closes both the reported bug and
-      // this latent one with the same fix.
-      particles = initParticles(get('particleCount'));
-    } else if (embeddedFont !== lastFont) {
-      // Word's the same, but the resolved font object changed — either a
-      // different font finished loading, or the person picked a
-      // different one. Same rebuild, same reasoning as the word-change
-      // branch just above — a different font's glyph shapes very
-      // commonly produce a different mask point count (more/less pixel
-      // coverage), so this needs the identical reinit, not just the
-      // rebuild.
-      targets = safeRebuildTargets(currentWord, embeddedFont);
+      // array — same as the resize branch above. A different word very
+      // commonly produces a different mask point count (more/fewer
+      // letters, different coverage), so without this, any particle
+      // whose targetIdx pointed past the end of the new (usually
+      // shorter) array would read `undefined` and throw the moment this
+      // word change landed — the original crash two rounds back.
       particles = initParticles(get('particleCount'));
     }
-    lastFont = embeddedFont;
 
     const wantCount = Math.round(get('particleCount') / 100) * 100;
     if (wantCount !== particles.length) {

@@ -576,16 +576,6 @@
   transition: opacity var(--dur-base) var(--ease);
 }
 
-.cardLiveDot {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
 .cardError {
   position: absolute;
   left: 0;
@@ -955,6 +945,17 @@
   align-items: center;
   gap: 3px;
   flex: none;
+}
+
+/* Mic's Field wraps its Toggle in a span for the native tooltip `title`
+   attribute — display: contents takes that span out of layout entirely,
+   so it can't affect where .soundToggleRow's flex-wrap breaks (a narrow
+   mobile row wrapping Mic onto its own line, out of step with its
+   siblings, is exactly the shape of bug an extra layout participant
+   like this causes). The tooltip itself is unaffected — `title` still
+   works on a display: contents element. */
+.micTooltipWrap {
+  display: contents;
 }
 
 /* ------------------------------------------------------------------ *

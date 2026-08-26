@@ -199,8 +199,6 @@ export function RendererStage({ asset, focused = false }: RendererStageProps) {
 
       <span ref={hostRef} className={s.cardCanvas} data-live={live ? 'true' : undefined} />
 
-      {state !== 'poster' && !error && <span className={s.cardLiveDot} aria-hidden="true" />}
-
       {error && (
         <span className={s.cardError} title={error}>
           {error.split('\n')[0].slice(0, 80)}

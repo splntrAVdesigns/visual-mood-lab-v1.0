@@ -175,7 +175,19 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
 
   const micField = (
     <Field label="Mic">
-      <span title="Lets Modulate react to your live microphone input. Audio is analyzed only — never recorded or sent anywhere.">
+      {/* display: contents (see the .micTooltipWrap rule) — this span
+          exists purely to carry the native `title` tooltip; without
+          that rule it's still a real flex participant sitting between
+          Field's layout and Toggle's, unlike every sibling toggle here
+          (Sound/Humanize/Swing), which put Toggle directly inside
+          Field with nothing in between. That's the one structural
+          difference Mic's Field has from the others in this row, and
+          exactly the kind of thing that can shift where a flex-wrap
+          row breaks on a narrow mobile width without it being obvious
+          from the CSS alone — display: contents removes the wrapper
+          from layout entirely so Mic's Field is structurally identical
+          to its siblings again, while keeping the tooltip. */}
+      <span className={s.micTooltipWrap} title="Lets Modulate react to your live microphone input. Audio is analyzed only — never recorded or sent anywhere.">
         <Toggle
           label="Mic"
           checked={micEnabled}
