@@ -51,6 +51,79 @@
           "binding": { "target": "uniform", "name": "u_strobeHardness", "glslType": "float" }
         }
       ]
+    },
+    {
+      "id": "linear-mirror",
+      "title": "Linear Mirror",
+      "family": "mirror",
+      "file": "linear-mirror.frag",
+      "hint": "Folds the frame across a line at an adjustable angle and offset.",
+      "params": [
+        {
+          "id": "angle",
+          "kind": "slider",
+          "label": "Angle",
+          "group": "params",
+          "hint": "Orientation of the mirror line, in degrees.",
+          "default": 0,
+          "min": 0,
+          "max": 360,
+          "step": 1,
+          "unit": "°",
+          "order": 0,
+          "modulatable": true,
+          "binding": { "target": "uniform", "name": "u_angle", "glslType": "float" }
+        },
+        {
+          "id": "offset",
+          "kind": "slider",
+          "label": "Offset",
+          "group": "params",
+          "hint": "Moves the mirror line off-center. 0 folds through the middle of the frame.",
+          "default": 0,
+          "min": -0.5,
+          "max": 0.5,
+          "step": 0.01,
+          "order": 1,
+          "modulatable": true,
+          "binding": { "target": "uniform", "name": "u_offset", "glslType": "float" }
+        }
+      ]
+    },
+    {
+      "id": "quad-mirror",
+      "title": "Quad Mirror",
+      "family": "mirror",
+      "file": "quad-mirror.frag",
+      "hint": "Folds all four quadrants around an adjustable center point into one — the classic 4-way mirror.",
+      "params": [
+        {
+          "id": "centerX",
+          "kind": "slider",
+          "label": "Center X",
+          "group": "params",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "order": 0,
+          "modulatable": true,
+          "binding": { "target": "uniform", "name": "u_centerX", "glslType": "float" }
+        },
+        {
+          "id": "centerY",
+          "kind": "slider",
+          "label": "Center Y",
+          "group": "params",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "order": 1,
+          "modulatable": true,
+          "binding": { "target": "uniform", "name": "u_centerY", "glslType": "float" }
+        }
+      ]
     }
   ]
 }

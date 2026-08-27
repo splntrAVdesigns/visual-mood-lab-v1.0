@@ -79,32 +79,38 @@ export default function sketch(p, get) {
    * below) that weren't worth the feature for a tile whose actual point
    * is the particle formation, not typography. Per direct instruction.
    *
-   * BUGFIX (post-Part-1 testing): console data now makes the actual
-   * failure mode unambiguous — the first rebuild after mount produces a
-   * healthy point count (4177 for a 3-letter word), and every rebuild
-   * after that produces exactly 0, silently, no exception. That's the
-   * signature of a second live p5.Graphics buffer failing to receive
-   * drawn content once one is already allocated — every previous
-   * rebuild left its buffer allocated and orphaned (reassigning `mask`
-   * without ever disposing what it pointed to). The `mask.remove()`
-   * cleanup mentioned above as "since-reverted" was tried in the
-   * font-swap version of this file, where it was entangled with async
-   * font loading racing against buffer disposal — genuinely plausible
-   * for THAT to corrupt things. This version has no font swapping at
-   * all (see the paragraph above), so that specific interaction can't
-   * be what breaks it here — worth trying the disposal again on its own,
-   * with the diagnostic below kept in place as a safety net either way.
+   * BUGFIX (post-Part-1 testing, round 2): the disposal theory above
+   * didn't hold up — `mask.remove()` was confirmed via console to throw
+   * every single time it's called (`TypeError: Cannot read properties of
+   * undefined (reading 'indexOf')`, inside p5's own `Element.remove()`),
+   * caught by the try/catch below and doing precisely nothing. That
+   * attempt never actually disposed anything in any round of testing.
+   * Reverted — it added a caught error to the console for zero benefit.
+   *
+   * What the data actually shows, unambiguously, once disposal is ruled
+   * out: a rebuild triggered from `setup()` — before the sketch's draw
+   * loop has run even once — consistently produces a healthy point count
+   * (7296+ for real words). A rebuild triggered from inside `draw()` —
+   * every live word-change, mid-frame, while the sketch's own per-frame
+   * rendering is active — consistently produces exactly 0, silently, no
+   * exception. That matches independently-reported behavior exactly:
+   * leaving the tile and reopening it re-runs `setup()` with whatever
+   * word is currently saved, and it renders correctly every time; only
+   * the live in-place edit path is broken. `buildTargets()` itself is
+   * identical code either way — the one confirmed difference is WHEN it
+   * runs relative to the active draw loop, not what it does.
+   *
+   * `scheduleRebuild()` below moves the actual rebuild work to the start
+   * of the NEXT frame via `requestAnimationFrame`, out of the mid-draw
+   * synchronous context and into the same "no rendering currently in
+   * flight" state `setup()` has — worth trying directly since it's the
+   * one variable the data confirms actually differs between the working
+   * and broken cases. The pixel-count diagnostic stays in place either
+   * way, so the next test is conclusive regardless of outcome.
    */
   function buildTargets(word) {
     const w = p.width;
     const h = p.height;
-    if (mask) {
-      try {
-        mask.remove();
-      } catch (err) {
-        console.error('[glyph-swarm] mask.remove() failed, continuing without disposal:', err);
-      }
-    }
     mask = p.createGraphics(w, h);
     mask.background(0);
     mask.fill(255);
@@ -168,34 +174,34 @@ export default function sketch(p, get) {
   function safeRebuildTargets(word) {
     try {
       const pts = buildTargets(word);
-      // TEMPORARY DIAGNOSTIC (remove once this is confirmed fixed) — every
-      // screenshot across testing so far, including the very first one
-      // with this sketch's own DEFAULT word at initial mount, has shown
-      // fully scattered particles with no formed shape. That pattern
-      // predates both of the last two fixes (word-change debounce, then
-      // commit-on-blur) — neither was ever going to fix "never forms any
-      // shape, for any word, including the default" if that's what's
-      // actually happening, since both fixes only changed WHEN a rebuild
-      // fires, not whether the mask pixel-scan that rebuild depends on is
-      // actually producing points. This makes that visible in the
-      // console instead of guessing a third time: if `pts.length` is
-      // consistently 0 (or near it), the bug is in buildTargets()'s mask/
-      // pixel-scan itself, not in the update-timing layers already fixed.
-      // If it's a healthy few thousand and the shape STILL doesn't
-      // visually appear, the far more likely explanation is that the
-      // cohesion physics (a slow, damped spring pulling from wherever a
-      // particle currently is toward its target — see the main loop's
-      // `particle.vx += (target.x - particle.x) * cohesion * 0.02`) just
-      // hasn't had enough time to visually converge yet when the
-      // screenshot was taken — on a full-screen canvas with 1400
-      // particles starting anywhere on it, that convergence can
-      // realistically take a couple of seconds, not instantly.
+      // DIAGNOSTIC, kept in place — confirmed the actual failure mode
+      // (see buildTargets()'s doc above): setup()-time rebuilds are
+      // healthy, draw()-time rebuilds were consistently 0. Left in so the
+      // next test is conclusive if scheduleRebuild() below isn't the
+      // full fix either.
       console.log('[glyph-swarm] rebuilt targets for', JSON.stringify(word), '—', pts.length, 'points');
       return pts;
     } catch (err) {
       console.error('[glyph-swarm] buildTargets failed, keeping previous formation:', err);
       return targets;
     }
+  }
+
+  /**
+   * Runs a target rebuild + particle reinit on the next animation frame
+   * instead of synchronously, right now, mid-draw-call. See buildTargets()'s
+   * doc above — this is the fix for the one confirmed difference between
+   * the working (setup()-time) and broken (draw()-time) rebuild paths.
+   * `word` is captured at call time rather than read fresh inside the
+   * callback, so a rebuild scheduled for "TOMMY" still rebuilds "TOMMY"
+   * even if `currentWord` has already moved on by the time the callback
+   * actually runs.
+   */
+  function scheduleRebuild(word) {
+    requestAnimationFrame(() => {
+      targets = safeRebuildTargets(word);
+      particles = initParticles(get('particleCount'));
+    });
   }
 
   function initParticles(count) {
@@ -252,8 +258,13 @@ export default function sketch(p, get) {
     if (p.width !== lastW || p.height !== lastH) {
       lastW = p.width;
       lastH = p.height;
-      targets = safeRebuildTargets(currentWord);
-      particles = initParticles(get('particleCount'));
+      // Deferred for the same reason the word-change branch below is —
+      // see scheduleRebuild()'s doc. This path runs from the exact same
+      // mid-draw context; no symptom has been specifically reported here,
+      // but resize is far rarer to trigger repeatedly than typing a word,
+      // so it's plausible the same bug exists here and just hasn't been
+      // noticed yet rather than genuinely not applying.
+      scheduleRebuild(currentWord);
     }
 
     const rawText = String(get('text') || 'BLOOM').trim();
@@ -265,15 +276,15 @@ export default function sketch(p, get) {
         pendingWordSince = now;
       } else if (now - pendingWordSince > REBUILD_DEBOUNCE_MS) {
         currentWord = word;
-        targets = safeRebuildTargets(currentWord);
-        // Reassigns every particle's targetIdx bounded to the NEW targets
-        // array — same as the resize branch above. A different word very
-        // commonly produces a different mask point count (more/fewer
-        // letters, different coverage), so without this, any particle
-        // whose targetIdx pointed past the end of the new (usually
-        // shorter) array would read `undefined` and throw the moment this
-        // word change landed — the original crash two rounds back.
-        particles = initParticles(get('particleCount'));
+        // The fix — see scheduleRebuild()'s doc and buildTargets()'s doc
+        // above for the full reasoning. Particle reinit moves inside the
+        // deferred callback too (scheduleRebuild does both together),
+        // for the same reason it always had to happen in the same pass
+        // as the targets rebuild: a particle's targetIdx has to be
+        // bounded against whichever targets array actually exists by the
+        // time it's assigned, and now that's the NEXT frame's array, not
+        // this frame's.
+        scheduleRebuild(currentWord);
         pendingWord = null;
       }
     } else {

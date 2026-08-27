@@ -815,7 +815,18 @@
    * was actually asked for; the earlier version's "type shrinks less
    * than chrome" idea was my own embellishment, not the request.
    */
-  --modpanel-scale: 0.85;
+  /**
+   * Retuned 0.85 -> 0.72 (post-Part-1 testing): explicitly requested for
+   * desktop specifically, mobile called out as already fine — and this
+   * variable can't touch mobile even if it wanted to. `embedded` mode
+   * (VfxPanel/ModulationPanel/SoundPanel's mobile-sheet path) returns
+   * just the inner content and never renders the `.modPanel` wrapper
+   * this scale is defined on, so mobile never sees this custom property
+   * at all; it falls through to the app's own base tokens, untouched,
+   * exactly as before. Scoping is by construction, not a media query
+   * that could drift out of sync with a breakpoint elsewhere.
+   */
+  --modpanel-scale: 0.72;
   --control-h: calc(var(--modpanel-scale) * 28px);
   --touch-target: calc(var(--modpanel-scale) * 36px);
   --step--2: calc(var(--modpanel-scale) * 0.6875rem);
