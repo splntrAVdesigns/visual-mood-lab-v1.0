@@ -57,10 +57,52 @@ export interface CompositeInput {
   time: number;
 }
 
-const RESERVED_EFFECT_UNIFORMS = new Set(['u_time', 'u_resolution', 'u_fxMix', 'u_fxSource']);
+const RESERVED_EFFECT_UNIFORMS = new Set(['u_time', 'u_resolution', 'u_fxMix', 'u_fxSource', 'u_echoBuffer']);
 
 const relayCanvases = new Map<string, HTMLCanvasElement>();
 const relayCtx = new Map<string, CanvasRenderingContext2D>();
+
+/**
+ * Echo/feedback buffer — Phase 4.96 Part 2. A per-card persistent canvas
+ * (never cleared between frames, unlike the ping-pong relay canvases
+ * above, which ARE meant to reset each call) that accumulates a fading
+ * trail of the chain's own recent output. Reuses the exact "fade toward
+ * black, draw new content on top, re-upload as a texture" technique the
+ * seed library's own feedback-trails shaders already use for the same
+ * kind of accumulation, just done in 2D canvas space here since the echo
+ * buffer lives alongside the relay canvases rather than as a GLSL-side
+ * backbuffer.
+ *
+ * Deliberately NOT wired to every effect — "Strobe is the first and only
+ * consumer" per the original Part 2 scope, checked explicitly in
+ * compositeEffects() below via the effect instance's own `echo` param
+ * rather than a generic `usesEcho` flag on EffectDefinition. The buffer
+ * mechanism itself is generic by construction, though: any future effect
+ * that declares a `uniform sampler2D u_echoBuffer;` gets it automatically
+ * once it's part of an active chain — see the RESERVED_EFFECT_UNIFORMS
+ * entry and the wrapper template below.
+ */
+const echoCanvases = new Map<string, HTMLCanvasElement>();
+const echoCtx = new Map<string, CanvasRenderingContext2D>();
+const ECHO_DECAY = 0.85; // fraction of old trail content kept each frame
+
+function getEcho(cardId: string, w: number, h: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
+  let canvas = echoCanvases.get(cardId);
+  let ctx = echoCtx.get(cardId);
+  if (!canvas || !ctx) {
+    canvas = document.createElement('canvas');
+    ctx = canvas.getContext('2d')!; // alpha needed — the trail fades via alpha blending
+    echoCanvases.set(cardId, canvas);
+    echoCtx.set(cardId, ctx);
+  }
+  if (canvas.width !== w || canvas.height !== h) {
+    // Resizing a canvas clears it — correct here, since stale trail
+    // content at the wrong dimensions would just look broken, not useful.
+    canvas.width = w;
+    canvas.height = h;
+  }
+  return { canvas, ctx };
+}
 
 function getRelay(key: string, w: number, h: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
   let canvas = relayCanvases.get(key);
@@ -88,17 +130,21 @@ export function disposeEffectsFor(cardId: string): void {
   relayCanvases.delete(`${cardId}:b`);
   relayCtx.delete(`${cardId}:a`);
   relayCtx.delete(`${cardId}:b`);
+  echoCanvases.delete(cardId);
+  echoCtx.delete(cardId);
 }
 
 const PASSTHROUGH_VERTEX_WRAP = (body: string) => `#version 300 es
 precision highp float;
 uniform sampler2D u_fxSource;
+uniform sampler2D u_echoBuffer;
 uniform float u_fxMix;
 uniform float u_time;
 uniform vec2 u_resolution;
 out vec4 fragColor;
 
 vec4 fxSample(vec2 uv) { return texture(u_fxSource, uv); }
+vec4 fxEcho(vec2 uv) { return texture(u_echoBuffer, uv); }
 
 ${body}
 
@@ -143,6 +189,20 @@ export function compositeEffects(
   const w = Math.max(1, Math.round(input.width));
   const h = Math.max(1, Math.round(input.height));
 
+  // Echo buffer: only maintained when something in the active chain
+  // actually wants it (currently just Dark Strobe with its own `echo`
+  // param above 0) — no point paying for an extra canvas + texture
+  // upload + draw every frame on chains that never read it. Read BEFORE
+  // this frame's passes run — it holds LAST frame's trail; updated with
+  // THIS frame's result only after the loop below, so a pass never reads
+  // its own not-yet-produced output.
+  const usesEcho = active.some((i) => i.effectType === 'dark-strobe' && typeof i.params.echo === 'number' && i.params.echo > 0);
+  let echoTex: WebGLTexture | null = null;
+  if (usesEcho) {
+    const { canvas: echoCanvas } = getEcho(input.cardId, w, h);
+    echoTex = stage.uploadTexture(`${input.cardId}:echo`, echoCanvas, { force: true });
+  }
+
   // Pass 0's input is the tile's own live frame — captured with force:true
   // for the same reason ShaderRenderer's backbuffer needs it: `source` is
   // the same element reference every tick, only its pixel content changes.
@@ -169,6 +229,13 @@ export function compositeEffects(
 
     const region = stage.draw(result.program, w, h, (set) => {
       set('u_fxSource', currentTex!);
+      // Bound unconditionally, same as u_time/u_resolution below — a
+      // shader that never declares u_echoBuffer just has this location
+      // resolve to null and the call is a no-op, no branching needed per
+      // effect. Falls back to the source texture itself when no echo
+      // exists yet (first frame, or nothing in the chain wants it) so
+      // fxEcho() never samples an unbound/garbage texture.
+      set('u_echoBuffer', echoTex ?? currentTex!);
       set('u_fxMix', instance.mix);
       set('u_time', input.time);
       set('u_resolution', [w, h]);
@@ -199,6 +266,26 @@ export function compositeEffects(
       currentTex = stage.uploadTexture(relayKey, relayCanvas, { force: true });
       relayToggle = relayToggle === 'a' ? 'b' : 'a';
     }
+  }
+
+  // Update the trail for NEXT frame, from THIS frame's final result —
+  // `dest` already holds it, already correctly oriented (this is the
+  // on-screen canvas, not a GL-space region), so no flip needed here.
+  // Fade old content toward transparent-black, then draw the new frame
+  // on top at reduced alpha so it accumulates as a ghosting trail rather
+  // than replacing the buffer outright — the same technique the seed
+  // library's own feedback-trails shaders use, done in 2D canvas space
+  // since this buffer lives here rather than as a GLSL backbuffer.
+  if (usesEcho) {
+    const { ctx: echoCtx2d } = getEcho(input.cardId, w, h);
+    echoCtx2d.save();
+    echoCtx2d.globalCompositeOperation = 'source-over';
+    echoCtx2d.globalAlpha = 1;
+    echoCtx2d.fillStyle = `rgba(0, 0, 0, ${1 - ECHO_DECAY})`;
+    echoCtx2d.fillRect(0, 0, w, h);
+    echoCtx2d.globalAlpha = ECHO_DECAY;
+    echoCtx2d.drawImage(dest, 0, 0, w, h);
+    echoCtx2d.restore();
   }
 }
 

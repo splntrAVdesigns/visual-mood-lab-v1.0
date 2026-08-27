@@ -49,6 +49,20 @@
           "order": 2,
           "modulatable": true,
           "binding": { "target": "uniform", "name": "u_strobeHardness", "glslType": "float" }
+        },
+        {
+          "id": "echo",
+          "kind": "slider",
+          "label": "Echo",
+          "group": "params",
+          "hint": "Fading trail of recent frames, ghosting through the strobe's dark gaps. 0 disables it entirely — no extra cost when off.",
+          "default": 0,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "order": 3,
+          "modulatable": true,
+          "binding": { "target": "uniform", "name": "u_echoAmount", "glslType": "float" }
         }
       ]
     },
@@ -122,6 +136,141 @@
           "order": 1,
           "modulatable": true,
           "binding": { "target": "uniform", "name": "u_centerY", "glslType": "float" }
+        }
+      ]
+    },
+    {
+      "id": "invert",
+      "title": "Invert",
+      "family": "mirror",
+      "file": "invert.frag",
+      "hint": "Point reflection through an adjustable center — completes the Linear/Quad/Invert mirror family.",
+      "params": [
+        {
+          "id": "centerX",
+          "kind": "slider",
+          "label": "Center X",
+          "group": "params",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "order": 0,
+          "modulatable": true,
+          "binding": { "target": "uniform", "name": "u_centerX", "glslType": "float" }
+        },
+        {
+          "id": "centerY",
+          "kind": "slider",
+          "label": "Center Y",
+          "group": "params",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "order": 1,
+          "modulatable": true,
+          "binding": { "target": "uniform", "name": "u_centerY", "glslType": "float" }
+        }
+      ]
+    },
+    {
+      "id": "math-warp",
+      "title": "Math Warp",
+      "family": "warp",
+      "file": "math-warp.frag",
+      "hint": "Parametric domain warps — Quadratic is the T(x,y) = [x+y, x²−y²] transform; Swirl a vortex fold. More formulas can be added later without growing this list.",
+      "params": [
+        {
+          "id": "mode",
+          "kind": "select",
+          "label": "Formula",
+          "group": "params",
+          "default": "0",
+          "valueType": "number",
+          "options": [
+            { "value": "0", "label": "Quadratic" },
+            { "value": "1", "label": "Swirl" }
+          ],
+          "order": 0,
+          "binding": { "target": "uniform", "name": "u_warpMode", "glslType": "float" }
+        },
+        {
+          "id": "amount",
+          "kind": "slider",
+          "label": "Amount",
+          "group": "params",
+          "hint": "Blend between the untouched frame and the fully-warped result.",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "order": 1,
+          "modulatable": true,
+          "binding": { "target": "uniform", "name": "u_amount", "glslType": "float" }
+        },
+        {
+          "id": "scale",
+          "kind": "slider",
+          "label": "Scale",
+          "group": "params",
+          "hint": "Zoom of the warp field — smaller values pull the formula's detail wider across the frame.",
+          "default": 1.5,
+          "min": 0.2,
+          "max": 4,
+          "step": 0.01,
+          "order": 2,
+          "modulatable": true,
+          "binding": { "target": "uniform", "name": "u_scale", "glslType": "float" }
+        }
+      ]
+    },
+    {
+      "id": "hue-shift",
+      "title": "Hue Shift LUT",
+      "family": "color",
+      "file": "hue-shift.frag",
+      "hint": "HSV hue/saturation/brightness grade. Shader-based, not a texture LUT yet — see the shader's own doc for the scoping note.",
+      "params": [
+        {
+          "id": "hue",
+          "kind": "slider",
+          "label": "Hue",
+          "group": "params",
+          "default": 0,
+          "min": 0,
+          "max": 360,
+          "step": 1,
+          "unit": "°",
+          "order": 0,
+          "modulatable": true,
+          "binding": { "target": "uniform", "name": "u_hue", "glslType": "float" }
+        },
+        {
+          "id": "saturation",
+          "kind": "slider",
+          "label": "Saturation",
+          "group": "params",
+          "default": 1,
+          "min": 0,
+          "max": 2,
+          "step": 0.01,
+          "order": 1,
+          "modulatable": true,
+          "binding": { "target": "uniform", "name": "u_saturation", "glslType": "float" }
+        },
+        {
+          "id": "brightness",
+          "kind": "slider",
+          "label": "Brightness",
+          "group": "params",
+          "default": 1,
+          "min": 0,
+          "max": 2,
+          "step": 0.01,
+          "order": 2,
+          "modulatable": true,
+          "binding": { "target": "uniform", "name": "u_brightness", "glslType": "float" }
         }
       ]
     }

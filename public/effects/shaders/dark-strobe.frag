@@ -15,9 +15,12 @@
 uniform float u_strobeRate;      // Hz — cycles per second
 uniform float u_strobeDuty;      // 0..1 — fraction of each cycle held black
 uniform float u_strobeHardness;  // 0..1 — 0 = smooth crossfade, 1 = hard cut
+uniform float u_echoAmount;      // 0..1 — Phase 4.96 Part 2: how much of the
+                                  // fading trail (fxEcho) ghosts through
 
 vec4 fxMain(vec2 uv) {
   vec4 src = fxSample(uv);
+  vec4 echo = fxEcho(uv);
 
   float phase = fract(u_time * u_strobeRate);
   float onWidth = 1.0 - u_strobeDuty;
@@ -28,5 +31,12 @@ vec4 fxMain(vec2 uv) {
   float edge = mix(0.2, 0.002, u_strobeHardness);
   float lit = 1.0 - smoothstep(onWidth - edge, onWidth + edge, phase);
 
-  return vec4(src.rgb * lit, src.a);
+  vec3 strobed = src.rgb * lit;
+  // Echo ghosts through most visibly during the black portion of the
+  // cycle (1.0 - lit near 1 there) and barely shows during the lit
+  // portion — the whole reason to pair strobe with a trail at all is the
+  // afterimage flashing through the dark gaps, not sitting flatly under
+  // a fully-lit frame where it wouldn't read as anything distinct.
+  vec3 withEcho = mix(strobed, max(strobed, echo.rgb), u_echoAmount * (1.0 - lit));
+  return vec4(withEcho, src.a);
 }

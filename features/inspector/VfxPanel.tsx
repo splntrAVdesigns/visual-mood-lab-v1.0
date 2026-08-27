@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
-import { Button, ChevronDownIcon, ChevronRightIcon, CloseIcon, Field, IconButton, Slider, Toggle, Tooltip, formatValue } from '@/components/ui';
+import { useState, type ReactNode } from 'react';
+import { Button, ChevronDownIcon, ChevronRightIcon, CloseIcon, Field, IconButton, Select, Slider, Toggle, Tooltip, formatValue } from '@/components/ui';
 import { listEffectDefinitions, getEffectDefinition, getEffectSchema } from '@/lib/effects/registry';
 import { MAX_EFFECTS_PER_CHAIN } from '@/lib/effects/types';
 import type { EffectInstance } from '@/lib/effects/types';
-import type { Modulation } from '@/renderers/control-schema';
+import type { Modulation, ParamValue } from '@/renderers/control-schema';
 import { useTrackLoaded, useMicEnabled } from '@/lib/hooks/useTrackState';
 import { ModRow } from './ModulationPanel';
 import { sourceMeta } from '@/lib/modulation/bus';
@@ -45,10 +45,8 @@ interface VfxPanelProps {
  * a control is currently modulated, which is the ASSET's mod state keyed
  * by the asset's own control ids — an effect param id ("rate") could
  * collide with an unrelated asset param of the same name and read the
- * wrong modulation state entirely. Every param Dark Strobe declares is a
- * plain slider, so this renders those directly with Field+Slider instead
- * — worth generalizing to the full ControlRow dispatch (color/toggle/
- * select kinds) once an effect that actually needs one of those ships.
+ * wrong modulation state entirely. Renders slider/select/toggle kinds
+ * directly instead (color still not handled — no effect needs it yet).
  */
 export function VfxPanel({ itemId, onClose, embedded = false }: VfxPanelProps) {
   const effects = useInspectorStore((st) => st.effects);
@@ -174,7 +172,7 @@ function VfxRow({
   count: number;
   onEnabledChange: (enabled: boolean) => void;
   onMixChange: (mix: number) => void;
-  onParamChange: (paramId: string, value: number) => void;
+  onParamChange: (paramId: string, value: ParamValue) => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   onRemove: () => void;
@@ -208,15 +206,17 @@ function VfxRow({
       {schema && (
         <div className={s.modPanelBody}>
           {schema.controls
-            .filter((c) => c.kind === 'slider')
+            .filter((c) => c.kind === 'slider' || c.kind === 'select' || c.kind === 'toggle')
             .map((control) => {
               const isMix = control.id === 'mix';
-              const value = isMix ? instance.mix : (typeof instance.params[control.id] === 'number' ? (instance.params[control.id] as number) : control.default);
+              const raw = isMix ? instance.mix : instance.params[control.id];
               const activeMod = instance.mod[control.id];
               const modExpanded = expandedModParamId === control.id;
 
-              return (
-                <div key={control.id}>
+              let field: ReactNode;
+              if (control.kind === 'slider') {
+                const value = typeof raw === 'number' ? raw : control.default;
+                field = (
                   <Field label={control.label} value={formatValue(value, control.step ?? 0.01)}>
                     <Slider
                       label={control.label}
@@ -227,6 +227,32 @@ function VfxRow({
                       onChange={(v) => (isMix ? onMixChange(v) : onParamChange(control.id, v))}
                     />
                   </Field>
+                );
+              } else if (control.kind === 'select') {
+                const value = typeof raw === 'string' ? raw : control.default;
+                field = (
+                  <Field label={control.label}>
+                    <Select
+                      label={control.label}
+                      value={value}
+                      options={control.options}
+                      onChange={(v) => onParamChange(control.id, v)}
+                    />
+                  </Field>
+                );
+              } else {
+                // toggle
+                const value = typeof raw === 'boolean' ? raw : control.default;
+                field = (
+                  <Field label={control.label}>
+                    <Toggle checked={value} label={control.label} onChange={(v) => onParamChange(control.id, v)} />
+                  </Field>
+                );
+              }
+
+              return (
+                <div key={control.id}>
+                  {field}
                   {control.modulatable && (
                     <div className={s.vfxModSection} data-routed={activeMod ? 'true' : undefined}>
                       <Tooltip content={activeMod ? `Modulated — ${sourceMeta(activeMod.source)?.label}` : `Modulate ${control.label}`}>
