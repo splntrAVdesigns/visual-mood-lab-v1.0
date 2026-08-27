@@ -324,7 +324,20 @@
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-size: var(--step--1);
+  /* max(16px, ...) rather than just swapping the token: iOS/Android auto-
+     zoom the viewport on focus for any input computing under 16px, which
+     is what was happening here (Glyph Swarm's Word field, and any other
+     text control using this shared style) — the browser assumes text
+     smaller than that is too small to comfortably edit. That auto-zoom
+     also isn't just an annoyance: it changes the effective
+     devicePixelRatio while the keyboard is up, which is what was feeding
+     the ResizeObserver → pixelDensity drift behind the Glyph Swarm 0-point
+     rebuild bug (see glyph-swarm.js's buildTargets()). Using max() keeps
+     --step--1's fluid sizing as the floor is never crossed — this only
+     overrides the computed value on viewports where the token would have
+     resolved below 16px; desktop is almost certainly unaffected since
+     --step--1 there typically already exceeds 16px.  */
+  font-size: max(16px, var(--step--1));
   color: var(--text);
   transition: border-color var(--dur-fast) var(--ease);
 }

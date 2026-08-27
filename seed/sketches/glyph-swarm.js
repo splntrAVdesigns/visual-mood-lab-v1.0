@@ -69,49 +69,51 @@ export default function sketch(p, get) {
    * Font selection was tried in an earlier round and removed — this tile
    * uses whatever the browser's default sans-serif is (no explicit
    * `mask.textFont()` call at all, same as before font support existed).
-   * Not because embedding fonts didn't work in principle — three other
-   * typography tiles use the exact same shared bridge successfully — but
-   * because this tile's own word-shape mask is rebuilt via a p5.Graphics
-   * buffer, and font swaps there kept surfacing edge cases (a crash from
-   * a resized mask leaving particle indices out of bounds, then a
-   * regression from a since-reverted `mask.remove()` cleanup silently
-   * breaking every subsequent rebuild once caught by the safety net
-   * below) that weren't worth the feature for a tile whose actual point
-   * is the particle formation, not typography. Per direct instruction.
+   * `mask.remove()` was also tried as a cleanup step and reverted — it threw
+   * on every call (`TypeError` inside p5's own `Element.remove()`), caught
+   * by the try/catch below and doing nothing, so it's not present here.
    *
-   * BUGFIX (post-Part-1 testing, round 2): the disposal theory above
-   * didn't hold up — `mask.remove()` was confirmed via console to throw
-   * every single time it's called (`TypeError: Cannot read properties of
-   * undefined (reading 'indexOf')`, inside p5's own `Element.remove()`),
-   * caught by the try/catch below and doing precisely nothing. That
-   * attempt never actually disposed anything in any round of testing.
-   * Reverted — it added a caught error to the console for zero benefit.
-   *
-   * What the data actually shows, unambiguously, once disposal is ruled
-   * out: a rebuild triggered from `setup()` — before the sketch's draw
-   * loop has run even once — consistently produces a healthy point count
-   * (7296+ for real words). A rebuild triggered from inside `draw()` —
-   * every live word-change, mid-frame, while the sketch's own per-frame
-   * rendering is active — consistently produces exactly 0, silently, no
-   * exception. That matches independently-reported behavior exactly:
-   * leaving the tile and reopening it re-runs `setup()` with whatever
-   * word is currently saved, and it renders correctly every time; only
-   * the live in-place edit path is broken. `buildTargets()` itself is
-   * identical code either way — the one confirmed difference is WHEN it
-   * runs relative to the active draw loop, not what it does.
-   *
-   * `scheduleRebuild()` below moves the actual rebuild work to the start
-   * of the NEXT frame via `requestAnimationFrame`, out of the mid-draw
-   * synchronous context and into the same "no rendering currently in
-   * flight" state `setup()` has — worth trying directly since it's the
-   * one variable the data confirms actually differs between the working
-   * and broken cases. The pixel-count diagnostic stays in place either
-   * way, so the next test is conclusive regardless of outcome.
+   * RESOLVED: word changes typed in live (as opposed to a word loaded at
+   * setup()) were rebuilding a mask with 0 usable points, freezing the
+   * formation. Root cause was pixel-density drift, not draw-loop timing —
+   * see the `mask.pixelDensity(1)` call below for the full explanation.
    */
   function buildTargets(word) {
     const w = p.width;
     const h = p.height;
     mask = p.createGraphics(w, h);
+    // ROOT CAUSE (confirmed): createGraphics() inherits whatever
+    // p.pixelDensity() the OUTER sketch is running at that instant — it is
+    // not fixed for the sketch's lifetime. The host (p5.renderer.ts) watches
+    // this tile's container with a ResizeObserver and forwards a live
+    // `pixelRatio: window.devicePixelRatio` to the sandbox on every layout
+    // resize. On mobile, focusing the Word input triggers the browser's
+    // auto-zoom-on-input (font-size < 16px), which changes the effective
+    // devicePixelRatio for as long as the keyboard is up — and that reverts
+    // (another resize) at the exact moment the user taps out, which is also
+    // exactly when TextControl.tsx commits the new word. If the sandbox
+    // applies that forwarded ratio via p.pixelDensity() (directly, or as a
+    // side effect of handling the resize message), any createGraphics()
+    // call made afterward — like this one, on the very next word change —
+    // silently allocates a buffer at width*density × height*density instead
+    // of width × height. The scan loop below indexes with `4 * (y * w + x)`
+    // assuming 1px-per-unit; at density 2 that reads the wrong bytes for
+    // every (x, y) and finds ~0 lit pixels even though the mask itself
+    // rendered the word correctly — only the scan's indexing was wrong.
+    // That's the whole "type a word, it
+    // freezes, 0 points" bug: setup()'s first-ever buildTargets() call
+    // always ran before any resize had propagated (so density was still 1,
+    // hence "healthy"); every live in-place word edit ran after at least
+    // one resize round trip had already bumped it. The earlier
+    // requestAnimationFrame deferral (scheduleRebuild) targeted "runs
+    // inside draw() vs setup()" as the variable, which is why it didn't
+    // fix this — that was a coincidental correlation, not the actual cause.
+    // Locking density here removes the dependency on the outer canvas's
+    // density entirely: this is a hit-test mask sampled every 3rd pixel
+    // anyway, so there's no benefit to rasterizing it at retina resolution,
+    // and it's correct no matter what the host does to p.pixelDensity()
+    // around it, now or in the future.
+    mask.pixelDensity(1);
     mask.background(0);
     mask.fill(255);
     mask.noStroke();
@@ -128,27 +130,6 @@ export default function sketch(p, get) {
 
     mask.text(word, w / 2, h / 2);
     mask.loadPixels();
-
-    // TEMPORARY DIAGNOSTIC — remove once confirmed fixed. If the
-    // mask.remove() fix above isn't sufficient on its own, this
-    // distinguishes the two remaining possibilities cleanly: pixels.length
-    // near 0/undefined means the buffer itself never got sized or filled
-    // correctly (a resource/allocation problem); a full-length array of
-    // all-dark values means the buffer is fine but the text draw call
-    // isn't actually landing pixels into it (a text-rendering problem) —
-    // genuinely different fixes depending on which. Direct loop over the
-    // typed array rather than Array.from()+filter — this can be several
-    // million entries on a full-screen canvas, no reason to copy it just
-    // to count.
-    let filled = 0;
-    if (mask.pixels) {
-      for (let i = 0; i < mask.pixels.length; i += 4) {
-        if (mask.pixels[i] > 128) filled++;
-      }
-    } else {
-      filled = -1;
-    }
-    console.log('[glyph-swarm] mask', mask.width, 'x', mask.height, 'pixels.length=', mask.pixels ? mask.pixels.length : 'MISSING', 'lit-pixels=', filled);
 
     const pts = [];
     const step = 3;
@@ -173,14 +154,7 @@ export default function sketch(p, get) {
    */
   function safeRebuildTargets(word) {
     try {
-      const pts = buildTargets(word);
-      // DIAGNOSTIC, kept in place — confirmed the actual failure mode
-      // (see buildTargets()'s doc above): setup()-time rebuilds are
-      // healthy, draw()-time rebuilds were consistently 0. Left in so the
-      // next test is conclusive if scheduleRebuild() below isn't the
-      // full fix either.
-      console.log('[glyph-swarm] rebuilt targets for', JSON.stringify(word), '—', pts.length, 'points');
-      return pts;
+      return buildTargets(word);
     } catch (err) {
       console.error('[glyph-swarm] buildTargets failed, keeping previous formation:', err);
       return targets;
@@ -189,13 +163,13 @@ export default function sketch(p, get) {
 
   /**
    * Runs a target rebuild + particle reinit on the next animation frame
-   * instead of synchronously, right now, mid-draw-call. See buildTargets()'s
-   * doc above — this is the fix for the one confirmed difference between
-   * the working (setup()-time) and broken (draw()-time) rebuild paths.
-   * `word` is captured at call time rather than read fresh inside the
-   * callback, so a rebuild scheduled for "TOMMY" still rebuilds "TOMMY"
-   * even if `currentWord` has already moved on by the time the callback
-   * actually runs.
+   * instead of synchronously, right now, mid-draw-call. This does NOT fix
+   * the 0-points bug (that was pixel-density drift — see buildTargets()'s
+   * `mask.pixelDensity(1)`); it's independently worth keeping so a rebuild
+   * never blocks the current frame's render. `word` is captured at call
+   * time rather than read fresh inside the callback, so a rebuild scheduled
+   * for "TOMMY" still rebuilds "TOMMY" even if `currentWord` has already
+   * moved on by the time the callback actually runs.
    */
   function scheduleRebuild(word) {
     requestAnimationFrame(() => {
