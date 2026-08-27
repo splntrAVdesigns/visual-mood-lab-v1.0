@@ -78,10 +78,33 @@ export default function sketch(p, get) {
    * breaking every subsequent rebuild once caught by the safety net
    * below) that weren't worth the feature for a tile whose actual point
    * is the particle formation, not typography. Per direct instruction.
+   *
+   * BUGFIX (post-Part-1 testing): console data now makes the actual
+   * failure mode unambiguous — the first rebuild after mount produces a
+   * healthy point count (4177 for a 3-letter word), and every rebuild
+   * after that produces exactly 0, silently, no exception. That's the
+   * signature of a second live p5.Graphics buffer failing to receive
+   * drawn content once one is already allocated — every previous
+   * rebuild left its buffer allocated and orphaned (reassigning `mask`
+   * without ever disposing what it pointed to). The `mask.remove()`
+   * cleanup mentioned above as "since-reverted" was tried in the
+   * font-swap version of this file, where it was entangled with async
+   * font loading racing against buffer disposal — genuinely plausible
+   * for THAT to corrupt things. This version has no font swapping at
+   * all (see the paragraph above), so that specific interaction can't
+   * be what breaks it here — worth trying the disposal again on its own,
+   * with the diagnostic below kept in place as a safety net either way.
    */
   function buildTargets(word) {
     const w = p.width;
     const h = p.height;
+    if (mask) {
+      try {
+        mask.remove();
+      } catch (err) {
+        console.error('[glyph-swarm] mask.remove() failed, continuing without disposal:', err);
+      }
+    }
     mask = p.createGraphics(w, h);
     mask.background(0);
     mask.fill(255);
@@ -99,6 +122,27 @@ export default function sketch(p, get) {
 
     mask.text(word, w / 2, h / 2);
     mask.loadPixels();
+
+    // TEMPORARY DIAGNOSTIC — remove once confirmed fixed. If the
+    // mask.remove() fix above isn't sufficient on its own, this
+    // distinguishes the two remaining possibilities cleanly: pixels.length
+    // near 0/undefined means the buffer itself never got sized or filled
+    // correctly (a resource/allocation problem); a full-length array of
+    // all-dark values means the buffer is fine but the text draw call
+    // isn't actually landing pixels into it (a text-rendering problem) —
+    // genuinely different fixes depending on which. Direct loop over the
+    // typed array rather than Array.from()+filter — this can be several
+    // million entries on a full-screen canvas, no reason to copy it just
+    // to count.
+    let filled = 0;
+    if (mask.pixels) {
+      for (let i = 0; i < mask.pixels.length; i += 4) {
+        if (mask.pixels[i] > 128) filled++;
+      }
+    } else {
+      filled = -1;
+    }
+    console.log('[glyph-swarm] mask', mask.width, 'x', mask.height, 'pixels.length=', mask.pixels ? mask.pixels.length : 'MISSING', 'lit-pixels=', filled);
 
     const pts = [];
     const step = 3;

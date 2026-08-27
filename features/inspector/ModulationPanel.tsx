@@ -190,7 +190,7 @@ export function ModRow({
                 label: o.pending
                   ? `${o.label} — soon`
                   : o.requiresTrack && !trackLoaded
-                    ? `${o.label} — load a track`
+                    ? `${o.label} — load track`
                     : o.requiresMic && !micEnabled
                       ? `${o.label} — enable mic`
                       : o.label,
