@@ -36,6 +36,14 @@ export function openAssetById(itemId: string, pushUrl = true): void {
       asset.mod ?? {},
       asset.isOwned ?? false,
       asset.sound,
+      // Phase 4.96 — was missing entirely, which is why a VFX chain
+      // looked cleared every time the tile reopened: openInspector()
+      // defaults this argument to `[]` when the caller doesn't supply
+      // one, so every reopen silently re-hydrated to an empty chain
+      // regardless of what was actually saved. Mirrors how `asset.mod`/
+      // `asset.sound` are already passed above — same fallback-to-empty
+      // shape for the same "nothing saved yet" case.
+      asset.effects ?? [],
     );
 
   if (pushUrl && typeof window !== 'undefined') {

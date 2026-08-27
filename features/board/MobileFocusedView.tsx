@@ -13,6 +13,7 @@ import { groupedControls, isVisible, isDisabledByState } from '@/renderers/contr
 import { ControlRow } from '@/features/inspector/ControlRow';
 import { ModulationPanel } from '@/features/inspector/ModulationPanel';
 import { SoundPanel } from '@/features/inspector/SoundPanel';
+import { VfxPanel } from '@/features/inspector/VfxPanel';
 import { getCompatiblePresets } from '@/lib/sound/presets';
 import { RendererStage } from './RendererStage';
 import { CodePanel } from './CodePanel';
@@ -27,7 +28,7 @@ import {
 import { getPool } from '@/lib/render/pool';
 import s from '../features.module.css';
 
-type Tab = 'controls' | 'modulate' | 'sound';
+type Tab = 'controls' | 'vfx' | 'modulate' | 'sound';
 
 /**
  * The focused view on a narrow screen.
@@ -125,6 +126,10 @@ export function MobileFocusedView() {
   // Sound now also covers Tier 2 assets (modulatable, no synth preset),
   // since that's exactly what an uploaded Track is for (Phase 4.9).
   const canSound = !asset.isSnapshot && (getCompatiblePresets(schema).length > 0 || canModulate);
+  // Phase 4.96 — see FocusedAssetOverlay's identical canVfx for the full
+  // reasoning: scoped to shader tiles only until MediaRenderer has an
+  // output canvas to composite onto.
+  const canVfx = !asset.isSnapshot && asset.type === 'shader';
   const groups = schema ? groupedControls(schema) : [];
   const hasAdvanced = (schema?.controls.some((c) => c.advanced) ?? false) && !showAdvanced;
 
@@ -230,7 +235,7 @@ export function MobileFocusedView() {
         </Button>
       </div>
 
-      {(canModulate || canSound) && (
+      {(canModulate || canSound || canVfx) && (
         <div className={s.mobileTabs} role="tablist">
           <button
             type="button"
@@ -242,6 +247,18 @@ export function MobileFocusedView() {
           >
             Parameters
           </button>
+          {canVfx && (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'vfx'}
+              className={s.mobileTab}
+              data-active={tab === 'vfx' ? 'true' : undefined}
+              onClick={() => setTab('vfx')}
+            >
+              VFX
+            </button>
+          )}
           {canModulate && (
             <button
               type="button"
@@ -272,6 +289,8 @@ export function MobileFocusedView() {
       <div className={s.mobileSheet} ref={sheetRef}>
         {tab === 'modulate' && canModulate ? (
           <ModulationPanel controls={modulatable} itemId={asset.itemId} onClose={() => setTab('controls')} embedded />
+        ) : tab === 'vfx' && canVfx ? (
+          <VfxPanel itemId={asset.itemId} onClose={() => setTab('controls')} embedded />
         ) : tab === 'sound' && canSound && schema ? (
           <SoundPanel schema={schema} itemId={asset.itemId} onClose={() => setTab('controls')} embedded />
         ) : (

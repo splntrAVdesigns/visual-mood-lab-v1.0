@@ -2,6 +2,7 @@ import type { AssetRenderer } from '@/renderers/types';
 import type { ParamState } from '@/renderers/control-schema';
 import type { Asset } from '@/types/asset';
 import type { ModState, SoundState } from '@/renderers/control-schema';
+import type { EffectInstance } from '@/lib/effects/types';
 
 /**
  * Client-side persistence helpers.
@@ -429,6 +430,53 @@ export function persistSound(itemId: string, sound: SoundState, usesBoardItemPat
           if (!res.ok) logPersistFailure(`sound (${itemId})`, res);
         })
         .catch((err) => logPersistFailure(`sound (${itemId})`, null, err));
+    }, delay),
+  );
+}
+
+/**
+ * Persist the VFX effects chain. Same debounce/routing shape as
+ * persistMod/persistSound — dragging a Rate slider inside an effect's
+ * inline controls shouldn't write a row per frame any more than a
+ * modulation rate slider should. `usesBoardItemPath` — same meaning as
+ * every other persist* function here: true for a snapshot or a canonical
+ * card the viewer doesn't own, writing to board_items.effects_override
+ * instead of the shared assets.effects row.
+ */
+export function persistEffects(
+  itemId: string,
+  effects: EffectInstance[],
+  usesBoardItemPath: boolean,
+  delay = 500,
+): void {
+  const key = `effects:${itemId}`;
+  pending.set(key, effects as never);
+
+  const existing = timers.get(key);
+  if (existing) clearTimeout(existing);
+
+  const url = usesBoardItemPath
+    ? `/api/boards/default/items/${itemId}`
+    : `/api/assets/${itemId}`;
+
+  timers.set(
+    key,
+    setTimeout(() => {
+      const payload = pending.get(key);
+      timers.delete(key);
+      pending.delete(key);
+      if (!payload) return;
+
+      fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ effects: payload }),
+        keepalive: true,
+      })
+        .then((res) => {
+          if (!res.ok) logPersistFailure(`effects (${itemId})`, res);
+        })
+        .catch((err) => logPersistFailure(`effects (${itemId})`, null, err));
     }, delay),
   );
 }

@@ -298,6 +298,13 @@ export class ShaderRenderer implements AssetRenderer {
   play(): void { this.paused = false; }
   pause(): void { this.paused = true; }
 
+  /** Phase 4.96 — see AssetRenderer.getCanvas's doc. Shader tiles already
+      own a real `<canvas>` with the current frame drawn onto it every
+      tick (render() above), so this is a plain accessor, not new work. */
+  getCanvas(): HTMLCanvasElement | null {
+    return this.canvas;
+  }
+
   getControlSchema(): ControlSchema | null { return this.schema; }
 
   setParam(id: string, value: ParamValue): void {

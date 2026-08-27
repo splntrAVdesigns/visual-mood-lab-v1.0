@@ -7,6 +7,7 @@ import {
   updateSnapshotMod,
   updateSnapshotParams,
   updateSnapshotSound,
+  updateSnapshotEffects,
 } from '@/lib/data/assets';
 import { getStorage } from '@/lib/storage';
 import { requireUser } from '@/lib/auth';
@@ -26,14 +27,16 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ itemId: strin
       params?: Record<string, unknown>;
       mod?: Record<string, unknown>;
       sound?: Record<string, unknown>;
+      effects?: unknown;
     };
-    if (!body.params && !body.mod && !body.sound) {
-      return NextResponse.json({ error: 'Expected { params }, { mod }, or { sound }' }, { status: 400 });
+    if (!body.params && !body.mod && !body.sound && !body.effects) {
+      return NextResponse.json({ error: 'Expected { params }, { mod }, { sound }, or { effects }' }, { status: 400 });
     }
 
     if (body.params) await updateSnapshotParams(itemId, boardId, body.params);
     if (body.mod) await updateSnapshotMod(itemId, boardId, body.mod);
     if (body.sound) await updateSnapshotSound(itemId, boardId, body.sound);
+    if (body.effects) await updateSnapshotEffects(itemId, boardId, body.effects);
     return NextResponse.json({ ok: true });
   } catch (err) {
     console.error('[api/boards/default/items/:id PATCH]', err);

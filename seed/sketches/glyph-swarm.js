@@ -51,6 +51,20 @@ export default function sketch(p, get) {
   let pendingCountSince = 0;
   const REBUILD_DEBOUNCE_MS = 220;
 
+  // BUGFIX (post-Part-1 testing): the text/word rebuild never had this —
+  // particleCount got a debounce because dragging a slider emits
+  // intermediate values before settling; typing a word does the exact
+  // same thing (a distinct string on every keystroke) but had no guard at
+  // all. `word !== currentWord` was true on every keystroke's frame while
+  // typing, and buildTargets() is not cheap — createGraphics() at full
+  // canvas resolution plus a step-3 pixel scan across the whole thing —
+  // so a burst of keystrokes queued a burst of full rebuilds back to
+  // back, each one blocking draw() long enough to read as a freeze. Same
+  // fix as particleCount already uses: wait for the value to hold still
+  // for REBUILD_DEBOUNCE_MS before actually rebuilding.
+  let pendingWord = null;
+  let pendingWordSince = 0;
+
   /**
    * Font selection was tried in an earlier round and removed — this tile
    * uses whatever the browser's default sans-serif is (no explicit
@@ -109,7 +123,31 @@ export default function sketch(p, get) {
    */
   function safeRebuildTargets(word) {
     try {
-      return buildTargets(word);
+      const pts = buildTargets(word);
+      // TEMPORARY DIAGNOSTIC (remove once this is confirmed fixed) — every
+      // screenshot across testing so far, including the very first one
+      // with this sketch's own DEFAULT word at initial mount, has shown
+      // fully scattered particles with no formed shape. That pattern
+      // predates both of the last two fixes (word-change debounce, then
+      // commit-on-blur) — neither was ever going to fix "never forms any
+      // shape, for any word, including the default" if that's what's
+      // actually happening, since both fixes only changed WHEN a rebuild
+      // fires, not whether the mask pixel-scan that rebuild depends on is
+      // actually producing points. This makes that visible in the
+      // console instead of guessing a third time: if `pts.length` is
+      // consistently 0 (or near it), the bug is in buildTargets()'s mask/
+      // pixel-scan itself, not in the update-timing layers already fixed.
+      // If it's a healthy few thousand and the shape STILL doesn't
+      // visually appear, the far more likely explanation is that the
+      // cohesion physics (a slow, damped spring pulling from wherever a
+      // particle currently is toward its target — see the main loop's
+      // `particle.vx += (target.x - particle.x) * cohesion * 0.02`) just
+      // hasn't had enough time to visually converge yet when the
+      // screenshot was taken — on a full-screen canvas with 1400
+      // particles starting anywhere on it, that convergence can
+      // realistically take a couple of seconds, not instantly.
+      console.log('[glyph-swarm] rebuilt targets for', JSON.stringify(word), '—', pts.length, 'points');
+      return pts;
     } catch (err) {
       console.error('[glyph-swarm] buildTargets failed, keeping previous formation:', err);
       return targets;
@@ -177,16 +215,25 @@ export default function sketch(p, get) {
     const rawText = String(get('text') || 'BLOOM').trim();
     const word = (rawText.slice(0, 12) || 'BLOOM').toUpperCase();
     if (word !== currentWord) {
-      currentWord = word;
-      targets = safeRebuildTargets(currentWord);
-      // Reassigns every particle's targetIdx bounded to the NEW targets
-      // array — same as the resize branch above. A different word very
-      // commonly produces a different mask point count (more/fewer
-      // letters, different coverage), so without this, any particle
-      // whose targetIdx pointed past the end of the new (usually
-      // shorter) array would read `undefined` and throw the moment this
-      // word change landed — the original crash two rounds back.
-      particles = initParticles(get('particleCount'));
+      const now = p.millis();
+      if (pendingWord !== word) {
+        pendingWord = word;
+        pendingWordSince = now;
+      } else if (now - pendingWordSince > REBUILD_DEBOUNCE_MS) {
+        currentWord = word;
+        targets = safeRebuildTargets(currentWord);
+        // Reassigns every particle's targetIdx bounded to the NEW targets
+        // array — same as the resize branch above. A different word very
+        // commonly produces a different mask point count (more/fewer
+        // letters, different coverage), so without this, any particle
+        // whose targetIdx pointed past the end of the new (usually
+        // shorter) array would read `undefined` and throw the moment this
+        // word change landed — the original crash two rounds back.
+        particles = initParticles(get('particleCount'));
+        pendingWord = null;
+      }
+    } else {
+      pendingWord = null;
     }
 
     const wantCount = Math.round(get('particleCount') / 100) * 100;

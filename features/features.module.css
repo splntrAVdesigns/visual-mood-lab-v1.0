@@ -742,7 +742,8 @@
  * three side by side.
  */
 .focusScrim[data-mod='true'],
-.focusScrim[data-sound='true'] {
+.focusScrim[data-sound='true'],
+.focusScrim[data-vfx='true'] {
   /* Single source of truth for the sidecar's width, shared with
      .sidecarStack/.sidecarSpacer below via inheritance (custom properties
      cascade down the DOM by default) — so they can never drift out of
@@ -869,6 +870,7 @@
   align-items: center;
   gap: var(--space-3);
   width: 100%;
+  cursor: pointer;
   /* Was a flat 44px — a hardcoded value, not a token, so it's untouched
      by the scale-down above on its own. Derived from --modpanel-scale
      (inherited from .modPanel, this rule doesn't declare it) rather than
@@ -906,11 +908,53 @@
   color: var(--accent);
 }
 
+/* Phase 4.96 — the per-param modulation subsection inside a VFX effect's
+   controls. Given a visible border/indent (rather than the earlier bare
+   text button) specifically because testing showed the plain-button
+   version was too easy to miss entirely — there was no signal that a
+   whole routing panel lived under it until you happened to click. The
+   chevron reuses the exact icon vocabulary the VFX/Modulation/Sound
+   panel headers already use for their own collapse state, rather than
+   inventing a second "this expands" language for the same idea one
+   level down. */
+.vfxModSection {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: var(--space-2);
+}
+
+.vfxModSection[data-routed='true'] {
+  border-color: var(--accent-dim, var(--border-hi));
+}
+
+.vfxModSectionHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  color: var(--accent);
+  text-align: left;
+}
+
 .modPanelBody {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: 0 0 var(--space-4) var(--space-4);
+  /* BUGFIX (post-Part-1 testing): was `0 0 var(--space-4) var(--space-4)`
+     — left+bottom only, no right padding at all. Content (sliders
+     especially, which stretch to fill available width) sat flush against
+     the panel's right edge. Pre-existing in this shared class — Modulation
+     Panel and SoundPanel both use it too — but only became obviously
+     visible once VfxPanel's new bordered .vfxModSection gave the right
+     side an actual edge to visibly hug against. Symmetric now; benefits
+     all three panels, not just VFX. */
+  padding: 0 var(--space-4) var(--space-4) var(--space-4);
 }
 
 .modPanelRowFoot {
@@ -918,6 +962,19 @@
   flex-direction: column;
   gap: var(--space-2);
   padding-top: var(--space-1);
+}
+
+/* Phase 4.96 — VFX rack row actions (mix readout + reorder/remove icon
+   buttons). `.iconOnly` has no flex-shrink protection of its own (fine
+   everywhere else, since nothing else stacks three of them in one flex
+   row alongside a truncating label) — this group opts out of shrinking
+   as a unit instead, so `.modPanelLabel`'s existing ellipsis is what
+   gives on a narrow width, not these controls deforming. */
+.vfxRowActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
 }
 
 /*
@@ -1272,7 +1329,8 @@
      only, not the "laptops" the horizontal-scroll behavior above already
      covers. */
   .focusScrim[data-mod='true'] .focusPanel,
-  .focusScrim[data-sound='true'] .focusPanel {
+  .focusScrim[data-sound='true'] .focusPanel,
+  .focusScrim[data-vfx='true'] .focusPanel {
     display: none;
   }
   /* 7 dots desktop, 5 on narrow viewports (room for a 5th over the

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { ModState, ParamState, SoundState } from '@/renderers/control-schema';
 import type { Asset, AssetType, BoardLayout, SortKey } from '@/types/asset';
+import type { EffectInstance } from '@/lib/effects/types';
 
 interface BoardState {
   assets: Asset[];
@@ -23,6 +24,8 @@ interface BoardState {
   updateAssetParams: (itemId: string, params: ParamState) => void;
   updateAssetMod: (itemId: string, mod: ModState) => void;
   updateAssetSound: (itemId: string, sound: SoundState) => void;
+  /** Phase 4.96 — mirrors updateAssetMod/updateAssetSound exactly. */
+  updateAssetEffects: (itemId: string, effects: EffectInstance[]) => void;
   select: (id: string | null) => void;
   setLayout: (layout: BoardLayout) => void;
   setQuery: (query: string) => void;
@@ -68,6 +71,10 @@ export const useBoardStore = create<BoardState>()((set) => ({
   updateAssetSound: (itemId, sound) =>
     set((s) => ({
       assets: s.assets.map((a) => (a.itemId === itemId ? { ...a, sound } : a)),
+    })),
+  updateAssetEffects: (itemId, effects) =>
+    set((s) => ({
+      assets: s.assets.map((a) => (a.itemId === itemId ? { ...a, effects } : a)),
     })),
   /**
    * Keyed by itemId, not id. A snapshot shares its underlying asset's `id`

@@ -11,7 +11,11 @@ import {
   persistParams,
   persistSnapshotParams,
   persistSound,
+  persistEffects,
 } from '@/lib/persist/client';
+import type { EffectInstance } from '@/lib/effects/types';
+import { MAX_EFFECTS_PER_CHAIN, createEffectInstance } from '@/lib/effects/types';
+import { defaultEffectParams, getEffectSchema } from '@/lib/effects/registry';
 
 interface InspectorState {
   open: boolean;
@@ -42,6 +46,9 @@ interface InspectorState {
   mod: ModState;
   /** Tile sound preset configuration for the open card. */
   sound: SoundState;
+  /** Phase 4.96 — the open card's VFX chain. Empty for most cards, same
+      as mod above. */
+  effects: EffectInstance[];
 
   openInspector: (
     schema: ControlSchema,
@@ -51,9 +58,20 @@ interface InspectorState {
     mod?: ModState,
     isOwned?: boolean,
     sound?: SoundState,
+    effects?: EffectInstance[],
   ) => void;
   setModulation: (controlId: string, mod: Modulation | null) => void;
   setSoundState: (sound: SoundState) => void;
+  /** Phase 4.96 — VFX rack actions. Each mirrors setSoundState's shape:
+      update local state, push to the live pool entry, persist, sync the
+      board store — in that order, same as every other setter here. */
+  addEffect: (effectType: string) => void;
+  removeEffect: (instanceId: string) => void;
+  reorderEffects: (fromIndex: number, toIndex: number) => void;
+  setEffectEnabled: (instanceId: string, enabled: boolean) => void;
+  setEffectMix: (instanceId: string, mix: number) => void;
+  setEffectParam: (instanceId: string, paramId: string, value: ParamValue) => void;
+  setEffectModulation: (instanceId: string, paramId: string, mod: Modulation | null) => void;
   closeInspector: () => void;
   toggleNav: () => void;
   setNavOpen: (open: boolean) => void;
@@ -96,6 +114,17 @@ function flush(itemId: string, usesBoardItemPath: boolean): void {
   usesBoardItemPath ? flushSnapshotParams(itemId, onSaved) : flushParams(itemId, onSaved);
 }
 
+/** Phase 4.96 — the shared tail every VFX action below runs: push to the
+    live pool entry, persist (debounced, same 500ms window as params/mod/
+    sound), sync the board store so a reopened card and its grid thumbnail
+    both reflect the edit. Mirrors setSoundState's body exactly, factored
+    out since six different actions below all end the same way. */
+function applyEffects(itemId: string, isSnapshot: boolean, isOwned: boolean, effects: EffectInstance[]): void {
+  getPool().setEffects(itemId, effects);
+  persistEffects(itemId, effects, isSnapshot || !isOwned);
+  useBoardStore.getState().updateAssetEffects(itemId, effects);
+}
+
 export const useInspectorStore = create<InspectorState>()((set, get) => ({
   open: false,
   navOpen: false,
@@ -108,8 +137,9 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
   isOwned: true,
   mod: {},
   sound: DEFAULT_SOUND_STATE,
+  effects: [],
 
-  openInspector: (schema, saved, itemId, isSnapshot = false, mod = {}, isOwned = true, sound = DEFAULT_SOUND_STATE) => {
+  openInspector: (schema, saved, itemId, isSnapshot = false, mod = {}, isOwned = true, sound = DEFAULT_SOUND_STATE, effects = []) => {
     const params = hydrate(schema, saved);
     // normalizeSoundState, not a bare default param: `sound` here is
     // whatever the caller read off the asset row, and `sound` is a JSONB
@@ -125,11 +155,12 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
     // the store's own copy, what the panel actually renders from, was
     // still raw.
     const normalizedSound = normalizeSoundState(sound);
-    set({ open: true, schema, params, dirty: new Set(), itemId, isSnapshot, isOwned, mod, sound: normalizedSound });
+    set({ open: true, schema, params, dirty: new Set(), itemId, isSnapshot, isOwned, mod, sound: normalizedSound, effects });
     getPool().get(itemId)?.setParams(params);
     getPool().setBaseParams(itemId, params);
     getPool().setModState(itemId, mod);
     getPool().setSoundState(itemId, normalizedSound);
+    getPool().setEffects(itemId, effects);
   },
 
   setModulation: (controlId, mod) => {
@@ -156,6 +187,103 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
     getPool().setSoundState(itemId, normalized);
     persistSound(itemId, normalized, isSnapshot || !isOwned);
     useBoardStore.getState().updateAssetSound(itemId, normalized);
+  },
+
+  /** Chain cap enforced here, not just in the UI — see
+      MAX_EFFECTS_PER_CHAIN's doc in lib/effects/types.ts. A no-op past the
+      cap rather than silently dropping the oldest entry: the rack's
+      "+ Add Effect" affordance disables itself at the cap, so reaching
+      this branch at all means something bypassed that (a stale UI state,
+      a direct store call) — failing closed is safer than guessing which
+      entry the person would have wanted evicted. */
+  addEffect: (effectType) => {
+    const { effects, itemId, isSnapshot, isOwned } = get();
+    if (!itemId || effects.length >= MAX_EFFECTS_PER_CHAIN) return;
+
+    const instance = createEffectInstance(effectType, defaultEffectParams(effectType));
+    const next = [...effects, instance];
+    set({ effects: next });
+    applyEffects(itemId, isSnapshot, isOwned, next);
+  },
+
+  removeEffect: (instanceId) => {
+    const { effects, itemId, isSnapshot, isOwned } = get();
+    if (!itemId) return;
+
+    const next = effects.filter((e) => e.id !== instanceId);
+    set({ effects: next });
+    applyEffects(itemId, isSnapshot, isOwned, next);
+  },
+
+  /** Instance identity (EffectInstance.id) travels with the object through
+      the splice — nothing here touches `id`, only array position — which
+      is what makes a modulation routing survive a reorder for free (see
+      IMPLEMENTATION_PLAN.md §7 Phase 4.96's "instance-stable modulation
+      targeting" decision: the routing lives ON the instance, in its own
+      `mod` field, not in a table keyed by position). */
+  reorderEffects: (fromIndex, toIndex) => {
+    const { effects, itemId, isSnapshot, isOwned } = get();
+    if (!itemId || fromIndex === toIndex) return;
+    if (fromIndex < 0 || fromIndex >= effects.length || toIndex < 0 || toIndex >= effects.length) return;
+
+    const next = [...effects];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    set({ effects: next });
+    applyEffects(itemId, isSnapshot, isOwned, next);
+  },
+
+  setEffectEnabled: (instanceId, enabled) => {
+    const { effects, itemId, isSnapshot, isOwned } = get();
+    if (!itemId) return;
+
+    const next = effects.map((e) => (e.id === instanceId ? { ...e, enabled } : e));
+    set({ effects: next });
+    applyEffects(itemId, isSnapshot, isOwned, next);
+  },
+
+  setEffectMix: (instanceId, mix) => {
+    const { effects, itemId, isSnapshot, isOwned } = get();
+    if (!itemId) return;
+
+    const clamped = Math.max(0, Math.min(1, mix));
+    const next = effects.map((e) => (e.id === instanceId ? { ...e, mix: clamped } : e));
+    set({ effects: next });
+    applyEffects(itemId, isSnapshot, isOwned, next);
+  },
+
+  setEffectParam: (instanceId, paramId, value) => {
+    const { effects, itemId, isSnapshot, isOwned } = get();
+    if (!itemId) return;
+
+    const instance = effects.find((e) => e.id === instanceId);
+    if (!instance) return;
+
+    // Same coerce()-against-the-real-control discipline setParam uses for
+    // asset params, not a raw pass-through — an effect param is a real
+    // Control (min/max/kind) exactly like any other, via getEffectSchema.
+    const control = getEffectSchema(instance.effectType)?.controls.find((c) => c.id === paramId);
+    const coerced = control ? coerce(control, value) : value;
+    const next = effects.map((e) =>
+      e.id === instanceId ? { ...e, params: { ...e.params, [paramId]: coerced } } : e,
+    );
+    set({ effects: next });
+    applyEffects(itemId, isSnapshot, isOwned, next);
+  },
+
+  setEffectModulation: (instanceId, paramId, mod) => {
+    const { effects, itemId, isSnapshot, isOwned } = get();
+    if (!itemId) return;
+
+    const next = effects.map((e) => {
+      if (e.id !== instanceId) return e;
+      const nextMod: ModState = { ...e.mod };
+      if (mod) nextMod[paramId] = mod;
+      else delete nextMod[paramId];
+      return { ...e, mod: nextMod };
+    });
+    set({ effects: next });
+    applyEffects(itemId, isSnapshot, isOwned, next);
   },
 
   closeInspector: () => {

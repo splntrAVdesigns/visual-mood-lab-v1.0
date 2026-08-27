@@ -62,15 +62,17 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       params?: ParamState;
       mod?: Record<string, unknown>;
       sound?: Record<string, unknown>;
+      effects?: unknown;
     };
-    if (!body.params && !body.mod && !body.sound) {
-      return NextResponse.json({ error: 'Expected { params }, { mod }, or { sound }' }, { status: 400 });
+    if (!body.params && !body.mod && !body.sound && !body.effects) {
+      return NextResponse.json({ error: 'Expected { params }, { mod }, { sound }, or { effects }' }, { status: 400 });
     }
 
     const patch: Record<string, unknown> = { updatedAt: new Date() };
     if (body.params) patch.params = body.params;
     if (body.mod) patch.mod = body.mod;
     if (body.sound) patch.sound = body.sound;
+    if (body.effects) patch.effects = body.effects;
 
     await owned.db.update(schema.assets).set(patch).where(eq(schema.assets.id, id));
 

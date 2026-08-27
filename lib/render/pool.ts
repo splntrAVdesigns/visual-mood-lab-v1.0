@@ -9,6 +9,10 @@ import { startTileAudio, stopTileAudio, stopAllTileAudio, updateTileAudio, isTil
 import { unloadTrack, getTrackFrequencyData } from '@/lib/sound/track';
 import { disableMic, getMicFrequencyData, isMicEnabled } from '@/lib/sound/mic';
 import { STALL_RESUME_THRESHOLD_MS } from '@/lib/sandbox/protocol';
+import type { EffectInstance } from '@/lib/effects/types';
+import { getEffectSchema } from '@/lib/effects/registry';
+import { getGLStage } from '@/lib/gl/context-pool';
+import { compositeEffects, disposeEffectsFor, loadEffectShaderIfNeeded } from '@/lib/gl/effects-compositor';
 
 /**
  * The renderer pool.
@@ -51,6 +55,15 @@ interface Entry {
       to `state === 'focused'`, synced via the pool's syncAudio() helper
       rather than left to callers to manage by hand. */
   soundState: SoundState;
+  /**
+   * Phase 4.96 — the tile's VFX chain. Unmodulated base values, same
+   * "never write back" rule as baseParams above — modulation is resolved
+   * fresh into an ephemeral copy each frame (see resolveEffectsForFrame),
+   * never mutated in place here, for the identical reason baseParams
+   * isn't: closing and reopening the inspector must show wherever the
+   * chain was actually left, not wherever an LFO happened to leave it.
+   */
+  effects: EffectInstance[];
   /**
    * Cached box size, updated by `resizeObserver` on layout change rather
    * than read via `host.getBoundingClientRect()` on every single tick()
@@ -222,6 +235,7 @@ class RendererPool {
       // straight through handed an engine `notes: undefined`, which threw
       // the moment anything mapped over it. See that function's comment.
       soundState: normalizeSoundState(asset.sound),
+      effects: [...(asset.effects ?? [])],
       // Zeroed until the observer's first callback lands — tick() already
       // skips a zero-size entry exactly as it did with a fresh
       // getBoundingClientRect() before layout settles, so this isn't a
@@ -244,6 +258,12 @@ class RendererPool {
     // frame ever drew.
     this.entries.set(cardId, entry);
     renderer.setQuality(state === 'focused' ? 'full' : 'preview');
+
+    // Fire-and-forget: compositeEffects() silently skips a pass until its
+    // source has resolved (see loadEffectShaderIfNeeded's doc) — same
+    // "renders without it for a few frames" tolerance texture-source.ts's
+    // getTextureImage already relies on for texture controls.
+    for (const instance of entry.effects) void loadEffectShaderIfNeeded(instance.effectType);
 
     try {
       await renderer.mount(host, asset, controller.signal);
@@ -309,6 +329,18 @@ class RendererPool {
     // browser's mic-in-use indicator) alive with nothing left actually
     // reading it.
     disableMic(cardId);
+    // Phase 4.96 — drops this card's relay canvases (and the modulation
+    // bus's own smoothing entries for every routed effect param, via the
+    // same forget() loop pattern as entry.modState just above). Without
+    // this, a removed card's relay canvases leak for the tab's lifetime —
+    // same class of bug the modState cleanup above already exists to
+    // prevent for asset-level modulation.
+    for (const instance of entry.effects) {
+      for (const controlId of Object.keys(instance.mod)) {
+        getModBus().forget(`${cardId}:fx:${instance.id}:${controlId}`);
+      }
+    }
+    disposeEffectsFor(cardId);
 
     entry.resizeObserver.disconnect();
     entry.controller.abort();
@@ -382,6 +414,37 @@ class RendererPool {
     if (!entry) return;
     entry.soundState = normalizeSoundState(sound);
     this.syncAudio(entry);
+  }
+
+  /**
+   * Phase 4.96 — the VFX rack calls this on every chain edit (add/remove/
+   * reorder/param change), mirroring setSoundState's "the pool owns the
+   * live entry, so this is where a change actually takes effect" pattern.
+   *
+   * Cleans up stale modulation-bus smoothing state for any (instanceId,
+   * paramId) routing that no longer exists — same reasoning as
+   * setModState's own cleanup loop, just walking a nested structure
+   * (per-instance ModState) instead of a flat one. An instance removed
+   * entirely takes its whole `mod` object with it automatically (nothing
+   * in `next` references that instanceId at all), so this only needs to
+   * diff what's still present on both sides, not separately handle
+   * "instance removed" as its own case.
+   */
+  setEffects(cardId: string, effects: EffectInstance[]): void {
+    const entry = this.entries.get(cardId);
+    if (!entry) return;
+
+    const bus = getModBus();
+    for (const prev of entry.effects) {
+      const next = effects.find((e) => e.id === prev.id);
+      for (const controlId of Object.keys(prev.mod)) {
+        if (!next?.mod[controlId]) bus.forget(`${cardId}:fx:${prev.id}:${controlId}`);
+      }
+    }
+
+    entry.effects = effects.map((e) => ({ ...e, params: { ...e.params }, mod: { ...e.mod } }));
+
+    for (const instance of entry.effects) void loadEffectShaderIfNeeded(instance.effectType);
   }
 
   /** The Retrigger control (Stage 2) calls this directly — it's a
@@ -483,6 +546,63 @@ class RendererPool {
     }
 
     return modulated;
+  }
+
+  /**
+   * Phase 4.96 — the effects-chain counterpart to applyModulation above,
+   * same shape deliberately: reads entry.effects (the unmodulated truth,
+   * mirroring baseParams), samples the SAME shared modulation bus every
+   * other routing in the app reads, and returns a fresh ephemeral array
+   * rather than mutating entry.effects in place — for the identical
+   * "don't let an LFO permanently drag the saved value" reason
+   * applyModulation's own doc gives.
+   *
+   * Deliberately NOT folded into applyModulation itself: that function
+   * resolves against `entry.renderer.getControlSchema()`, the ASSET's own
+   * schema — effect params aren't part of it and were never meant to be
+   * (see IMPLEMENTATION_PLAN.md §7 Phase 4.96's "one modulation system,
+   * not two" decision — the SOURCE of truth stays the same shared bus,
+   * this is a second call site reading it, not a second system). Returns
+   * entry.effects unchanged (by reference) when nothing is enabled or
+   * nothing on the chain is routed, so the common case allocates nothing.
+   */
+  private resolveEffectsForFrame(entry: Entry): EffectInstance[] {
+    if (entry.effects.length === 0) return entry.effects;
+
+    const bus = getModBus();
+    let changed = false;
+
+    const resolved = entry.effects.map((instance) => {
+      const routedIds = Object.keys(instance.mod);
+      if (!instance.enabled || routedIds.length === 0) return instance;
+
+      const schema = getEffectSchema(instance.effectType);
+      if (!schema) return instance;
+
+      changed = true;
+      const nextParams = { ...instance.params };
+      let nextMix = instance.mix;
+
+      for (const controlId of routedIds) {
+        const mod = instance.mod[controlId];
+        const control = schema.controls.find((c) => c.id === controlId);
+        if (!mod || !control) continue;
+
+        const base = controlId === 'mix' ? instance.mix : nextParams[controlId];
+        if (typeof base !== 'number') continue;
+
+        const signal = bus.sample(`${entry.cardId}:fx:${instance.id}:${controlId}`, mod, entry.cardId);
+        const next = applyModulation(control, base, mod, signal);
+        if (typeof next !== 'number') continue;
+
+        if (controlId === 'mix') nextMix = next;
+        else nextParams[controlId] = next;
+      }
+
+      return { ...instance, mix: nextMix, params: nextParams };
+    });
+
+    return changed ? resolved : entry.effects;
   }
 
   /** Pushes this frame's live param values into the active sound engine,
@@ -610,6 +730,39 @@ class RendererPool {
 
       try {
         entry.renderer.render(ctx);
+
+        // Phase 4.96 — composite the VFX chain over whatever the renderer
+        // just drew. Gated on entry.effects.length first (the common
+        // case, nothing to do) before touching getCanvas() at all.
+        //
+        // Scoped to HTMLCanvasElement sources only for now — a shader
+        // tile's canvas is a proven capture source (ShaderRenderer.
+        // getCanvas() returns the real thing). MediaRenderer.getCanvas()
+        // also returns a valid texImage2D source (its <img>/<video>
+        // element), so CAPTURE works there too, but there's no
+        // destination canvas to draw the composited result back onto —
+        // an image/video tile's visible surface is that DOM element
+        // directly, not a canvas, and giving it one is a small separate
+        // piece of work, not done in this pass. p5.renderer.ts's
+        // sandboxed cross-origin iframe is never a valid texImage2D
+        // source at all (a browser-level restriction, not a missing
+        // accessor) — see lib/gl/effects-compositor.ts's top doc.
+        if (entry.effects.length > 0) {
+          const surface = entry.renderer.getCanvas?.();
+          if (surface instanceof HTMLCanvasElement) {
+            const stage = getGLStage();
+            if (stage) {
+              compositeEffects(stage, surface, {
+                source: surface,
+                cardId: entry.cardId,
+                effects: this.resolveEffectsForFrame(entry),
+                width: surface.width,
+                height: surface.height,
+                time: entry.lastTime,
+              });
+            }
+          }
+        }
       } catch (err) {
         entry.failure = err instanceof Error ? err.message : String(err);
         this.notify(entry.cardId, entry.state, entry.failure);

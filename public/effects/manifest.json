@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "effects": [
+    {
+      "id": "dark-strobe",
+      "title": "Dark Strobe",
+      "family": "strobe",
+      "file": "dark-strobe.frag",
+      "hint": "Black-flicker strobe, driven by rate and duty cycle. The only Beta-tier effect that's temporal rather than spatial — see IMPLEMENTATION_PLAN.md \u00a77 Phase 4.96 for why it shipped first in Part 1.",
+      "params": [
+        {
+          "id": "rate",
+          "kind": "slider",
+          "label": "Rate",
+          "group": "params",
+          "default": 8,
+          "min": 0.5,
+          "max": 30,
+          "step": 0.1,
+          "unit": "Hz",
+          "order": 0,
+          "modulatable": true,
+          "binding": { "target": "uniform", "name": "u_strobeRate", "glslType": "float" }
+        },
+        {
+          "id": "duty",
+          "kind": "slider",
+          "label": "Duty cycle",
+          "group": "params",
+          "hint": "Fraction of each cycle held black. Higher = more black, less visible frame.",
+          "default": 0.5,
+          "min": 0.05,
+          "max": 0.95,
+          "step": 0.01,
+          "order": 1,
+          "modulatable": true,
+          "binding": { "target": "uniform", "name": "u_strobeDuty", "glslType": "float" }
+        },
+        {
+          "id": "hardness",
+          "kind": "slider",
+          "label": "Edge hardness",
+          "group": "params",
+          "hint": "0 = smooth crossfade between lit and black. 1 = a hard on/off cut.",
+          "default": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "order": 2,
+          "modulatable": true,
+          "binding": { "target": "uniform", "name": "u_strobeHardness", "glslType": "float" }
+        }
+      ]
+    }
+  ]
+}

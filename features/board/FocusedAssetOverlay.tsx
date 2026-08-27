@@ -16,6 +16,7 @@ import { RendererStage } from './RendererStage';
 import { CodePanel } from './CodePanel';
 import { ModulationPanel } from '../inspector/ModulationPanel';
 import { SoundPanel } from '../inspector/SoundPanel';
+import { VfxPanel } from '../inspector/VfxPanel';
 import { getCompatiblePresets } from '@/lib/sound/presets';
 import { closeAsset, openAssetById } from './openAsset';
 import {
@@ -47,6 +48,7 @@ export function FocusedAssetOverlay() {
   const [showCode, setShowCode] = useState(false);
   const [showMod, setShowMod] = useState(false);
   const [showSound, setShowSound] = useState(false);
+  const [showVfx, setShowVfx] = useState(false);
   const [saving, setSaving] = useState(false);
   const [downloadingSnapshot, setDownloadingSnapshot] = useState(false);
   const [savedNote, setSavedNote] = useState<string | null>(null);
@@ -56,6 +58,7 @@ export function FocusedAssetOverlay() {
     setShowCode(false);
     setShowMod(false);
     setShowSound(false);
+    setShowVfx(false);
     setSavedNote(null);
     // Carries over otherwise: this component instance persists across
     // different assets (it isn't remounted per-open), so a previous
@@ -101,6 +104,7 @@ export function FocusedAssetOverlay() {
     setShowCode(false);
     setShowMod(false);
     setShowSound(false);
+    setShowVfx(false);
     requestAnimationFrame(() => {
       const el = panelRef.current;
       if (!el) return;
@@ -153,6 +157,7 @@ export function FocusedAssetOverlay() {
         setShowCode(false);
         setShowMod(false);
         setShowSound(false);
+        setShowVfx(false);
       } else {
         panelRef.current?.focus({ preventScroll: true });
       }
@@ -190,6 +195,15 @@ export function FocusedAssetOverlay() {
   // SoundPanel's own hasModulatableControls check decides which section(s)
   // it actually renders once open.
   const canSound = !asset.isSnapshot && (getCompatiblePresets(schema).length > 0 || canModulate);
+  // Phase 4.96 — scoped to shader tiles only for now. Snapshots and
+  // image/svg/video all render through MediaRenderer today (see
+  // lib/render/pool.ts's promote(): `createRenderer(asset.isSnapshot ?
+  // 'image' : asset.type, ...)`), which has no output canvas to draw a
+  // composited result back onto — the same blocker documented in the
+  // Phase 4.96 integration notes for uploads generally, not something
+  // special-cased against snapshots specifically. Widen this the moment
+  // MediaRenderer grows one; nothing else in the rack needs to change.
+  const canVfx = !asset.isSnapshot && asset.type === 'shader';
 
   const closeOverlay = () => {
     // Exiting fullscreen from the X takes two steps if left to the browser
@@ -283,6 +297,7 @@ export function FocusedAssetOverlay() {
       data-code={showCode ? 'true' : undefined}
       data-mod={showMod ? 'true' : undefined}
       data-sound={showSound ? 'true' : undefined}
+      data-vfx={showVfx ? 'true' : undefined}
       onClick={closeOverlay}
     >
       {/* Real sidecar now renders BEFORE focusPanel in DOM — it appears to
@@ -295,10 +310,13 @@ export function FocusedAssetOverlay() {
           docked against it, so it's genuinely open space. No flex `order`
           needed: DOM order directly matches visual order in this simple
           a flex row (see .focusScrim), so this swap alone moves it. */}
-      {((showMod && canModulate) || (showSound && canSound && schema)) && (
+      {((showMod && canModulate) || (showSound && canSound && schema) || (showVfx && canVfx)) && (
         <div className={s.sidecarStack}>
           {showSound && canSound && schema && (
             <SoundPanel schema={schema} itemId={asset.itemId} onClose={() => setShowSound(false)} />
+          )}
+          {showVfx && canVfx && (
+            <VfxPanel itemId={asset.itemId} onClose={() => setShowVfx(false)} />
           )}
           {showMod && canModulate && (
             <ModulationPanel controls={modulatableControls} itemId={asset.itemId} onClose={() => setShowMod(false)} />
@@ -337,10 +355,24 @@ export function FocusedAssetOverlay() {
                     setShowCode((v) => !v);
                     setShowMod(false);
                     setShowSound(false);
+                    setShowVfx(false);
                   }}
                 >
                   <CodeIcon />
                   Code
+                </Button>
+              )}
+
+              {canVfx && (
+                <Button
+                  variant="ghost"
+                  active={showVfx}
+                  onClick={() => {
+                    setShowVfx((v) => !v);
+                    setShowCode(false);
+                  }}
+                >
+                  VFX
                 </Button>
               )}
 
@@ -429,7 +461,7 @@ export function FocusedAssetOverlay() {
           Modulate opens. Now on the right, mirroring the real sidecar's
           move to the left — same counterweight technique, opposite side.
           See .sidecarSpacer's CSS doc. */}
-      {((showMod && canModulate) || (showSound && canSound && schema)) && (
+      {((showMod && canModulate) || (showSound && canSound && schema) || (showVfx && canVfx)) && (
         <div className={s.sidecarSpacer} aria-hidden="true" />
       )}
 

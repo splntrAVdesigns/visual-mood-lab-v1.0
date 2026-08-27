@@ -81,6 +81,7 @@ export function ModulationPanel({ controls, itemId, onClose, embedded = false }:
           micEnabled={micEnabled}
           expanded={expanded === control.id}
           onToggleExpand={() => setExpanded((e) => (e === control.id ? null : control.id))}
+          onChange={(next) => setModulation(control.id, next)}
         />
       ))}
     </div>
@@ -113,13 +114,25 @@ export function ModulationPanel({ controls, itemId, onClose, embedded = false }:
   );
 }
 
-function ModRow({
+/**
+ * A single control's modulation routing — source, amount, rate, smoothing,
+ * assign/remove. Exported (Phase 4.96) so the VFX rack can reuse this exact
+ * UI for an effect param's routing via its own `onChange`, rather than
+ * duplicating the whole assignment surface for a second modulatable-thing
+ * — see IMPLEMENTATION_PLAN.md §7 Phase 4.96's "one modulation system, not
+ * two" decision. `onChange` replaces a direct `useInspectorStore` call so
+ * this component has no opinion on WHERE a routing is stored (asset-level
+ * `mod` vs. an effect instance's own `mod`) — only that it changed.
+ */
+export function ModRow({
   control,
   active,
   trackLoaded,
   micEnabled,
   expanded,
   onToggleExpand,
+  onChange,
+  hideHeader = false,
 }: {
   control: Control;
   active: Modulation | undefined;
@@ -133,8 +146,19 @@ function ModRow({
   micEnabled: boolean;
   expanded: boolean;
   onToggleExpand: () => void;
+  /** Called with the next Modulation (or null to remove) whenever this
+      row's routing changes — see this function's own doc for why this
+      replaced a direct store call. */
+  onChange: (mod: Modulation | null) => void;
+  /** Phase 4.96 — VfxPanel embeds this component but already renders its
+      own header (dot/label/source-tag equivalent, plus its own expand
+      affordance) above each param it's routing. Without this, ModRow's
+      OWN header rendered too — a second "Mix" label stacked directly
+      under a caller-provided one that already said the same thing.
+      `false` (the default) preserves ModulationPanel's own top-level
+      usage exactly as before. */
+  hideHeader?: boolean;
 }) {
-  const setModulation = useInspectorStore((st) => st.setModulation);
   const current = active ?? DEFAULT_MOD;
   const meta = sourceMeta(current.source);
 
@@ -142,16 +166,18 @@ function ModRow({
     // Writing before an explicit "Assign" click is deliberate here — unlike
     // the old popover, this panel stays open the whole time you're tuning,
     // so there is no separate save step to forget.
-    setModulation(control.id, { ...current, ...patch });
+    onChange({ ...current, ...patch });
   };
 
   return (
     <div className={s.modPanelRow} data-active={active ? 'true' : undefined}>
-      <button type="button" className={s.modPanelRowHead} onClick={onToggleExpand}>
-        <span className={s.modPanelDot} data-on={active ? 'true' : undefined} />
-        <span className={s.modPanelLabel}>{control.label}</span>
-        {active && <span className={s.modPanelSourceTag}>{sourceMeta(active.source)?.label}</span>}
-      </button>
+      {!hideHeader && (
+        <button type="button" className={s.modPanelRowHead} onClick={onToggleExpand}>
+          <span className={s.modPanelDot} data-on={active ? 'true' : undefined} />
+          <span className={s.modPanelLabel}>{control.label}</span>
+          {active && <span className={s.modPanelSourceTag}>{sourceMeta(active.source)?.label}</span>}
+        </button>
+      )}
 
       {expanded && (
         <div className={s.modPanelBody}>
@@ -223,11 +249,11 @@ function ModRow({
 
           <div className={s.modPanelRowFoot}>
             {active ? (
-              <Button variant="danger" block onClick={() => setModulation(control.id, null)}>
+              <Button variant="danger" block onClick={() => onChange(null)}>
                 Remove
               </Button>
             ) : (
-              <Button variant="accent" block onClick={() => setModulation(control.id, current)}>
+              <Button variant="accent" block onClick={() => onChange(current)}>
                 Assign
               </Button>
             )}

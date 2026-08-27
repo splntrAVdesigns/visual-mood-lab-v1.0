@@ -39,6 +39,7 @@ export function toAsset(row: AssetRow): Omit<Asset, 'itemId' | 'isSnapshot'> {
     params: row.params,
     mod: row.mod,
     sound: row.sound,
+    effects: row.effects,
     dominantColors: row.dominantColors,
     width: row.width ?? undefined,
     height: row.height ?? undefined,
@@ -72,6 +73,7 @@ function toCard(asset: AssetRow, item: BoardItemRow, viewerId: string): Asset {
     posterUrl: item.posterOverride ?? asset.posterUrl,
     mod: item.modOverride ?? asset.mod,
     sound: item.soundOverride ?? asset.sound,
+    effects: item.effectsOverride ?? asset.effects,
   };
 }
 
@@ -332,6 +334,19 @@ export async function updateSnapshotSound(
   await db
     .update(schema.boardItems)
     .set({ soundOverride: sound as never })
+    .where(and(eq(schema.boardItems.id, itemId), eq(schema.boardItems.boardId, boardId)));
+}
+
+/** Phase 4.96 — mirrors updateSnapshotMod/updateSnapshotSound exactly. */
+export async function updateSnapshotEffects(
+  itemId: string,
+  boardId: string,
+  effects: unknown,
+): Promise<void> {
+  const db = await getDb();
+  await db
+    .update(schema.boardItems)
+    .set({ effectsOverride: effects as never })
     .where(and(eq(schema.boardItems.id, itemId), eq(schema.boardItems.boardId, boardId)));
 }
 

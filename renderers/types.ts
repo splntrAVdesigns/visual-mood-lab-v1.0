@@ -90,6 +90,18 @@ export interface AssetRenderer {
    */
   resumeFromStall?(): void;
 
+  /**
+   * Phase 4.96 — the tile's own currently-rendered surface, if this
+   * renderer type has one that's a valid `texImage2D` source. Returns
+   * null for a renderer with no such surface (P5Renderer's sandboxed
+   * iframe is not a valid capture source at the browser level — see
+   * lib/gl/effects-compositor.ts's top doc). Optional, like
+   * resumeFromStall above, for the same reason: most call sites don't
+   * need it, and a renderer that has nothing to return shouldn't have to
+   * implement a method that always returns null.
+   */
+  getCanvas?(): HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null;
+
   dispose(): void;
 
   /** Non-null when the asset failed to compile, load, or run. */

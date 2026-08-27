@@ -1,4 +1,5 @@
 import type { ControlSchema, ModState, ParamState, SoundState } from '@/renderers/control-schema';
+import type { EffectInstance } from '@/lib/effects/types';
 
 export type AssetType = 'image' | 'svg' | 'video' | 'p5' | 'shader';
 
@@ -55,6 +56,9 @@ export interface Asset {
   params?: ParamState;
   mod?: ModState;
   sound?: SoundState;
+  /** Phase 4.96 — the tile's GPU post-processing chain. Mirrors mod/sound:
+      ordered, capped at MAX_EFFECTS_PER_CHAIN, opt-in (empty by default). */
+  effects?: EffectInstance[];
 
   dominantColors?: string[];
   width?: number;
@@ -79,6 +83,11 @@ export interface BoardItem {
   paramsOverride?: ParamState;
   /** Snapshot: same asset, different instrument — mirrors paramsOverride. */
   soundOverride?: SoundState;
+  /** Snapshot: same asset, different VFX chain — mirrors paramsOverride/
+      soundOverride. Also covers a canonical card for a library asset the
+      viewer doesn't own, same as the other two overrides (see Asset.isOwned
+      doc above). */
+  effectsOverride?: EffectInstance[];
 }
 
 export interface Board {

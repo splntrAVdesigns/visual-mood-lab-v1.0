@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Slider, formatValue } from '@/components/ui';
 import { CUSTOM_HZ_MAX, CUSTOM_HZ_MIN, RATE_DIVISIONS, divisionToHz, hzToDivision, type LfoRateDivision } from '@/lib/modulation/lfo';
 import s from '../../features.module.css';
@@ -22,24 +23,37 @@ interface RateStripProps {
  * Tapping a fixed division snaps `hz` straight to that division's exact
  * rate. Tapping "Hz" doesn't change the rate at all — it just switches the
  * slider below into free-entry mode, starting from whatever Hz was
- * already in effect. The slider is always interactive: on a fixed
- * division it's a preview/fine-tune that immediately kicks the selection
- * over to "Hz" the moment it's touched, rather than sitting there looking
- * live while silently doing nothing.
+ * already in effect.
+ *
+ * BUGFIX (post-Part-1 testing): "active" used to be purely derived from
+ * `hzToDivision(hz)` — no separate mode flag, by design, per this
+ * component's own original doc. That's correct right up until the
+ * current rate happens to sit exactly on a fixed division's value: then
+ * `hzToDivision` reports that division regardless of what's clicked, so
+ * tapping "Hz" was a genuine no-op with no way to ever show it selected —
+ * styled identically to the other five buttons (same aria-pressed,
+ * data-selected treatment), so it looked clickable and silently wasn't.
+ * `explicitHz` is the minimum state needed to fix that without losing the
+ * original "derive from value" behavior in every other case: it only
+ * overrides the derivation when someone has explicitly tapped Hz, clears
+ * the moment a real division is tapped instead, and is irrelevant (never
+ * even read) for the common case where hz doesn't land on a division at
+ * all — which still "just works" exactly as before, no regression there.
  */
 export function RateStrip({ hz, onChange, disabled = false, label }: RateStripProps) {
-  const active = hzToDivision(hz);
+  const derived = hzToDivision(hz);
+  const [explicitHz, setExplicitHz] = useState(false);
+  const active = explicitHz && derived !== 'hz' ? 'hz' : derived;
 
   const selectDivision = (division: LfoRateDivision) => {
     if (division === 'hz') {
-      // No rate change on its own — see the component doc. Only matters
-      // when the current rate happens to sit exactly on a fixed division
-      // already: active !== 'hz' would otherwise leave the strip showing
-      // "Hz" highlighted while the slider still reads the old division's
-      // value, which is correct, but worth this explicit no-op rather
-      // than a fallthrough that looks accidental.
+      // Still no rate change on its own — see the component doc above.
+      // The only thing this needs to do now is make the strip actually
+      // SHOW Hz as selected, which the old version never could.
+      setExplicitHz(true);
       return;
     }
+    setExplicitHz(false);
     onChange(divisionToHz(division, hz));
   };
 
@@ -73,12 +87,15 @@ export function RateStrip({ hz, onChange, disabled = false, label }: RateStripPr
         max={CUSTOM_HZ_MAX}
         step={0.01}
         scale="log"
-        // Any drag switches the strip to Hz mode implicitly, by virtue of
-        // the new value very likely no longer landing on a fixed
-        // division — see hzToDivision's tolerance. No separate mode flag
-        // to keep in sync; the displayed active button is always just a
-        // read of the current Hz value.
-        onChange={onChange}
+        // Any drag switches the strip to Hz mode — explicitly now, not
+        // just implicitly via the value no longer matching a division
+        // (which was the ONLY mechanism before, and exactly the thing
+        // that couldn't fire when the drag started and ended on the same
+        // division's value without crossing off it).
+        onChange={(v) => {
+          setExplicitHz(true);
+          onChange(v);
+        }}
       />
       <div className={s.rateStripReadout}>{formatValue(hz, 0.01)} Hz</div>
     </div>

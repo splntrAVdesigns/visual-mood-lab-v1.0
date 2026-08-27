@@ -163,6 +163,17 @@ export class MediaRenderer implements AssetRenderer {
     return this.schema;
   }
 
+  /** Phase 4.96 — see AssetRenderer.getCanvas's doc. Correction from the
+      Part 1 batch's original notes: `svg` mounts through the exact same
+      `<img>` branch as `image` above (see mount()), not inline SVG DOM —
+      so this covers image, svg, AND video, not just image/video. Capture
+      works for all three; there's just no destination canvas yet to draw
+      a composited result back onto (see lib/render/pool.ts's tick() doc
+      on the same gap) — that's the remaining piece, not this accessor. */
+  getCanvas(): HTMLImageElement | HTMLVideoElement | null {
+    return this.el;
+  }
+
   setParam(id: string, value: ParamValue): void {
     this.params[id] = value;
     this.applyStyle();

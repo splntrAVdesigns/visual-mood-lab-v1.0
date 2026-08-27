@@ -11,6 +11,7 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import type { ControlSchema, ModState, ParamState, SoundState } from '@/renderers/control-schema';
+import type { EffectInstance } from '@/lib/effects/types';
 
 export const assetTypeEnum = pgEnum('asset_type', ['image', 'svg', 'video', 'p5', 'shader']);
 
@@ -56,6 +57,15 @@ export const assets = pgTable(
       humanize: false,
       swing: false,
     }),
+
+    /**
+     * Phase 4.96 — the tile's own GPU post-processing chain. Mirrors `mod`
+     * exactly: ordered, capped at MAX_EFFECTS_PER_CHAIN (lib/effects/types.ts),
+     * empty by default, persisted the same canonical-row-vs-board-item-override
+     * split mod/sound already use (see `effectsOverride` on `boardItems`
+     * below and `persistEffects` in lib/persist/client.ts).
+     */
+    effects: jsonb('effects').$type<EffectInstance[]>().notNull().default([]),
 
     dominantColors: text('dominant_colors').array().notNull().default(sql`ARRAY[]::text[]`),
     width: integer('width'),
@@ -130,6 +140,12 @@ export const boardItems = pgTable(
     /** Sound configuration for a snapshot. Mirrors modOverride the same
         way paramsOverride and modOverride already mirror each other. */
     soundOverride: jsonb('sound_override').$type<SoundState>(),
+
+    /** VFX chain override for a snapshot, or for a canonical card the
+        viewer doesn't own (a cloned library asset) — same two cases
+        modOverride/soundOverride already cover, for the same reason:
+        neither can write to the shared `assets.effects` row. */
+    effectsOverride: jsonb('effects_override').$type<EffectInstance[]>(),
   },
   (t) => [
     index('board_items_board_idx').on(t.boardId, t.order),
