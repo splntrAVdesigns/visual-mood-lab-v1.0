@@ -126,21 +126,26 @@ export function VfxPanel({ itemId, onClose, embedded = false }: VfxPanelProps) {
             {groupByFamily(definitions).map((group) => (
               <div key={group.key}>
                 <SectionLabel>{group.label}</SectionLabel>
-                {group.items.map((def) => (
-                  <div key={def.id}>
-                    <Button
-                      variant="outline"
-                      block
-                      onClick={() => {
-                        addEffect(def.id);
-                        setBrowsing(false);
-                      }}
-                    >
-                      {def.title}
-                    </Button>
-                    {def.hint && <p className={s.notice}>{def.hint}</p>}
-                  </div>
-                ))}
+                {group.items.map((def) => {
+                  // No accentColor -> Dark Strobe's neutral fallback (see
+                  // EffectDefinition.accentColor's own doc for why).
+                  const barColor = def.accentColor ?? 'var(--text-dim)';
+                  return (
+                    <div key={def.id} className={s.vfxCatalogCard} style={{ borderLeftColor: barColor }}>
+                      <Button
+                        variant="outline"
+                        block
+                        onClick={() => {
+                          addEffect(def.id);
+                          setBrowsing(false);
+                        }}
+                      >
+                        {def.title}
+                      </Button>
+                      {def.hint && <p className={s.notice}>{def.hint}</p>}
+                    </div>
+                  );
+                })}
               </div>
             ))}
             <Button variant="ghost" block onClick={() => setBrowsing(false)}>
@@ -209,13 +214,18 @@ function VfxRow({
   micEnabled: boolean;
 }) {
   const schema = getEffectSchema(instance.effectType);
-  const title = getEffectDefinition(instance.effectType)?.title ?? instance.effectType;
+  const def = getEffectDefinition(instance.effectType);
+  const title = def?.title ?? instance.effectType;
+  // Applies once the effect is on the chain, independent of the enabled
+  // toggle — the toggle already signals on/off; this is identity, not
+  // state, matching how the browse-list's own color bar works.
+  const labelColor = def?.accentColor ?? 'var(--text-dim)';
 
   return (
     <div className={s.modPanelRow} data-active={instance.enabled ? 'true' : undefined}>
       <div className={s.modPanelRowHead}>
         <Toggle checked={instance.enabled} label={`${title} enabled`} onChange={onEnabledChange} />
-        <span className={s.modPanelLabel}>{title}</span>
+        <span className={s.modPanelLabel} style={{ color: labelColor }}>{title}</span>
         <div className={s.vfxRowActions}>
           <span className={s.modPanelSourceTag}>{Math.round(instance.mix * 100)}%</span>
           <IconButton

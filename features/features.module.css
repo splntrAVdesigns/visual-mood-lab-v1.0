@@ -928,6 +928,19 @@
    panel headers already use for their own collapse state, rather than
    inventing a second "this expands" language for the same idea one
    level down. */
+/* Phase 4.96 — the "+ Add Effect" browser's per-entry color identity.
+   Thin left edge only, never a fill/background — the app's one real
+   accent (cyan) means "focused/active" everywhere else, so per-effect
+   color here stays a quiet identity marker, not a second accent system
+   competing with it. Color itself is set inline per entry
+   (EffectDefinition.accentColor); this class only owns the shape. */
+.vfxCatalogCard {
+  border-left-width: 3px;
+  border-left-style: solid;
+  padding-left: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
 .vfxModSection {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -2467,7 +2480,14 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) var(--space-3);
+  /* Tightened from `var(--space-2) var(--space-3)` — this row's own
+     padding was stacking on top of Button's fixed --control-h (used
+     everywhere for consistent touch targets, not touched here), and the
+     combined vertical footprint was pushing the inspector's top edge
+     further over the live canvas than it needed to on mobile. Buttons
+     still get their full --control-h touch target; only the wrapper's
+     own breathing room shrank. */
+  padding: var(--space-1) var(--space-3);
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
   overflow-x: auto;

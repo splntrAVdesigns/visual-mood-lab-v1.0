@@ -39,6 +39,20 @@ export interface EffectDefinition {
   /** One-line description for the effect browser card. */
   hint?: string;
   /**
+   * Phase 4.96 — per-effect identity color in the browse list and, once
+   * added to a chain, the row's own label text. Deliberately optional,
+   * not universal: Dark Strobe has none and falls back to a neutral gray
+   * in the render layer — "vibes with the name" per direct instruction,
+   * and it's also the one effect that's temporal rather than a color/
+   * spatial transform, so it reads correctly as the odd one out rather
+   * than an oversight. Kept muted, not neon, and picked to sit clearly
+   * apart from `--accent` (cyan) — this app's one existing accent color
+   * means "focused/active" everywhere else, and introducing five bright
+   * per-effect colors that could be confused with that would undercut a
+   * rule the rest of the UI depends on, not just add color.
+   */
+  accentColor?: string;
+  /**
    * Effect-specific params, in Control shape. The base `mix` control is
    * NOT declared here — every effect gets it for free, added by the
    * registry loader (see registry.ts's `toControlSchema`), so an effect

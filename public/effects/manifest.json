@@ -6,7 +6,7 @@
       "title": "Dark Strobe",
       "family": "strobe",
       "file": "dark-strobe.frag",
-      "hint": "Black-flicker strobe, driven by rate and duty cycle. The only Beta-tier effect that's temporal rather than spatial — see IMPLEMENTATION_PLAN.md \u00a77 Phase 4.96 for why it shipped first in Part 1.",
+      "hint": "Black-flicker strobe, driven by rate and duty cycle. The only Beta-tier effect that's temporal rather than spatial — see IMPLEMENTATION_PLAN.md §7 Phase 4.96 for why it shipped first in Part 1.",
       "params": [
         {
           "id": "rate",
@@ -20,7 +20,11 @@
           "unit": "Hz",
           "order": 0,
           "modulatable": true,
-          "binding": { "target": "uniform", "name": "u_strobeRate", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_strobeRate",
+            "glslType": "float"
+          }
         },
         {
           "id": "duty",
@@ -34,7 +38,11 @@
           "step": 0.01,
           "order": 1,
           "modulatable": true,
-          "binding": { "target": "uniform", "name": "u_strobeDuty", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_strobeDuty",
+            "glslType": "float"
+          }
         },
         {
           "id": "hardness",
@@ -48,7 +56,11 @@
           "step": 0.01,
           "order": 2,
           "modulatable": true,
-          "binding": { "target": "uniform", "name": "u_strobeHardness", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_strobeHardness",
+            "glslType": "float"
+          }
         },
         {
           "id": "echo",
@@ -62,7 +74,11 @@
           "step": 0.01,
           "order": 3,
           "modulatable": true,
-          "binding": { "target": "uniform", "name": "u_echoAmount", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_echoAmount",
+            "glslType": "float"
+          }
         }
       ]
     },
@@ -86,7 +102,11 @@
           "unit": "°",
           "order": 0,
           "modulatable": true,
-          "binding": { "target": "uniform", "name": "u_angle", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_angle",
+            "glslType": "float"
+          }
         },
         {
           "id": "offset",
@@ -100,9 +120,14 @@
           "step": 0.01,
           "order": 1,
           "modulatable": true,
-          "binding": { "target": "uniform", "name": "u_offset", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_offset",
+            "glslType": "float"
+          }
         }
-      ]
+      ],
+      "accentColor": "#4A9EFF"
     },
     {
       "id": "quad-mirror",
@@ -122,7 +147,11 @@
           "step": 0.01,
           "order": 0,
           "modulatable": true,
-          "binding": { "target": "uniform", "name": "u_centerX", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_centerX",
+            "glslType": "float"
+          }
         },
         {
           "id": "centerY",
@@ -135,9 +164,14 @@
           "step": 0.01,
           "order": 1,
           "modulatable": true,
-          "binding": { "target": "uniform", "name": "u_centerY", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_centerY",
+            "glslType": "float"
+          }
         }
-      ]
+      ],
+      "accentColor": "#7C6CFF"
     },
     {
       "id": "invert",
@@ -157,7 +191,11 @@
           "step": 0.01,
           "order": 0,
           "modulatable": true,
-          "binding": { "target": "uniform", "name": "u_centerX", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_centerX",
+            "glslType": "float"
+          }
         },
         {
           "id": "centerY",
@@ -170,9 +208,14 @@
           "step": 0.01,
           "order": 1,
           "modulatable": true,
-          "binding": { "target": "uniform", "name": "u_centerY", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_centerY",
+            "glslType": "float"
+          }
         }
-      ]
+      ],
+      "accentColor": "#B85CFF"
     },
     {
       "id": "math-warp",
@@ -189,11 +232,21 @@
           "default": "0",
           "valueType": "number",
           "options": [
-            { "value": "0", "label": "Quadratic" },
-            { "value": "1", "label": "Swirl" }
+            {
+              "value": "0",
+              "label": "Quadratic"
+            },
+            {
+              "value": "1",
+              "label": "Swirl"
+            }
           ],
           "order": 0,
-          "binding": { "target": "uniform", "name": "u_warpMode", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_warpMode",
+            "glslType": "float"
+          }
         },
         {
           "id": "amount",
@@ -207,7 +260,11 @@
           "step": 0.01,
           "order": 1,
           "modulatable": true,
-          "binding": { "target": "uniform", "name": "u_amount", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_amount",
+            "glslType": "float"
+          }
         },
         {
           "id": "scale",
@@ -221,9 +278,14 @@
           "step": 0.01,
           "order": 2,
           "modulatable": true,
-          "binding": { "target": "uniform", "name": "u_scale", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_scale",
+            "glslType": "float"
+          }
         }
-      ]
+      ],
+      "accentColor": "#FF9A4A"
     },
     {
       "id": "hue-shift",
@@ -244,7 +306,11 @@
           "unit": "°",
           "order": 0,
           "modulatable": true,
-          "binding": { "target": "uniform", "name": "u_hue", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_hue",
+            "glslType": "float"
+          }
         },
         {
           "id": "saturation",
@@ -257,7 +323,11 @@
           "step": 0.01,
           "order": 1,
           "modulatable": true,
-          "binding": { "target": "uniform", "name": "u_saturation", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_saturation",
+            "glslType": "float"
+          }
         },
         {
           "id": "brightness",
@@ -270,9 +340,14 @@
           "step": 0.01,
           "order": 2,
           "modulatable": true,
-          "binding": { "target": "uniform", "name": "u_brightness", "glslType": "float" }
+          "binding": {
+            "target": "uniform",
+            "name": "u_brightness",
+            "glslType": "float"
+          }
         }
-      ]
+      ],
+      "accentColor": "#FF5C9E"
     }
   ]
 }
