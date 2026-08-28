@@ -1,16 +1,37 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
-import { Button, ChevronDownIcon, ChevronRightIcon, CloseIcon, Field, IconButton, Select, Slider, Toggle, Tooltip, formatValue } from '@/components/ui';
+import { Button, ChevronDownIcon, ChevronRightIcon, CloseIcon, Field, IconButton, Select, SectionLabel, Slider, Toggle, Tooltip, formatValue } from '@/components/ui';
 import { listEffectDefinitions, getEffectDefinition, getEffectSchema } from '@/lib/effects/registry';
 import { MAX_EFFECTS_PER_CHAIN } from '@/lib/effects/types';
-import type { EffectInstance } from '@/lib/effects/types';
+import type { EffectDefinition, EffectFamily, EffectInstance } from '@/lib/effects/types';
 import type { Modulation, ParamValue } from '@/renderers/control-schema';
 import { useTrackLoaded, useMicEnabled } from '@/lib/hooks/useTrackState';
 import { ModRow } from './ModulationPanel';
 import { sourceMeta } from '@/lib/modulation/bus';
 import { useInspectorStore } from '@/stores';
 import s from '../features.module.css';
+
+/** Fixed display order + label for each family — matches the order the
+    catalog was originally scoped in (strobe shipped first, then the
+    mirror set, then warp, then color; slice is future/post-beta and has
+    no members yet, kept here so it's ready the moment one ships). Not
+    derived from the manifest's own array order, since JSON entry order
+    isn't a reliable place to encode this and could silently drift if the
+    manifest gets reordered for an unrelated reason later. */
+const FAMILY_ORDER: { key: EffectFamily; label: string }[] = [
+  { key: 'strobe', label: 'Strobe' },
+  { key: 'mirror', label: 'Mirror' },
+  { key: 'warp', label: 'Warp' },
+  { key: 'color', label: 'Color' },
+  { key: 'slice', label: 'Slice' },
+];
+
+function groupByFamily(definitions: EffectDefinition[]): { key: EffectFamily; label: string; items: EffectDefinition[] }[] {
+  return FAMILY_ORDER.map((f) => ({ ...f, items: definitions.filter((d) => d.family === f.key) })).filter(
+    (group) => group.items.length > 0,
+  );
+}
 
 interface VfxPanelProps {
   itemId: string;
@@ -102,19 +123,24 @@ export function VfxPanel({ itemId, onClose, embedded = false }: VfxPanelProps) {
         <div className={s.modPanelRow}>
           <div className={s.modPanelBody}>
             {definitions.length === 0 && <p className={s.notice}>No effects available yet.</p>}
-            {definitions.map((def) => (
-              <div key={def.id}>
-                <Button
-                  variant="outline"
-                  block
-                  onClick={() => {
-                    addEffect(def.id);
-                    setBrowsing(false);
-                  }}
-                >
-                  {def.title}
-                </Button>
-                {def.hint && <p className={s.notice}>{def.hint}</p>}
+            {groupByFamily(definitions).map((group) => (
+              <div key={group.key}>
+                <SectionLabel>{group.label}</SectionLabel>
+                {group.items.map((def) => (
+                  <div key={def.id}>
+                    <Button
+                      variant="outline"
+                      block
+                      onClick={() => {
+                        addEffect(def.id);
+                        setBrowsing(false);
+                      }}
+                    >
+                      {def.title}
+                    </Button>
+                    {def.hint && <p className={s.notice}>{def.hint}</p>}
+                  </div>
+                ))}
               </div>
             ))}
             <Button variant="ghost" block onClick={() => setBrowsing(false)}>
