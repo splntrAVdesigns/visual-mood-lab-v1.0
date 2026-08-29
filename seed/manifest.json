@@ -955,6 +955,20 @@
         "text",
         "glitch"
       ]
+    },
+    {
+      "slug": "audio-circuit",
+      "type": "shader",
+      "file": "shaders/audio-circuit.frag",
+      "title": "Audio Circuit",
+      "tags": [
+        "audio-reactive",
+        "waveform",
+        "led",
+        "circuit",
+        "radial",
+        "glow"
+      ]
     }
   ]
 }

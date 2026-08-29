@@ -33,7 +33,7 @@ interface RecordButtonProps {
  * early (see engine.ts's RecordingHandle.stop doc for what that costs:
  * the clip still uploads, it just skips the seamless-loop crossfade).
  */
-export function RecordButton({ asset, canCapture, format, durationSec }: RecordButtonProps) {
+export function RecordButton({ asset, canCapture, format, durationSec, variant }: RecordButtonProps) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [elapsed, setElapsed] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
@@ -138,14 +138,19 @@ export function RecordButton({ asset, canCapture, format, durationSec }: RecordB
           active={phase === 'recording'}
           disabled={disabled && phase !== 'recording'}
           onClick={() => void handleClick()}
-          aria-label={phase === 'recording' ? 'Stop recording' : 'Start recording'}
+          aria-label={
+            phase === 'recording'
+              ? `Stop recording, ${Math.min(Math.ceil(elapsed), durationSec)} of ${durationSec} seconds`
+              : 'Start recording'
+          }
         >
           <RecordIcon recording={phase === 'recording'} />
-          {phase === 'recording'
-            ? `${Math.min(Math.ceil(elapsed), durationSec)}s / ${durationSec}s`
-            : phase === 'uploading'
-            ? 'Saving\u2026'
-            : 'Record'}
+          {variant !== 'icon' &&
+            (phase === 'recording'
+              ? `${Math.min(Math.ceil(elapsed), durationSec)}s / ${durationSec}s`
+              : phase === 'uploading'
+              ? 'Saving\u2026'
+              : 'Record')}
         </Button>
       </Tooltip>
       {message && (phase === 'done' || phase === 'error') && (

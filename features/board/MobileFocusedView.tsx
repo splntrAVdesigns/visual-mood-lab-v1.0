@@ -243,6 +243,12 @@ export function MobileFocusedView() {
       </div>
 
       <div className={s.mobileActions}>
+        {hasSource && (
+          <Button variant="ghost" active={showCode} onClick={() => setShowCode((v) => !v)}>
+            <CodeIcon />
+            Code
+          </Button>
+        )}
         {canCapture && (
           <>
             <Tooltip content="Set export format and duration">
@@ -260,18 +266,13 @@ export function MobileFocusedView() {
               canCapture={canCapture}
               format={captureFormat}
               durationSec={captureDuration}
+              variant="icon"
             />
           </>
         )}
         {!asset.isSnapshot && (
           <Button variant="ghost" onClick={saveSnapshot} disabled={saving}>
             {saving ? 'Saving…' : 'Snapshot'}
-          </Button>
-        )}
-        {hasSource && (
-          <Button variant="ghost" active={showCode} onClick={() => setShowCode((v) => !v)}>
-            <CodeIcon />
-            Code
           </Button>
         )}
         {asset.isSnapshot && (
