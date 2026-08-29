@@ -153,61 +153,77 @@ void main() {
   vec3 col = vec3(0.0);
 
   if (u_mode == 0) {
-    // Gradient Bands — REBUILT. Rev 1 mapped color to raw uv.x, which
-    // produced static solid-color pillars at the left/right extremes
-    // once palette() clamped past its ends — that's the "vertical color
-    // bands" bug, not a rendering glitch. Now: one base waveform shape
-    // computed once and duplicated across layers (mirrored on alternating
-    // layers) rather than each layer getting its own independently random
-    // shape; layer 0 sits centered at y=0 (not stacked from the bottom);
-    // edges are near-hard (tight fixed-width AA, not proportional to
-    // amplitude).
+    // Gradient Bands — REBUILT (rev 3). Rev 2 fixed the vertical-pillar
+    // color bug but left two real problems: edges used a fixed 0.006 AA
+    // width regardless of shape amplitude (reads as vector-clean/precut,
+    // not a real waveform), and every x-position shared the same three
+    // sin() terms scaled by the same scalar bass/mid/high — so the whole
+    // ribbon swelled as one unit instead of different parts of it moving
+    // independently, which is the actual look of an audio waveform.
     //
-    // Color: each layer gets its own genuine HORIZONTAL gradient — hue
-    // sweeps across the ribbon's x-extent (several visible transitions at
-    // once, not a single flat hue), continuously scrolling via u_time so
-    // it reads as color moving through the ribbon rather than sitting
-    // fixed end to end. Per-layer phase offset (fi term) means each
-    // layer's sweep is distinct from the others — this is what "each
-    // layer gets a gradient" means here, not a different flat color per
-    // layer (that would read as color varying by vertical stack
-    // position, which is explicitly not the ask).
+    // Only 4 scalar audio bands exist (bass/mid/high/rms — no per-bin FFT
+    // texture; see header note), so true per-sample independence isn't
+    // available data. Faked the same way Mirror fakes per-bar variation:
+    // the ribbon is bucketed into pseudo-segments, each with its own
+    // hash-seeded phase and time-rate, so the same shared scalar energy
+    // reaches different segments at different moments instead of in
+    // lockstep. Edges are now a noise-modulated smoothstep band (textured,
+    // soft) instead of a fixed tight AA width, and a light per-segment
+    // brightness shimmer stands in for LED-cell texture without
+    // introducing hard geometric slicing.
     int layers = u_gbLayers;
     for (int i = 0; i < 5; i++) {
       if (i >= layers) break;
       float fi = float(i);
       float mirrorSign = mod(fi, 2.0) < 0.5 ? 1.0 : -1.0;
 
-      // One shared shape. Combines a few fixed low-frequency components
-      // (standing in for bass/mid) with per-sample hash jitter (standing
-      // in for high) so it reads as a real jagged waveform, not a smooth
-      // blob — same technique Mirror/Line already use for the same
-      // reason.
+      float segCount = 40.0;
+      float segId = floor((p.x * 0.5 + 0.5) * segCount + fi * 7.0);
+      float segSeed = hash21(vec2(segId, fi + 11.0));
+      float segSeed2 = hash21(vec2(segId, fi + 31.0));
+      float segPhase = segSeed * 6.2831;
+      float segRate = 0.55 + segSeed2 * 1.85;
+      float segEnergy = bass * (0.35 + segSeed * 0.85) + mid * (0.25 + segSeed2 * 0.9);
+
       float xs = p.x * 5.0;
-      float jitter = (hash21(vec2(floor(xs * 8.0), 0.0)) - 0.5) * 2.0;
+      float jitter = (hash21(vec2(floor(xs * 8.0), fi)) - 0.5) * 2.0;
       float shape =
-        sin(xs + u_time * 0.6) * (0.10 + bass * 0.16) +
-        sin(xs * 2.7 - u_time * 0.9) * (0.05 + mid * 0.10) +
+        sin(xs + u_time * segRate + segPhase) * (0.08 + segEnergy * 0.20) +
+        sin(xs * 2.7 - u_time * (segRate * 0.7) - segPhase) * (0.04 + mid * 0.08) +
         jitter * (0.02 + high * 0.05);
       shape *= mirrorSign;
 
       float centerOffset = (fi - (float(layers) - 1.0) * 0.5) * (0.12 + u_gbSpread * 0.16);
       float d = abs(p.y - centerOffset - shape);
       float thickness = 0.02 + abs(shape) * 0.6;
-      float mask = smoothstep(thickness, thickness - 0.006, d);
+      // Blurred, textured edge: width varies with fbm() instead of a
+      // fixed 0.006 constant, so the falloff itself reads as organic
+      // rather than vector-clean. Kept modest (not extreme) per feedback.
+      float edgeSoft = 0.018 + fbm(vec2(xs * 6.0, fi * 4.0 + u_time * 0.2)) * 0.045;
+      float mask = smoothstep(thickness + edgeSoft, thickness - edgeSoft, d);
 
       float colorT = 0.5 + 0.5 * sin(p.x * 4.5 - u_time * 0.5 + fi * 2.1);
       colorT = clamp(colorT + (fbm(vec2(p.x * 2.0, u_time * 0.06 + fi * 3.0)) - 0.5) * 0.3, 0.0, 1.0);
-      col += palette(clamp(colorT + bass * u_colorWarmth * 0.15, 0.0, 1.0)) * mask * (1.0 - fi * 0.12);
+      float ledTexture = 0.88 + 0.12 * hash21(vec2(segId, fi + 3.0));
+      col += palette(clamp(colorT + bass * u_colorWarmth * 0.15, 0.0, 1.0)) * mask * ledTexture * (1.0 - fi * 0.12);
     }
   } else if (u_mode == 1) {
-    // Mirror — FIXED. Bars previously moved as one smooth interpolated
-    // curve across position (mix(bass,high,position)) — visually one
-    // wing-shaped blob, not independent bars. Now each bar's height is
-    // additionally driven by a per-bar hash blended against mid, so
-    // neighboring bars diverge the way real per-bin EQ data does, even
-    // though this is still only 4 scalar bands underneath. Center
-    // reference line removed per feedback — wasn't adding anything.
+    // Mirror — REBUILT (rev 3). Rev 2 gave each bar a per-bar hash
+    // (barSeed), but that seed only ever set a STATIC ratio applied to
+    // the same instantaneous scalar band — so every bar still scaled up
+    // and down together, in lockstep, whenever bass/mid/high moved. Real
+    // per-bin EQ data isn't available (only 4 scalar bands — see header
+    // note), so independence is faked the same way as Gradient Bands:
+    // each bar gets its own phase and time-rate, so the shared scalar
+    // energy reaches different bars at different moments instead of
+    // uniformly. bandT (left-to-right position) still picks which band
+    // (bass vs. high) a given bar leans toward — a reasonable stand-in
+    // for spectrum layout — but color no longer follows that position.
+    // Color now follows each bar's own amplitude: quiet bars read cool,
+    // tall peaks read warm, matching a real audio-reactive EQ's color
+    // mapping instead of a fixed left/right hue split (the "vertical
+    // gradient band in center" bug — hue was tied to x-position, so it
+    // rendered as a column of color, not a reading of loudness).
     float nBars = float(u_mirrorBars);
     float halfX = abs(p.x);
     float slotW = 0.5 / nBars;
@@ -215,12 +231,22 @@ void main() {
     float barCenter = (barIndexF + 0.5) * slotW;
     float bandT = clamp(barCenter * 2.0, 0.0, 1.0);
     float barSeed = hash21(vec2(barIndexF, 7.0));
+    float barSeed2 = hash21(vec2(barIndexF, 23.0));
+
+    float barPhase = barSeed2 * 6.2831;
+    float barRate = 0.5 + barSeed2 * 2.2;
+    float wobble = 0.35 + 0.65 * (0.5 + 0.5 * sin(u_time * barRate + barPhase));
+
     float bandBase = mix(bass, high, bandT);
-    float band = mix(bandBase, mid, barSeed) * (0.55 + barSeed * 0.9);
+    float band = mix(bandBase, mid, barSeed) * (0.45 + barSeed * 0.7) * wobble;
+    float maxH = (0.05 + 0.35 * u_mirrorSpread);
     float h = (0.05 + band * 0.35) * u_mirrorSpread;
+
     float withinSlot = step(abs(halfX - barCenter), slotW * 0.4);
     float filled = step(abs(p.y), h) * withinSlot;
-    col += palette(bandT * (1.0 + u_colorWarmth)) * filled;
+
+    float ampT = clamp(h / max(maxH, 0.001), 0.0, 1.0);
+    col += palette(ampT * (1.0 + u_colorWarmth)) * filled;
   } else if (u_mode == 2) {
     // Line — unchanged visually, optimized: rev 1 called sin() fresh for
     // every echo band's phase-shifted term. Collapsed the two-term sum
@@ -245,22 +271,43 @@ void main() {
       col += palette(clamp(high + fe * 0.15, 0.0, 1.0)) * (core + glow) * fade;
     }
   } else if (u_mode == 3) {
-    // Radial Gradient — REBUILT. Rev 1 was pure concentric exp() falloff
-    // rings — smooth, zero noise, which is exactly why it read as "a
-    // blob" rather than a turbulent field. Now driven by domain-warped
-    // fbm: the turbulence pattern's phase is advanced outward along the
-    // radial direction over time (radialFlow subtracts time scaled by
-    // radius), which is what makes the motion visibly originate from
-    // center and migrate outward, rather than the whole field pulsing as
-    // one unit.
+    // Radial Gradient — REBUILT (rev 3). Rev 2 sampled turbulence in
+    // POLAR space — vec2(cos(ang), sin(ang)) * radialFlow — and any noise
+    // sampled along a fixed angle from center inherently elongates into
+    // rays as r grows, no matter how the fbm() on top is layered. That
+    // was the actual cause of the "god rays" look, not a tuning problem.
+    // Replaced with a recursive Cartesian domain warp — fbm(p + fbm(p +
+    // fbm(p))), sampled directly in p-space with no polar conversion —
+    // same family of technique as the noise-field seed shader, which is
+    // what actually produces a meshed, liquid/plasma look with no
+    // angular bias. A second, independent turbulence field drives hue so
+    // color meshes across the canvas instead of tracking radius — rev
+    // 2's `r * 0.4` term in the color input was the direct cause of one
+    // hue dominating most of the tile. `r` now only shapes a soft
+    // vignette (brightness falloff toward the tile edge), not the
+    // sampling domain or the color.
     float r = length(p) / max(u_radialSpread, 0.1);
-    float ang = atan(p.y, p.x);
-    float radialFlow = r - u_time * u_radialSpeed * 0.3;
-    vec2 turbUv = vec2(cos(ang), sin(ang)) * radialFlow * 2.2 + fbm(p * 1.5 + u_time * 0.04);
-    float n = fbm(turbUv * 2.4 + fbm(turbUv * 1.3 + u_time * 0.06) * 1.4);
     float energy = bass * 0.5 + rms * 0.5;
-    float field = n * exp(-r * (1.7 - energy));
-    col += palette(clamp(n * 0.6 + r * 0.4 + energy * u_colorWarmth, 0.0, 1.0)) * field * (0.7 + energy * 0.9);
+
+    vec2 pd = p * 3.0;
+    vec2 flow = vec2(u_time * u_radialSpeed * 0.06, u_time * u_radialSpeed * 0.045);
+
+    vec2 q = vec2(
+      fbm(pd + flow),
+      fbm(pd + vec2(5.2, 1.3) + flow)
+    );
+    vec2 w = vec2(
+      fbm(pd + q * (1.6 + energy * 1.3) + vec2(1.7, 9.2) - flow * 1.4),
+      fbm(pd + q * (1.6 + energy * 1.3) + vec2(8.3, 2.8) + flow * 1.4)
+    );
+    float n = fbm(pd + w * (2.0 + energy * 1.5));
+    float hueField = fbm(pd * 0.7 - flow * 0.6 + q * 1.2 + vec2(3.1, 7.4));
+
+    float vignette = exp(-r * (1.15 - energy * 0.35));
+    float field = mix(n, n * n, 0.3) * vignette;
+
+    float colorT = clamp(mix(hueField, n, 0.35) + energy * u_colorWarmth * 0.3, 0.0, 1.0);
+    col += palette(colorT) * field * (0.75 + energy * 0.8);
   } else if (u_mode == 4) {
     // LED Screen — two additions: Edge Sharpness (was a hardcoded
     // smoothstep width, now a real control), Auto Shuffle (the
