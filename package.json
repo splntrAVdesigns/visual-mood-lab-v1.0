@@ -24,6 +24,7 @@
     "@vercel/blob": "^2.6.1",
     "argon2": "^0.45.1",
     "drizzle-orm": "^0.45.2",
+    "mediabunny": "^1.55.3",
     "next": "^16.0.0",
     "next-auth": "^5.0.0-beta.32",
     "p5": "^1.11.13",

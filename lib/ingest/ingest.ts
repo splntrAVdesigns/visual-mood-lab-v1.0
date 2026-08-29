@@ -173,9 +173,28 @@ export async function ingestAsset(input: IngestInput): Promise<IngestResult> {
     const put = await storage.put(`posters/${id}.svg`, Buffer.from(svg, 'utf8'), 'image/svg+xml');
     posterUrl = put.url;
     dominantColors = posterColors(contentHash, input.type);
+  } else if (input.type === 'video') {
+    // A real frame-grab poster needs ffmpeg running server-side — not yet
+    // wired (see this file's own earlier comment on the raster/video
+    // branch, and the Video Export Foundation sprint notes on why that's
+    // real, separate infra work, not a quick patch). Reusing `srcUrl`
+    // directly — the previous behavior — isn't a degraded fallback for
+    // video the way it is for an image: a browser cannot render `.mp4`
+    // bytes through an `<img>` tag at all, so every video asset showed a
+    // permanently broken dummy-image icon, not a low-quality poster.
+    // The same deterministic lattice placeholder already generated for
+    // shader/p5 assets above is a genuine, correct fix in the meantime —
+    // it reads as "video asset, no real poster yet" instead of "broken,"
+    // and costs nothing new: same function, same storage call, same
+    // pattern, just called for one more type.
+    const svg = generatePosterSvg('video', id, contentHash);
+    const put = await storage.put(`posters/${id}.svg`, Buffer.from(svg, 'utf8'), 'image/svg+xml');
+    posterUrl = put.url;
+    dominantColors = posterColors(contentHash, 'video');
   } else if (input.srcUrl) {
-    // Raster and video posters are produced by sharp / ffmpeg at upload time
-    // and passed in via srcUrl's sibling. Until that lands, reuse the source.
+    // image/svg only from here — these DO render correctly through an
+    // <img src>, so reusing the source is a real, working poster, unlike
+    // the video case above.
     posterUrl = input.srcUrl;
   }
 

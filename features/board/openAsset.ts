@@ -32,6 +32,11 @@ export function openAssetById(itemId: string, pushUrl = true): void {
       asset.isSnapshot ? defaultSchemaFor(asset.id, 'image') : (asset.schema ?? defaultSchemaFor(asset.id, asset.type)),
       asset.params,
       itemId,
+      // The real underlying asset's id — distinct from itemId (the board
+      // CARD's id). Threading this through is what fixes the 404 on any
+      // owned, non-snapshot card's params/mod/sound/effects persistence —
+      // see inspectorStore.ts's persist()/flush() doc for the full story.
+      asset.id,
       asset.isSnapshot ?? false,
       asset.mod ?? {},
       asset.isOwned ?? false,

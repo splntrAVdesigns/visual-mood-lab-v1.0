@@ -30,6 +30,15 @@ interface InspectorState {
   /** Card identity — the pool key, and what the URL and renderer key off. */
   itemId: string | null;
   /**
+   * The underlying asset's real id — DISTINCT from itemId. itemId is the
+   * board CARD's identity (what the pool, the URL, and getPool().get()
+   * key off); assetId is the shader/sketch/media row itself. The two
+   * happen to coincide for a plain canonical card, which is why this
+   * field's absence went unnoticed for so long — see persist()/flush()
+   * below for the bug that not tracking this separately caused.
+   */
+  assetId: string | null;
+  /**
    * True when the open card is a saved parameter variation rather than an
    * asset's canonical card. Determines which endpoint edits persist to:
    * a snapshot's board item, or the asset row itself.
@@ -54,6 +63,7 @@ interface InspectorState {
     schema: ControlSchema,
     saved: ParamState | undefined,
     itemId: string,
+    assetId: string,
     isSnapshot?: boolean,
     mod?: ModState,
     isOwned?: boolean,
@@ -94,6 +104,23 @@ interface InspectorState {
  * what every other account sees — so both persist as a per-card override
  * on the board item instead, the same mechanism either way.
  *
+ * FIX: this used to take only `itemId` and pass it to BOTH
+ * persistSnapshotParams (correct — that one genuinely wants the board
+ * item's own id) AND persistParams (WRONG — that one wants the real
+ * underlying asset's id, which is not generally the same string as the
+ * board card's itemId). The two only happened to match for a canonical,
+ * owned, non-snapshot card in the cases exercised so far, which is every
+ * seed asset (owned by a fixed library account, never the signed-in
+ * viewer, so isOwned is always false there — routing through the
+ * board-item path regardless) and every snapshot (isSnapshot always
+ * true). A directly owned, non-snapshot asset — a genuine upload or
+ * capture — is the first case where itemId and the real asset id
+ * actually diverge, which is exactly what surfaced this as a 404 on the
+ * Video Export Foundation capture's Paused toggle. assetId now threads
+ * through from openInspector() (ultimately from openAssetById in
+ * openAsset.ts, which has the real Asset object and thus asset.id in
+ * hand) precisely so this function has the right id for both branches.
+ *
  * The board-store sync rides the SAME debounce as the network write
  * (passed as onSaved), not a synchronous call on every setParam(). It used
  * to fire on every single drag tick, which handed RendererStage's mount
@@ -102,26 +129,33 @@ interface InspectorState {
  * of why that made the live canvas go black for the whole duration of a
  * drag.
  */
-function persist(itemId: string, usesBoardItemPath: boolean, params: ParamState): void {
+function persist(itemId: string, assetId: string, usesBoardItemPath: boolean, params: ParamState): void {
   const onSaved = (saved: ParamState) => useBoardStore.getState().updateAssetParams(itemId, saved);
   usesBoardItemPath
     ? persistSnapshotParams(itemId, params, 500, onSaved)
-    : persistParams(itemId, params, 500, onSaved);
+    : persistParams(assetId, params, 500, onSaved);
 }
 
-function flush(itemId: string, usesBoardItemPath: boolean): void {
+function flush(itemId: string, assetId: string, usesBoardItemPath: boolean): void {
   const onSaved = (saved: ParamState) => useBoardStore.getState().updateAssetParams(itemId, saved);
-  usesBoardItemPath ? flushSnapshotParams(itemId, onSaved) : flushParams(itemId, onSaved);
+  usesBoardItemPath ? flushSnapshotParams(itemId, onSaved) : flushParams(assetId, onSaved);
 }
 
 /** Phase 4.96 — the shared tail every VFX action below runs: push to the
     live pool entry, persist (debounced, same 500ms window as params/mod/
     sound), sync the board store so a reopened card and its grid thumbnail
     both reflect the edit. Mirrors setSoundState's body exactly, factored
-    out since six different actions below all end the same way. */
-function applyEffects(itemId: string, isSnapshot: boolean, isOwned: boolean, effects: EffectInstance[]): void {
+    out since six different actions below all end the same way. Same
+    itemId/assetId fix as persist()/flush() above — see that doc. */
+function applyEffects(
+  itemId: string,
+  assetId: string,
+  isSnapshot: boolean,
+  isOwned: boolean,
+  effects: EffectInstance[],
+): void {
   getPool().setEffects(itemId, effects);
-  persistEffects(itemId, effects, isSnapshot || !isOwned);
+  persistEffects(itemId, assetId, effects, isSnapshot || !isOwned);
   useBoardStore.getState().updateAssetEffects(itemId, effects);
 }
 
@@ -133,13 +167,14 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
   params: {},
   dirty: new Set(),
   itemId: null,
+  assetId: null,
   isSnapshot: false,
   isOwned: true,
   mod: {},
   sound: DEFAULT_SOUND_STATE,
   effects: [],
 
-  openInspector: (schema, saved, itemId, isSnapshot = false, mod = {}, isOwned = true, sound = DEFAULT_SOUND_STATE, effects = []) => {
+  openInspector: (schema, saved, itemId, assetId, isSnapshot = false, mod = {}, isOwned = true, sound = DEFAULT_SOUND_STATE, effects = []) => {
     const params = hydrate(schema, saved);
     // normalizeSoundState, not a bare default param: `sound` here is
     // whatever the caller read off the asset row, and `sound` is a JSONB
@@ -155,7 +190,7 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
     // the store's own copy, what the panel actually renders from, was
     // still raw.
     const normalizedSound = normalizeSoundState(sound);
-    set({ open: true, schema, params, dirty: new Set(), itemId, isSnapshot, isOwned, mod, sound: normalizedSound, effects });
+    set({ open: true, schema, params, dirty: new Set(), itemId, assetId, isSnapshot, isOwned, mod, sound: normalizedSound, effects });
     getPool().get(itemId)?.setParams(params);
     getPool().setBaseParams(itemId, params);
     getPool().setModState(itemId, mod);
@@ -164,7 +199,7 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
   },
 
   setModulation: (controlId, mod) => {
-    const { mod: current, itemId, isSnapshot, isOwned } = get();
+    const { mod: current, itemId, assetId, isSnapshot, isOwned } = get();
     const next: ModState = { ...current };
 
     if (mod) next[controlId] = mod;
@@ -172,20 +207,20 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
 
     set({ mod: next });
 
-    if (!itemId) return;
+    if (!itemId || !assetId) return;
     getPool().setModState(itemId, next);
-    persistMod(itemId, next, isSnapshot || !isOwned);
+    persistMod(itemId, assetId, next, isSnapshot || !isOwned);
     useBoardStore.getState().updateAssetMod(itemId, next);
   },
 
   setSoundState: (sound) => {
-    const { itemId, isSnapshot, isOwned } = get();
+    const { itemId, assetId, isSnapshot, isOwned } = get();
     const normalized = normalizeSoundState(sound);
     set({ sound: normalized });
 
-    if (!itemId) return;
+    if (!itemId || !assetId) return;
     getPool().setSoundState(itemId, normalized);
-    persistSound(itemId, normalized, isSnapshot || !isOwned);
+    persistSound(itemId, assetId, normalized, isSnapshot || !isOwned);
     useBoardStore.getState().updateAssetSound(itemId, normalized);
   },
 
@@ -197,22 +232,22 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
       a direct store call) — failing closed is safer than guessing which
       entry the person would have wanted evicted. */
   addEffect: (effectType) => {
-    const { effects, itemId, isSnapshot, isOwned } = get();
-    if (!itemId || effects.length >= MAX_EFFECTS_PER_CHAIN) return;
+    const { effects, itemId, assetId, isSnapshot, isOwned } = get();
+    if (!itemId || !assetId || effects.length >= MAX_EFFECTS_PER_CHAIN) return;
 
     const instance = createEffectInstance(effectType, defaultEffectParams(effectType));
     const next = [...effects, instance];
     set({ effects: next });
-    applyEffects(itemId, isSnapshot, isOwned, next);
+    applyEffects(itemId, assetId, isSnapshot, isOwned, next);
   },
 
   removeEffect: (instanceId) => {
-    const { effects, itemId, isSnapshot, isOwned } = get();
-    if (!itemId) return;
+    const { effects, itemId, assetId, isSnapshot, isOwned } = get();
+    if (!itemId || !assetId) return;
 
     const next = effects.filter((e) => e.id !== instanceId);
     set({ effects: next });
-    applyEffects(itemId, isSnapshot, isOwned, next);
+    applyEffects(itemId, assetId, isSnapshot, isOwned, next);
   },
 
   /** Instance identity (EffectInstance.id) travels with the object through
@@ -222,39 +257,39 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
       targeting" decision: the routing lives ON the instance, in its own
       `mod` field, not in a table keyed by position). */
   reorderEffects: (fromIndex, toIndex) => {
-    const { effects, itemId, isSnapshot, isOwned } = get();
-    if (!itemId || fromIndex === toIndex) return;
+    const { effects, itemId, assetId, isSnapshot, isOwned } = get();
+    if (!itemId || !assetId || fromIndex === toIndex) return;
     if (fromIndex < 0 || fromIndex >= effects.length || toIndex < 0 || toIndex >= effects.length) return;
 
     const next = [...effects];
     const [moved] = next.splice(fromIndex, 1);
     next.splice(toIndex, 0, moved);
     set({ effects: next });
-    applyEffects(itemId, isSnapshot, isOwned, next);
+    applyEffects(itemId, assetId, isSnapshot, isOwned, next);
   },
 
   setEffectEnabled: (instanceId, enabled) => {
-    const { effects, itemId, isSnapshot, isOwned } = get();
-    if (!itemId) return;
+    const { effects, itemId, assetId, isSnapshot, isOwned } = get();
+    if (!itemId || !assetId) return;
 
     const next = effects.map((e) => (e.id === instanceId ? { ...e, enabled } : e));
     set({ effects: next });
-    applyEffects(itemId, isSnapshot, isOwned, next);
+    applyEffects(itemId, assetId, isSnapshot, isOwned, next);
   },
 
   setEffectMix: (instanceId, mix) => {
-    const { effects, itemId, isSnapshot, isOwned } = get();
-    if (!itemId) return;
+    const { effects, itemId, assetId, isSnapshot, isOwned } = get();
+    if (!itemId || !assetId) return;
 
     const clamped = Math.max(0, Math.min(1, mix));
     const next = effects.map((e) => (e.id === instanceId ? { ...e, mix: clamped } : e));
     set({ effects: next });
-    applyEffects(itemId, isSnapshot, isOwned, next);
+    applyEffects(itemId, assetId, isSnapshot, isOwned, next);
   },
 
   setEffectParam: (instanceId, paramId, value) => {
-    const { effects, itemId, isSnapshot, isOwned } = get();
-    if (!itemId) return;
+    const { effects, itemId, assetId, isSnapshot, isOwned } = get();
+    if (!itemId || !assetId) return;
 
     const instance = effects.find((e) => e.id === instanceId);
     if (!instance) return;
@@ -268,12 +303,12 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
       e.id === instanceId ? { ...e, params: { ...e.params, [paramId]: coerced } } : e,
     );
     set({ effects: next });
-    applyEffects(itemId, isSnapshot, isOwned, next);
+    applyEffects(itemId, assetId, isSnapshot, isOwned, next);
   },
 
   setEffectModulation: (instanceId, paramId, mod) => {
-    const { effects, itemId, isSnapshot, isOwned } = get();
-    if (!itemId) return;
+    const { effects, itemId, assetId, isSnapshot, isOwned } = get();
+    if (!itemId || !assetId) return;
 
     const next = effects.map((e) => {
       if (e.id !== instanceId) return e;
@@ -283,14 +318,14 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
       return { ...e, mod: nextMod };
     });
     set({ effects: next });
-    applyEffects(itemId, isSnapshot, isOwned, next);
+    applyEffects(itemId, assetId, isSnapshot, isOwned, next);
   },
 
   closeInspector: () => {
     // Flush before closing: a change made just before hitting X would
     // otherwise be lost inside the debounce window.
-    const { itemId, isSnapshot, isOwned } = get();
-    if (itemId) flush(itemId, isSnapshot || !isOwned);
+    const { itemId, assetId, isSnapshot, isOwned } = get();
+    if (itemId && assetId) flush(itemId, assetId, isSnapshot || !isOwned);
     set({ open: false });
   },
 
@@ -299,7 +334,7 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
   toggleAdvanced: () => set((s) => ({ showAdvanced: !s.showAdvanced })),
 
   setParam: (id, value) => {
-    const { schema, params, dirty, itemId, isSnapshot, isOwned } = get();
+    const { schema, params, dirty, itemId, assetId, isSnapshot, isOwned } = get();
     const control = schema?.controls.find((c) => c.id === id);
     if (!control) return;
 
@@ -334,7 +369,7 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
 
     set({ params: nextParams, dirty: nextDirty });
 
-    if (!itemId) return;
+    if (!itemId || !assetId) return;
     const renderer = getPool().get(itemId);
     if (control.kind === 'trigger') {
       renderer?.emit(control.event);
@@ -370,11 +405,11 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
       renderer?.setParam(clampedId, nextParams[clampedId]);
       getPool().setBaseParam(itemId, clampedId, nextParams[clampedId]);
     }
-    persist(itemId, isSnapshot || !isOwned, nextParams);
+    persist(itemId, assetId, isSnapshot || !isOwned, nextParams);
   },
 
   resetParam: (id) => {
-    const { schema, params, dirty, itemId, isSnapshot, isOwned } = get();
+    const { schema, params, dirty, itemId, assetId, isSnapshot, isOwned } = get();
     const control = schema?.controls.find((c) => c.id === id);
     if (!control || control.kind === 'trigger') return;
 
@@ -383,21 +418,21 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
     const nextParams = { ...params, [id]: control.default };
     set({ params: nextParams, dirty: nextDirty });
 
-    if (!itemId) return;
+    if (!itemId || !assetId) return;
     getPool().get(itemId)?.setParam(id, control.default);
     getPool().setBaseParam(itemId, id, control.default);
-    persist(itemId, isSnapshot || !isOwned, nextParams);
+    persist(itemId, assetId, isSnapshot || !isOwned, nextParams);
   },
 
   resetAll: () => {
-    const { schema, itemId, isSnapshot, isOwned } = get();
+    const { schema, itemId, assetId, isSnapshot, isOwned } = get();
     if (!schema) return;
     const params = defaultsOf(schema);
     set({ params, dirty: new Set() });
 
-    if (!itemId) return;
+    if (!itemId || !assetId) return;
     getPool().get(itemId)?.setParams(params);
     getPool().setBaseParams(itemId, params);
-    persist(itemId, isSnapshot || !isOwned, params);
+    persist(itemId, assetId, isSnapshot || !isOwned, params);
   },
 }));

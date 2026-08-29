@@ -142,6 +142,31 @@ export class MediaRenderer implements AssetRenderer {
     if (el instanceof HTMLVideoElement) {
       el.playbackRate = Math.max(0.0625, num('speed', 1));
       el.loop = this.params.loop !== false;
+
+      // FIX (Video Export Foundation follow-up): this block previously
+      // ended after setting `.loop` — the Inspector's Paused toggle wrote
+      // to `this.params.paused` via setParam() same as any other control,
+      // but nothing here ever read it back, so the control changed state
+      // that had no effect on the actual <video> element. `play()`/
+      // `pause()` below are the pool's own global "pause all" methods
+      // (called directly by lib/render/pool.ts, not through params) —
+      // a completely separate path from this per-tile schema value, which
+      // is exactly how the two ended up disconnected from each other.
+      const shouldPause = this.params.paused === true;
+      if (shouldPause) {
+        if (!el.paused) el.pause();
+      } else if (el.paused) {
+        // A video that played to its end while `loop` was off sits at its
+        // last frame with `.paused === true` and `.ended === true`.
+        // Re-enabling `.loop` alone does not resume it — a browser only
+        // auto-restarts a video on `ended` if `.loop` was ALREADY true at
+        // that moment, not retroactively. Explicitly rewinding before
+        // play() is what actually un-freezes it, rather than leaving a
+        // dead last frame on screen with Paused (still broken until this
+        // same fix) as the only apparent way to recover it.
+        if (el.ended) el.currentTime = 0;
+        void el.play().catch(() => {});
+      }
     }
   }
 

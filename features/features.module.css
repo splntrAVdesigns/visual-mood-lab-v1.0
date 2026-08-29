@@ -743,7 +743,8 @@
  */
 .focusScrim[data-mod='true'],
 .focusScrim[data-sound='true'],
-.focusScrim[data-vfx='true'] {
+.focusScrim[data-vfx='true'],
+.focusScrim[data-capture='true'] {
   /* Single source of truth for the sidecar's width, shared with
      .sidecarStack/.sidecarSpacer below via inheritance (custom properties
      cascade down the DOM by default) — so they can never drift out of
@@ -1354,7 +1355,8 @@
      covers. */
   .focusScrim[data-mod='true'] .focusPanel,
   .focusScrim[data-sound='true'] .focusPanel,
-  .focusScrim[data-vfx='true'] .focusPanel {
+  .focusScrim[data-vfx='true'] .focusPanel,
+  .focusScrim[data-capture='true'] .focusPanel {
     display: none;
   }
   /* 7 dots desktop, 5 on narrow viewports (room for a 5th over the
@@ -1932,9 +1934,38 @@
   animation: savedNoteIn var(--dur-base) var(--ease);
 }
 
+.savedNote[data-error='true'] {
+  color: var(--danger);
+}
+
 @keyframes savedNoteIn {
   from { opacity: 0; transform: translateY(-2px); }
   to { opacity: 1; transform: none; }
+}
+
+/* ------------------------------------------------------------------ *
+ * Video export — Record button
+ * ------------------------------------------------------------------ */
+
+.recordGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* data-recording lives on the wrapper span (RecordButton.tsx), not on the
+   Button component itself — ButtonProps/ButtonHTMLAttributes typing for
+   arbitrary data-* passthrough isn't guaranteed across @types/react
+   versions, so this avoids that risk entirely rather than assuming it
+   works. Targets the button element one level down instead. */
+.recordGroup[data-recording='true'] button {
+  color: var(--danger);
+  animation: recordPulse 1.6s ease-in-out infinite;
+}
+
+@keyframes recordPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 
 /* ------------------------------------------------------------------ *

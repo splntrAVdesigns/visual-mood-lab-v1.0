@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { listAssets } from '@/lib/data/assets';
 import { ingestAsset } from '@/lib/ingest/ingest';
 import { requireUser } from '@/lib/auth';
+import { sanitizeAssetTags } from '@/lib/validation/asset';
 import type { AssetType } from '@/types/asset';
 
 export const dynamic = 'force-dynamic';
@@ -38,12 +39,25 @@ function isAllowedSrcUrl(raw: string, requestUrl: string, ownerId: string): bool
   // that this app doesn't construct itself. If BLOB_PUBLIC_BASE ever
   // changes, this check tracks it automatically since it reads the same
   // env var.
+  // Widened (Video Export Foundation sprint, diagnosed via a real capture
+  // upload): a real Vercel Blob PUT response returns a STORE-SPECIFIC
+  // subdomain, e.g. https://1kyosdncv2n7pwrf.public.blob.vercel-storage.com
+  // — never the bare blob.vercel-storage.com host. The bare-host exact
+  // match below only ever matched VercelBlobStorage.createSignedUpload()'s
+  // own GUESSED fallback publicUrl (used only when the PUT response body
+  // couldn't be read) — every real, successfully-read upload URL was
+  // rejected here regardless of ownership being correct, which is exactly
+  // what a captured clip's srcUrl hit. `.endsWith('.public.blob.vercel-
+  // storage.com')` is still strict: an attacker cannot provision an
+  // arbitrary subdomain of vercel-storage.com, so this doesn't loosen the
+  // actual security intent, only the previously-too-narrow format match.
   const configuredBase = process.env.BLOB_PUBLIC_BASE;
   let isKnownBlobHost: boolean;
   try {
     isKnownBlobHost = configuredBase
       ? parsed.origin === new URL(configuredBase).origin
-      : parsed.hostname === 'blob.vercel-storage.com';
+      : parsed.hostname === 'blob.vercel-storage.com' ||
+        parsed.hostname.endsWith('.public.blob.vercel-storage.com');
   } catch {
     isKnownBlobHost = false;
   }
@@ -98,22 +112,44 @@ export async function POST(req: Request) {
       title?: string;
       contentType?: string;
       srcUrl?: string;
+      /** Optional, additive. Existing callers (UploadDialog) never send
+          this and are unaffected — 'upload' is still always applied.
+          Added for captured video clips (Video Export Foundation sprint),
+          which also carry a 'capture' tag so Media Library work can
+          filter/find them distinctly from a manual file upload later. */
+      tags?: unknown;
     };
 
     const type = TYPE_FOR[body.contentType ?? ''];
     if (!type || !body.srcUrl) {
+      // TEMPORARY DIAGNOSTIC — Video Export Foundation, tracking down the
+      // capture-ingest 400. Safe to leave in (never fires for a healthy
+      // request) or remove once the root cause is confirmed; either way
+      // it's server-side only, never reaches the client response body.
+      console.error('[api/assets] rejected: incomplete upload', {
+        contentType: body.contentType,
+        srcUrl: body.srcUrl,
+      });
       return NextResponse.json({ error: 'Unsupported or incomplete upload' }, { status: 400 });
     }
 
     if (!isAllowedSrcUrl(body.srcUrl, req.url, user.id)) {
+      // TEMPORARY DIAGNOSTIC — see note above.
+      console.error('[api/assets] rejected: srcUrl not allowed', {
+        srcUrl: body.srcUrl,
+        ownerId: user.id,
+      });
       return NextResponse.json({ error: 'srcUrl is not from an allowed source' }, { status: 400 });
     }
+
+    const extraTags = sanitizeAssetTags(body.tags ?? []);
+    const tags = extraTags.length > 0 ? Array.from(new Set(['upload', ...extraTags])) : ['upload'];
 
     const res = await ingestAsset({
       ownerId: user.id,
       type,
       title: body.title?.trim() || 'Untitled',
-      tags: ['upload'],
+      tags,
       srcUrl: body.srcUrl,
     });
 

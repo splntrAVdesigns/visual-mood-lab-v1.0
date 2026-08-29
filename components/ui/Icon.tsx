@@ -70,6 +70,32 @@ export const PauseIcon = (p: IconProps) => (
   </Svg>
 );
 
+/** Record button icon — filled circle when idle (the universal "record"
+    affordance), filled square when `recording` is true (the universal
+    "stop" affordance for the same button). Same on/off-prop pattern as
+    VolumeIcon/FullscreenIcon above, so RecordButton.tsx can toggle it the
+    same way those toggle theirs. */
+export const RecordIcon = ({ recording, ...p }: IconProps & { recording?: boolean }) => (
+  <Svg {...p}>
+    {recording ? (
+      <rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor" strokeWidth={1} />
+    ) : (
+      <circle cx="8" cy="8" r="4.5" fill="currentColor" strokeWidth={1} />
+    )}
+  </Svg>
+);
+
+/** VCapture's own icon — a small camera/film-strip mark distinct from
+    RecordIcon, since VCapture opens options (format, duration) and never
+    itself starts a recording; the two need to read as different actions
+    at a glance, not two states of the same button. */
+export const VCaptureIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="2" y="4" width="9" height="8" rx="1" />
+    <path d="M11 6.5l3-1.5v6l-3-1.5z" strokeLinejoin="round" />
+  </Svg>
+);
+
 /** Speaker cone plus either sound-wave arcs or an X, same on/off-prop
     pattern as FullscreenIcon below. Used for the header master mute
     toggle (Phase 4.8, Stage 1). */
@@ -145,6 +171,15 @@ export const LayersIcon = (p: IconProps) => (
 export const CodeIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M5.5 4.5L2 8l3.5 3.5M10.5 4.5L14 8l-3.5 3.5" />
+  </Svg>
+);
+
+/** Down-arrow into a baseline — standard "download this file" glyph,
+    mirroring UploadIcon's up-arrow shape in reverse. */
+export const DownloadIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8 2v8M4.5 6.5L8 10l3.5-3.5" />
+    <path d="M2.5 12.5h11" />
   </Svg>
 );
 

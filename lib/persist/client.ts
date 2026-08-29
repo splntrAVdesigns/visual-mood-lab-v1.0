@@ -3,6 +3,7 @@ import type { ParamState } from '@/renderers/control-schema';
 import type { Asset } from '@/types/asset';
 import type { ModState, SoundState } from '@/renderers/control-schema';
 import type { EffectInstance } from '@/lib/effects/types';
+import type { CaptureFormat } from '@/lib/capture/types';
 
 /**
  * Client-side persistence helpers.
@@ -362,8 +363,27 @@ export function flushSnapshotParams(itemId: string, onSaved?: (params: ParamStat
  * same reason as persistParams/persistSnapshotParams: true for a snapshot
  * OR a canonical card the viewer doesn't own (a library asset cloned onto
  * their board), since neither can write to the shared asset row.
+ *
+ * FIX: previously took only `itemId` and used it for BOTH branches —
+ * `/api/boards/default/items/${itemId}` when true, but also
+ * `/api/assets/${itemId}` when false, silently reusing the board CARD's
+ * id as if it were the underlying asset's real id. Those only happen to
+ * be the same value for a snapshot-free, owned canonical card in the
+ * common case; the moment they diverge (any card whose itemId isn't
+ * literally the asset's own UUID) this 404s. Dormant until now because
+ * Modulate only ever appears on shader-type assets, and no asset was
+ * ever both genuinely owned by the signed-in viewer AND non-snapshot
+ * until uploads/captures existed — see the identical, now-fixed bug in
+ * inspectorStore.ts's persist()/flush() for params, which is what
+ * surfaced this whole family of latent bugs.
  */
-export function persistMod(itemId: string, mod: ModState, usesBoardItemPath: boolean, delay = 500): void {
+export function persistMod(
+  itemId: string,
+  assetId: string,
+  mod: ModState,
+  usesBoardItemPath: boolean,
+  delay = 500,
+): void {
   const key = `mod:${itemId}`;
   pending.set(key, mod as never);
 
@@ -372,7 +392,7 @@ export function persistMod(itemId: string, mod: ModState, usesBoardItemPath: boo
 
   const url = usesBoardItemPath
     ? `/api/boards/default/items/${itemId}`
-    : `/api/assets/${itemId}`;
+    : `/api/assets/${assetId}`;
 
   timers.set(
     key,
@@ -399,9 +419,16 @@ export function persistMod(itemId: string, mod: ModState, usesBoardItemPath: boo
 /**
  * Persist tile sound configuration. Same debounce/routing shape as
  * persistMod — a Volume slider drag shouldn't write a row per frame any
- * more than a modulation rate slider should.
+ * more than a modulation rate slider should. Same itemId/assetId fix as
+ * persistMod above, for the identical reason.
  */
-export function persistSound(itemId: string, sound: SoundState, usesBoardItemPath: boolean, delay = 500): void {
+export function persistSound(
+  itemId: string,
+  assetId: string,
+  sound: SoundState,
+  usesBoardItemPath: boolean,
+  delay = 500,
+): void {
   const key = `sound:${itemId}`;
   pending.set(key, sound as never);
 
@@ -410,7 +437,7 @@ export function persistSound(itemId: string, sound: SoundState, usesBoardItemPat
 
   const url = usesBoardItemPath
     ? `/api/boards/default/items/${itemId}`
-    : `/api/assets/${itemId}`;
+    : `/api/assets/${assetId}`;
 
   timers.set(
     key,
@@ -441,10 +468,12 @@ export function persistSound(itemId: string, sound: SoundState, usesBoardItemPat
  * modulation rate slider should. `usesBoardItemPath` — same meaning as
  * every other persist* function here: true for a snapshot or a canonical
  * card the viewer doesn't own, writing to board_items.effects_override
- * instead of the shared assets.effects row.
+ * instead of the shared assets.effects row. Same itemId/assetId fix as
+ * persistMod above, for the identical reason.
  */
 export function persistEffects(
   itemId: string,
+  assetId: string,
   effects: EffectInstance[],
   usesBoardItemPath: boolean,
   delay = 500,
@@ -457,7 +486,7 @@ export function persistEffects(
 
   const url = usesBoardItemPath
     ? `/api/boards/default/items/${itemId}`
-    : `/api/assets/${itemId}`;
+    : `/api/assets/${assetId}`;
 
   timers.set(
     key,
@@ -479,4 +508,105 @@ export function persistEffects(
         .catch((err) => logPersistFailure(`effects (${itemId})`, null, err));
     }, delay),
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * Captured video clips — Video Export Foundation sprint
+ * ------------------------------------------------------------------ */
+
+export interface UploadCapturedClipResult {
+  ok: boolean;
+  asset: Asset | null;
+  error?: string;
+}
+
+/**
+ * Uploads a captured clip and registers it as a real, browsable `video`
+ * asset — the exact same sign -> PUT -> ingest flow UploadDialog.tsx's
+ * uploadOne() uses for a user-picked file, just driven from a Blob the
+ * capture engine produced instead of a file the OS picker returned. Two
+ * paths intentionally share this shape rather than diverging: a captured
+ * clip should behave identically to any other upload once it lands
+ * (same poster generation, same Library uploads filter, same delete
+ * affordance in the focused view) — "if seeding works, upload works"
+ * (see IMPLEMENTATION_PLAN.md §8), applied here to captures too.
+ *
+ * Title/tag stamping: filename and the `capture` tag (merged server-side
+ * with the existing `upload` tag every registered asset already gets —
+ * see app/api/assets/route.ts) rather than a burned-in watermark on the
+ * video itself. Mirrors how a snapshot is "tagged" today — through its
+ * title and badge, not pixels drawn into the image.
+ */
+export async function uploadCapturedClip(
+  blob: Blob,
+  opts: { sourceTitle: string; format: CaptureFormat },
+): Promise<UploadCapturedClipResult> {
+  const contentType = opts.format === 'mp4' ? 'video/mp4' : 'video/webm';
+  const ext = opts.format;
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const title = `${opts.sourceTitle} — VML capture — ${stamp}`;
+  const filename = `${title}.${ext}`;
+
+  try {
+    const signRes = await fetch('/api/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, contentType, size: blob.size }),
+    });
+
+    if (!signRes.ok) {
+      const err = (await signRes.json().catch(() => ({}))) as { error?: string };
+      return { ok: false, asset: null, error: err.error ?? 'Could not start upload' };
+    }
+
+    const signed = (await signRes.json()) as {
+      assetId: string;
+      uploadUrl: string;
+      publicUrl: string;
+      headers?: Record<string, string>;
+    };
+
+    const put = await fetch(signed.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType, ...(signed.headers ?? {}) },
+      body: blob,
+    });
+
+    if (!put.ok) {
+      logPersistFailure(`capture upload (${signed.assetId})`, put);
+      return { ok: false, asset: null, error: `Upload failed (${put.status})` };
+    }
+
+    // Same Vercel Blob quirk UploadDialog already works around: the real
+    // URL is store-specific and only known from the PUT response body,
+    // not predictable from the signed URL alone. Falls back to the
+    // guessed publicUrl for local dev, where no such body exists.
+    const realUrl = await put
+      .json()
+      .then((body: { url?: string }) => body.url)
+      .catch(() => undefined);
+
+    const ingest = await fetch('/api/assets', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        assetId: signed.assetId,
+        title,
+        contentType,
+        srcUrl: realUrl ?? signed.publicUrl,
+        tags: ['capture'],
+      }),
+    });
+
+    if (!ingest.ok) {
+      logPersistFailure(`capture ingest (${signed.assetId})`, ingest);
+      return { ok: false, asset: null, error: 'Could not add clip to library' };
+    }
+
+    const data = (await ingest.json()) as { asset?: Asset };
+    return { ok: true, asset: data.asset ?? null };
+  } catch (err) {
+    logPersistFailure('capture upload', null, err);
+    return { ok: false, asset: null, error: 'Unexpected failure uploading clip' };
+  }
 }

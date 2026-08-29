@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Badge, Button, CloseIcon, CodeIcon, FullscreenIcon, IconButton, Tooltip } from '@/components/ui';
+import { Badge, Button, CloseIcon, CodeIcon, DownloadIcon, FullscreenIcon, IconButton, Tooltip, VCaptureIcon } from '@/components/ui';
 import {
   selectSelectedAsset,
   useBoardStore,
@@ -17,6 +17,8 @@ import { VfxPanel } from '@/features/inspector/VfxPanel';
 import { getCompatiblePresets } from '@/lib/sound/presets';
 import { RendererStage } from './RendererStage';
 import { CodePanel } from './CodePanel';
+import { CapturePanel } from './CapturePanel';
+import { RecordButton } from './RecordButton';
 import { closeAsset } from './openAsset';
 import {
   createSnapshot,
@@ -26,9 +28,10 @@ import {
   storeSnapshotCapture,
 } from '@/lib/persist/client';
 import { getPool } from '@/lib/render/pool';
+import { CAPTURE_DEFAULT_DURATION_SEC, type CaptureFormat } from '@/lib/capture/types';
 import s from '../features.module.css';
 
-type Tab = 'controls' | 'vfx' | 'modulate' | 'sound';
+type Tab = 'controls' | 'vfx' | 'modulate' | 'sound' | 'capture';
 
 /**
  * The focused view on a narrow screen.
@@ -66,6 +69,9 @@ export function MobileFocusedView() {
   const [saving, setSaving] = useState(false);
   const [downloadingSnapshot, setDownloadingSnapshot] = useState(false);
   const [savedNote, setSavedNote] = useState<string | null>(null);
+  const [downloadingUpload, setDownloadingUpload] = useState(false);
+  const [captureFormat, setCaptureFormat] = useState<CaptureFormat>('mp4');
+  const [captureDuration, setCaptureDuration] = useState(CAPTURE_DEFAULT_DURATION_SEC);
   const sheetRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -130,6 +136,10 @@ export function MobileFocusedView() {
   // reasoning: scoped to shader tiles only until MediaRenderer has an
   // output canvas to composite onto.
   const canVfx = !asset.isSnapshot && asset.type === 'shader';
+  // Same gate, same reason as FocusedAssetOverlay's canCapture — see
+  // lib/capture/engine.ts's top doc for why p5 sketch tiles can't record
+  // yet (sandboxed cross-origin canvas isn't a valid capture source).
+  const canCapture = !asset.isSnapshot && asset.type === 'shader';
   const groups = schema ? groupedControls(schema) : [];
   const hasAdvanced = (schema?.controls.some((c) => c.advanced) ?? false) && !showAdvanced;
 
@@ -178,6 +188,32 @@ export function MobileFocusedView() {
     setSavedNote(ok ? null : 'Download failed');
   };
 
+  // Mirrors FocusedAssetOverlay's identical isDeletableUpload/downloadUpload
+  // pair — see that file's doc for the full reasoning. Mobile never had a
+  // delete affordance for uploaded/captured media either (a pre-existing
+  // gap, not touched here); this only adds the download half that was
+  // actually asked for, keeping this pass narrowly scoped.
+  const isDeletableUpload =
+    !asset.isSnapshot && (asset.type === 'image' || asset.type === 'svg' || asset.type === 'video');
+
+  const downloadUpload = async () => {
+    if (!isDeletableUpload || !asset.srcUrl || downloadingUpload) return;
+    setDownloadingUpload(true);
+    setSavedNote(null);
+    try {
+      const res = await fetch(asset.srcUrl);
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      const ext = asset.srcUrl.split('.').pop()?.split(/[?#]/)[0] || 'bin';
+      const safeName = asset.title.replace(/[<>:"/\\|?*]/g, '_');
+      downloadBlob(blob, `${safeName}.${ext}`);
+    } catch {
+      setSavedNote('Download failed');
+    } finally {
+      setDownloadingUpload(false);
+    }
+  };
+
   return (
     <div
       className={s.mobileFocus}
@@ -207,6 +243,26 @@ export function MobileFocusedView() {
       </div>
 
       <div className={s.mobileActions}>
+        {canCapture && (
+          <>
+            <Tooltip content="Set export format and duration">
+              <Button
+                variant="ghost"
+                active={tab === 'capture'}
+                onClick={() => setTab((t) => (t === 'capture' ? 'controls' : 'capture'))}
+              >
+                <VCaptureIcon />
+                VCapture
+              </Button>
+            </Tooltip>
+            <RecordButton
+              asset={asset}
+              canCapture={canCapture}
+              format={captureFormat}
+              durationSec={captureDuration}
+            />
+          </>
+        )}
         {!asset.isSnapshot && (
           <Button variant="ghost" onClick={saveSnapshot} disabled={saving}>
             {saving ? 'Saving…' : 'Snapshot'}
@@ -222,6 +278,16 @@ export function MobileFocusedView() {
           <Button variant="ghost" onClick={downloadSnapshot} disabled={downloadingSnapshot}>
             {downloadingSnapshot ? 'Downloading…' : 'Download'}
           </Button>
+        )}
+        {isDeletableUpload && (
+          <Tooltip content="Download this file">
+            <IconButton
+              label={downloadingUpload ? 'Downloading…' : 'Download'}
+              icon={<DownloadIcon />}
+              onClick={() => void downloadUpload()}
+              disabled={downloadingUpload}
+            />
+          </Tooltip>
         )}
         {asset.isSnapshot && (
           <Button variant="danger" onClick={removeSnapshot}>
@@ -293,6 +359,15 @@ export function MobileFocusedView() {
           <VfxPanel itemId={asset.itemId} onClose={() => setTab('controls')} embedded />
         ) : tab === 'sound' && canSound && schema ? (
           <SoundPanel schema={schema} itemId={asset.itemId} onClose={() => setTab('controls')} embedded />
+        ) : tab === 'capture' && canCapture ? (
+          <CapturePanel
+            format={captureFormat}
+            durationSec={captureDuration}
+            onFormatChange={setCaptureFormat}
+            onDurationChange={setCaptureDuration}
+            onClose={() => setTab('controls')}
+            embedded
+          />
         ) : (
           <>
             {groups.map(({ group, controls }) => {

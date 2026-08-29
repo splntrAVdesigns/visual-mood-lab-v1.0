@@ -6,14 +6,18 @@ import {
   Button,
   CloseIcon,
   CodeIcon,
+  DownloadIcon,
   FullscreenIcon,
   IconButton,
   Tooltip,
+  VCaptureIcon,
 } from '@/components/ui';
 import { selectSelectedAsset, useBoardStore, useInspectorStore, usePlaybackStore } from '@/stores';
 import { ASSET_TYPE_BADGE } from '@/types/asset';
 import { RendererStage } from './RendererStage';
 import { CodePanel } from './CodePanel';
+import { CapturePanel } from './CapturePanel';
+import { RecordButton } from './RecordButton';
 import { ModulationPanel } from '../inspector/ModulationPanel';
 import { SoundPanel } from '../inspector/SoundPanel';
 import { VfxPanel } from '../inspector/VfxPanel';
@@ -28,6 +32,7 @@ import {
 } from '@/lib/persist/client';
 import { getPool } from '@/lib/render/pool';
 import { isVisible } from '@/renderers/control-schema';
+import { CAPTURE_DEFAULT_DURATION_SEC, type CaptureFormat } from '@/lib/capture/types';
 import s from '../features.module.css';
 
 /**
@@ -49,8 +54,18 @@ export function FocusedAssetOverlay() {
   const [showMod, setShowMod] = useState(false);
   const [showSound, setShowSound] = useState(false);
   const [showVfx, setShowVfx] = useState(false);
+  const [showCapture, setShowCapture] = useState(false);
+  // Lifted here rather than into CapturePanel itself: RecordButton needs
+  // to read whatever was last chosen the moment it's pressed, even if the
+  // VCapture panel isn't open at that exact moment (set once, close the
+  // panel, record later). Persists per asset only for the current
+  // session — not saved server-side, unlike params/mod/sound/effects,
+  // since a format/duration choice isn't part of the tile's look.
+  const [captureFormat, setCaptureFormat] = useState<CaptureFormat>('mp4');
+  const [captureDuration, setCaptureDuration] = useState(CAPTURE_DEFAULT_DURATION_SEC);
   const [saving, setSaving] = useState(false);
   const [downloadingSnapshot, setDownloadingSnapshot] = useState(false);
+  const [downloadingUpload, setDownloadingUpload] = useState(false);
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -59,6 +74,7 @@ export function FocusedAssetOverlay() {
     setShowMod(false);
     setShowSound(false);
     setShowVfx(false);
+    setShowCapture(false);
     setSavedNote(null);
     // Carries over otherwise: this component instance persists across
     // different assets (it isn't remounted per-open), so a previous
@@ -105,6 +121,7 @@ export function FocusedAssetOverlay() {
     setShowMod(false);
     setShowSound(false);
     setShowVfx(false);
+    setShowCapture(false);
     requestAnimationFrame(() => {
       const el = panelRef.current;
       if (!el) return;
@@ -158,6 +175,7 @@ export function FocusedAssetOverlay() {
         setShowMod(false);
         setShowSound(false);
         setShowVfx(false);
+        setShowCapture(false);
       } else {
         panelRef.current?.focus({ preventScroll: true });
       }
@@ -204,6 +222,13 @@ export function FocusedAssetOverlay() {
   // special-cased against snapshots specifically. Widen this the moment
   // MediaRenderer grows one; nothing else in the rack needs to change.
   const canVfx = !asset.isSnapshot && asset.type === 'shader';
+  // Same gate as canVfx, same reason — see lib/capture/engine.ts's top doc.
+  // A shader tile's canvas is a proven capture source; a p5 sketch's
+  // sandboxed cross-origin iframe canvas is not a valid capture source at
+  // all until the sandbox streams frames out over postMessage (separate,
+  // not-yet-built work). Widen this the moment that lands; nothing else
+  // here needs to change.
+  const canCapture = !asset.isSnapshot && asset.type === 'shader';
 
   const closeOverlay = () => {
     // Exiting fullscreen from the X takes two steps if left to the browser
@@ -279,6 +304,33 @@ export function FocusedAssetOverlay() {
   const isDeletableUpload =
     !asset.isSnapshot && (asset.type === 'image' || asset.type === 'svg' || asset.type === 'video');
 
+  /**
+   * Downloads the raw uploaded/captured file itself — distinct from
+   * downloadSnapshot above, which re-fetches a snapshot's rendered PNG
+   * poster. Gated on the same isDeletableUpload check that already scopes
+   * Delete to image/svg/video, non-snapshot assets: the seed library never
+   * ships these types (see isDeletableUpload's own doc), so there's no
+   * risk of this offering to download shared library source instead of
+   * something the person actually owns.
+   */
+  const downloadUpload = async () => {
+    if (!isDeletableUpload || !asset.srcUrl || downloadingUpload) return;
+    setDownloadingUpload(true);
+    setSavedNote(null);
+    try {
+      const res = await fetch(asset.srcUrl);
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      const ext = asset.srcUrl.split('.').pop()?.split(/[?#]/)[0] || 'bin';
+      const safeName = asset.title.replace(/[<>:"/\\|?*]/g, '_');
+      downloadBlob(blob, `${safeName}.${ext}`);
+    } catch {
+      setSavedNote('Download failed');
+    } finally {
+      setDownloadingUpload(false);
+    }
+  };
+
   const removeUpload = async () => {
     if (!isDeletableUpload) return;
     if (!window.confirm(`Delete "${asset.title}"? This can't be undone.`)) return;
@@ -298,6 +350,7 @@ export function FocusedAssetOverlay() {
       data-mod={showMod ? 'true' : undefined}
       data-sound={showSound ? 'true' : undefined}
       data-vfx={showVfx ? 'true' : undefined}
+      data-capture={showCapture ? 'true' : undefined}
       onClick={closeOverlay}
     >
       {/* Real sidecar now renders BEFORE focusPanel in DOM — it appears to
@@ -310,13 +363,22 @@ export function FocusedAssetOverlay() {
           docked against it, so it's genuinely open space. No flex `order`
           needed: DOM order directly matches visual order in this simple
           a flex row (see .focusScrim), so this swap alone moves it. */}
-      {((showMod && canModulate) || (showSound && canSound && schema) || (showVfx && canVfx)) && (
+      {((showMod && canModulate) || (showSound && canSound && schema) || (showVfx && canVfx) || (showCapture && canCapture)) && (
         <div className={s.sidecarStack}>
           {showSound && canSound && schema && (
             <SoundPanel schema={schema} itemId={asset.itemId} onClose={() => setShowSound(false)} />
           )}
           {showVfx && canVfx && (
             <VfxPanel itemId={asset.itemId} onClose={() => setShowVfx(false)} />
+          )}
+          {showCapture && canCapture && (
+            <CapturePanel
+              format={captureFormat}
+              durationSec={captureDuration}
+              onFormatChange={setCaptureFormat}
+              onDurationChange={setCaptureDuration}
+              onClose={() => setShowCapture(false)}
+            />
           )}
           {showMod && canModulate && (
             <ModulationPanel controls={modulatableControls} itemId={asset.itemId} onClose={() => setShowMod(false)} />
@@ -356,6 +418,7 @@ export function FocusedAssetOverlay() {
                     setShowMod(false);
                     setShowSound(false);
                     setShowVfx(false);
+                    setShowCapture(false);
                   }}
                 >
                   <CodeIcon />
@@ -402,6 +465,30 @@ export function FocusedAssetOverlay() {
                 </Button>
               )}
 
+              {canCapture && (
+                <>
+                  <Tooltip content="Set export format and duration">
+                    <Button
+                      variant="ghost"
+                      active={showCapture}
+                      onClick={() => {
+                        setShowCapture((v) => !v);
+                        setShowCode(false);
+                      }}
+                    >
+                      <VCaptureIcon />
+                      VCapture
+                    </Button>
+                  </Tooltip>
+                  <RecordButton
+                    asset={asset}
+                    canCapture={canCapture}
+                    format={captureFormat}
+                    durationSec={captureDuration}
+                  />
+                </>
+              )}
+
               {!asset.isSnapshot && (
                 <Tooltip content="Save these settings as a snapshot and export a PNG">
                   <Button variant="ghost" onClick={saveSnapshot} disabled={saving}>
@@ -415,6 +502,17 @@ export function FocusedAssetOverlay() {
                   <Button variant="ghost" onClick={downloadSnapshot} disabled={downloadingSnapshot}>
                     {downloadingSnapshot ? 'Downloading…' : 'Download'}
                   </Button>
+                </Tooltip>
+              )}
+
+              {isDeletableUpload && (
+                <Tooltip content="Download this file">
+                  <IconButton
+                    label={downloadingUpload ? 'Downloading…' : 'Download'}
+                    icon={<DownloadIcon />}
+                    onClick={() => void downloadUpload()}
+                    disabled={downloadingUpload}
+                  />
                 </Tooltip>
               )}
 
@@ -461,7 +559,7 @@ export function FocusedAssetOverlay() {
           Modulate opens. Now on the right, mirroring the real sidecar's
           move to the left — same counterweight technique, opposite side.
           See .sidecarSpacer's CSS doc. */}
-      {((showMod && canModulate) || (showSound && canSound && schema) || (showVfx && canVfx)) && (
+      {((showMod && canModulate) || (showSound && canSound && schema) || (showVfx && canVfx) || (showCapture && canCapture)) && (
         <div className={s.sidecarSpacer} aria-hidden="true" />
       )}
 
