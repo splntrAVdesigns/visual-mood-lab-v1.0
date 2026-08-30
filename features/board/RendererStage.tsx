@@ -78,6 +78,19 @@ export function RendererStage({ asset, focused = false }: RendererStageProps) {
               captureTimer = setTimeout(() => {
                 const renderer = pool.get(asset.itemId);
                 if (!renderer || cancelled) return;
+                // Never capture a broken frame as the permanent poster.
+                // Once a capture succeeds, isPlaceholderPoster() flips to
+                // false for good (see its own doc) — there is no retry
+                // path after that point short of a manual DB reset. A
+                // renderer that failed to compile/mount at this exact
+                // moment (a transient issue, or a genuine compile error
+                // that's since been fixed in source but already got
+                // captured before the fix landed) would otherwise get
+                // stuck showing that broken frame forever. Every renderer
+                // type already exposes `error` on the shared contract
+                // (see AssetRenderer.error's doc) specifically for checks
+                // like this.
+                if (renderer.error) return;
                 // Poster storage stays keyed by the real asset id — the
                 // poster belongs to the shader/sketch source and is shared
                 // across every snapshot of it, not per-card.

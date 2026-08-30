@@ -39,6 +39,7 @@ uniform vec3 u_baseColor; // @label(Base Color) @color @default(0.0, 0.827, 1.0)
 
 uniform int u_gbLayers; // @label(Ribbon Layers) @range(1, 5) @default(3) @group(Gradient Bands)
 uniform float u_gbSpread; // @label(Layer Spread) @range(0.0, 1.0) @default(0.3) @group(Gradient Bands)
+uniform float u_gbEcho; // @label(Echo Bounce) @range(0.0, 1.0) @default(0.35) @group(Gradient Bands) @mod @hint(Trailing textured echoes bouncing off each peak.)
 
 uniform int u_mirrorBars; // @label(Bar Count) @range(8, 48) @default(24) @group(Mirror)
 uniform float u_mirrorSpread; // @label(Spread) @range(0.5, 2.0) @default(1.0) @group(Mirror) @hint(How far bars travel outward from the zero line at full amplitude.)
@@ -49,6 +50,7 @@ uniform int u_lineEchoCount; // @label(Echo Bands) @range(0, 4) @default(2) @gro
 
 uniform float u_radialSpeed; // @label(Pulse Speed) @range(0.1, 3.0) @default(1.0) @group(Radial Gradient) @mod
 uniform float u_radialSpread; // @label(Bloom Spread) @range(0.5, 2.5) @default(1.4) @group(Radial Gradient) @mod @hint(How far the energy field extends past the tile's edge.)
+uniform float u_radialWaves; // @label(Radial Waves) @range(0.0, 2.0) @default(0.6) @group(Radial Gradient) @mod @hint(Strength of concentric waves expanding outward from center.)
 
 uniform int u_ledShape; // @label(Cell Shape) @select(Blocks=0 | Dots=1 | Mix=2) @strip @group(LED Screen)
 uniform int u_ledDensity; // @label(Grid Density) @range(4, 24) @default(10) @group(LED Screen)
@@ -119,6 +121,26 @@ vec3 palette(float t) {
   return hsv2rgb(vec3(hue, sat, val));
 }
 
+// Per-segment "how tall is this piece of the waveform right now." Each
+// segment gets its own static per-band weight (hash-seeded by segment id),
+// so the same four scalar audio values (bass/mid/high/rms — no per-bin FFT
+// exists, see header note) drive different segments differently. This is
+// what makes the silhouette's actual SHAPE a function of the audio mix —
+// changing which frequencies are loud changes which segments spike —
+// rather than a fixed curve that only changes size. No sin()/fixed
+// waveform anywhere in here; every input is either audio or a static hash.
+float gbSegHeight(float seg, float fi, float bass, float mid, float high, float rms) {
+  vec2 seed = vec2(seg, fi * 17.0 + 3.0);
+  float wB = hash21(seed);
+  float wM = hash21(seed + 11.0);
+  float wH = hash21(seed + 23.0);
+  float wR = hash21(seed + 37.0);
+  float wSum = max(wB + wM + wH + wR, 0.001);
+  float mixed = (bass * wB + mid * wM + high * wH + rms * wR) / wSum;
+  float fine = (hash21(seed + 51.0) - 0.5) * 0.05;
+  return mixed + fine;
+}
+
 float sdSegment(vec2 p, vec2 a, vec2 b) {
   vec2 pa = p - a, ba = b - a;
   float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
@@ -153,59 +175,78 @@ void main() {
   vec3 col = vec3(0.0);
 
   if (u_mode == 0) {
-    // Gradient Bands — REBUILT (rev 3). Rev 2 fixed the vertical-pillar
-    // color bug but left two real problems: edges used a fixed 0.006 AA
-    // width regardless of shape amplitude (reads as vector-clean/precut,
-    // not a real waveform), and every x-position shared the same three
-    // sin() terms scaled by the same scalar bass/mid/high — so the whole
-    // ribbon swelled as one unit instead of different parts of it moving
-    // independently, which is the actual look of an audio waveform.
+    // Gradient Bands — REBUILT (rev 4). Rev 3 fixed the hard edges and
+    // made different parts of the ribbon respond to the same scalar
+    // energy at different phase offsets, but the underlying silhouette
+    // was still built from fixed sin() terms — only their AMPLITUDE was
+    // audio-driven, so the actual peak/valley positions were the same
+    // shape every time, just breathing in size. That's the "precut,
+    // predesigned waveform" bug: real audio should decide WHERE the
+    // peaks are, not just how big a fixed curve gets.
     //
-    // Only 4 scalar audio bands exist (bass/mid/high/rms — no per-bin FFT
-    // texture; see header note), so true per-sample independence isn't
-    // available data. Faked the same way Mirror fakes per-bar variation:
-    // the ribbon is bucketed into pseudo-segments, each with its own
-    // hash-seeded phase and time-rate, so the same shared scalar energy
-    // reaches different segments at different moments instead of in
-    // lockstep. Edges are now a noise-modulated smoothstep band (textured,
-    // soft) instead of a fixed tight AA width, and a light per-segment
-    // brightness shimmer stands in for LED-cell texture without
-    // introducing hard geometric slicing.
+    // No sin()-based shape anywhere below. The silhouette is now a height
+    // field built entirely from gbSegHeight() (audio mix + static hash,
+    // see its doc above) sampled at each layer's pseudo-segment grid and
+    // smoothly interpolated between neighbors — so which segments spike,
+    // and by how much, is a direct function of the current bass/mid/high/
+    // rms balance. Different audio content produces a genuinely different
+    // silhouette, not a resized copy of the same one. Two textured,
+    // bouncing echo copies trail each peak (Echo Bounce), matching the
+    // reference look of secondary reflections riding each spike.
     int layers = u_gbLayers;
     for (int i = 0; i < 5; i++) {
       if (i >= layers) break;
       float fi = float(i);
       float mirrorSign = mod(fi, 2.0) < 0.5 ? 1.0 : -1.0;
 
-      float segCount = 40.0;
-      float segId = floor((p.x * 0.5 + 0.5) * segCount + fi * 7.0);
-      float segSeed = hash21(vec2(segId, fi + 11.0));
-      float segSeed2 = hash21(vec2(segId, fi + 31.0));
-      float segPhase = segSeed * 6.2831;
-      float segRate = 0.55 + segSeed2 * 1.85;
-      float segEnergy = bass * (0.35 + segSeed * 0.85) + mid * (0.25 + segSeed2 * 0.9);
+      float segScale = 26.0;
+      float sx = (p.x * 0.5 + 0.5) * segScale + fi * 5.0;
+      float si = floor(sx);
+      float sf = fract(sx);
+      float sf2 = sf * sf * (3.0 - 2.0 * sf);
 
-      float xs = p.x * 5.0;
-      float jitter = (hash21(vec2(floor(xs * 8.0), fi)) - 0.5) * 2.0;
-      float shape =
-        sin(xs + u_time * segRate + segPhase) * (0.08 + segEnergy * 0.20) +
-        sin(xs * 2.7 - u_time * (segRate * 0.7) - segPhase) * (0.04 + mid * 0.08) +
-        jitter * (0.02 + high * 0.05);
-      shape *= mirrorSign;
+      float h0 = gbSegHeight(si, fi, bass, mid, high, rms);
+      float h1 = gbSegHeight(si + 1.0, fi, bass, mid, high, rms);
+      float baseHeight = mix(h0, h1, sf2);
+
+      float jitter = (hash21(vec2(floor(sx * 3.0), fi)) - 0.5) * 2.0;
+      float shape = (baseHeight * 0.22 + jitter * (0.015 + high * 0.05)) * mirrorSign;
 
       float centerOffset = (fi - (float(layers) - 1.0) * 0.5) * (0.12 + u_gbSpread * 0.16);
       float d = abs(p.y - centerOffset - shape);
       float thickness = 0.02 + abs(shape) * 0.6;
       // Blurred, textured edge: width varies with fbm() instead of a
-      // fixed 0.006 constant, so the falloff itself reads as organic
-      // rather than vector-clean. Kept modest (not extreme) per feedback.
-      float edgeSoft = 0.018 + fbm(vec2(xs * 6.0, fi * 4.0 + u_time * 0.2)) * 0.045;
+      // fixed constant, so the falloff itself reads as organic rather
+      // than vector-clean. Kept modest (not extreme) per feedback.
+      float edgeSoft = 0.018 + fbm(vec2(sx * 1.5, fi * 4.0 + u_time * 0.2)) * 0.045;
       float mask = smoothstep(thickness + edgeSoft, thickness - edgeSoft, d);
 
       float colorT = 0.5 + 0.5 * sin(p.x * 4.5 - u_time * 0.5 + fi * 2.1);
       colorT = clamp(colorT + (fbm(vec2(p.x * 2.0, u_time * 0.06 + fi * 3.0)) - 0.5) * 0.3, 0.0, 1.0);
-      float ledTexture = 0.88 + 0.12 * hash21(vec2(segId, fi + 3.0));
-      col += palette(clamp(colorT + bass * u_colorWarmth * 0.15, 0.0, 1.0)) * mask * ledTexture * (1.0 - fi * 0.12);
+      float ledTexture = 0.88 + 0.12 * hash21(vec2(si, fi + 3.0));
+      vec3 layerColor = palette(clamp(colorT + bass * u_colorWarmth * 0.15, 0.0, 1.0));
+
+      // Echo Bounce: two decaying, textured trails offset from the same
+      // audio-driven peak (not a separate shape), each bouncing with its
+      // own settling oscillation so they read as a reflection off the
+      // peak rather than a clean parallel duplicate.
+      float echoAcc = 0.0;
+      for (int e = 1; e <= 2; e++) {
+        float fe = float(e);
+        float echoSeed = hash21(vec2(si, fi + fe * 13.0));
+        float bounceDecay = exp(-fe * 1.15);
+        float bounceOffset = mirrorSign * (0.04 + echoSeed * 0.05) * fe
+          * (1.0 + 0.3 * sin(u_time * (1.4 + echoSeed) - fe * 1.7));
+        float echoD = abs(p.y - centerOffset - shape - bounceOffset);
+        float echoTex = fbm(vec2(sx * 2.3 + fe * 4.0, u_time * 0.3 + fe * 1.7));
+        float echoThickness = max(thickness * (0.55 - fe * 0.12), 0.006);
+        float echoSoft = edgeSoft * 1.4;
+        echoAcc += smoothstep(echoThickness + echoSoft, echoThickness - echoSoft, echoD)
+          * bounceDecay * (0.35 + echoTex * 0.45);
+      }
+
+      col += layerColor * mask * ledTexture * (1.0 - fi * 0.12);
+      col += layerColor * echoAcc * u_gbEcho * (1.0 - fi * 0.12);
     }
   } else if (u_mode == 1) {
     // Mirror — REBUILT (rev 3). Rev 2 gave each bar a per-bar hash
@@ -305,6 +346,19 @@ void main() {
 
     float vignette = exp(-r * (1.15 - energy * 0.35));
     float field = mix(n, n * n, 0.3) * vignette;
+
+    // Radial Waves — concentric rings expanding outward from center,
+    // layered ON TOP of the liquid/plasma turbulence above rather than
+    // replacing it (the morphing colors keep running underneath exactly
+    // as before). Ring phase advances with -time so they read as
+    // travelling outward, not a static pattern; jittered by hueField
+    // (already computed above, no extra noise sample) so rings stay
+    // organic instead of perfectly circular/mechanical, keeping the
+    // liquid feel intact while the waves are visible.
+    float wavePhase = r * 16.0 - u_time * (1.1 + u_radialSpeed * 1.6);
+    float ringJitter = (hueField - 0.5) * 5.0;
+    float wave = pow(0.5 + 0.5 * sin(wavePhase + ringJitter), 2.5);
+    field += wave * u_radialWaves * vignette * (0.35 + energy * 0.5);
 
     float colorT = clamp(mix(hueField, n, 0.35) + energy * u_colorWarmth * 0.3, 0.0, 1.0);
     col += palette(colorT) * field * (0.75 + energy * 0.8);
