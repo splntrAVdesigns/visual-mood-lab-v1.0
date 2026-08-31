@@ -39,6 +39,7 @@ uniform vec3 u_baseColor; // @label(Base Color) @color @default(0.0, 0.827, 1.0)
 
 uniform int u_gbLayers; // @label(Ribbon Layers) @range(1, 5) @default(3) @group(Gradient Bands)
 uniform float u_gbSpread; // @label(Layer Spread) @range(0.0, 1.0) @default(0.3) @group(Gradient Bands)
+uniform int u_gbBars; // @label(Bar Count) @range(12, 48) @default(28) @group(Gradient Bands)
 uniform float u_gbEcho; // @label(Echo Bounce) @range(0.0, 1.0) @default(0.35) @group(Gradient Bands) @mod @hint(Trailing textured echoes bouncing off each peak.)
 
 uniform int u_mirrorBars; // @label(Bar Count) @range(8, 48) @default(24) @group(Mirror)
@@ -121,26 +122,6 @@ vec3 palette(float t) {
   return hsv2rgb(vec3(hue, sat, val));
 }
 
-// Per-segment "how tall is this piece of the waveform right now." Each
-// segment gets its own static per-band weight (hash-seeded by segment id),
-// so the same four scalar audio values (bass/mid/high/rms — no per-bin FFT
-// exists, see header note) drive different segments differently. This is
-// what makes the silhouette's actual SHAPE a function of the audio mix —
-// changing which frequencies are loud changes which segments spike —
-// rather than a fixed curve that only changes size. No sin()/fixed
-// waveform anywhere in here; every input is either audio or a static hash.
-float gbSegHeight(float seg, float fi, float bass, float mid, float high, float rms) {
-  vec2 seed = vec2(seg, fi * 17.0 + 3.0);
-  float wB = hash21(seed);
-  float wM = hash21(seed + 11.0);
-  float wH = hash21(seed + 23.0);
-  float wR = hash21(seed + 37.0);
-  float wSum = max(wB + wM + wH + wR, 0.001);
-  float mixed = (bass * wB + mid * wM + high * wH + rms * wR) / wSum;
-  float fine = (hash21(seed + 51.0) - 0.5) * 0.05;
-  return mixed + fine;
-}
-
 float sdSegment(vec2 p, vec2 a, vec2 b) {
   vec2 pa = p - a, ba = b - a;
   float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
@@ -175,78 +156,109 @@ void main() {
   vec3 col = vec3(0.0);
 
   if (u_mode == 0) {
-    // Gradient Bands — REBUILT (rev 4). Rev 3 fixed the hard edges and
-    // made different parts of the ribbon respond to the same scalar
-    // energy at different phase offsets, but the underlying silhouette
-    // was still built from fixed sin() terms — only their AMPLITUDE was
-    // audio-driven, so the actual peak/valley positions were the same
-    // shape every time, just breathing in size. That's the "precut,
-    // predesigned waveform" bug: real audio should decide WHERE the
-    // peaks are, not just how big a fixed curve gets.
+    // Gradient Bands — REBUILT (rev 5): true percussive bars. This is
+    // "Concept B" from the redesign review, not a tuning pass on rev 4.
     //
-    // No sin()-based shape anywhere below. The silhouette is now a height
-    // field built entirely from gbSegHeight() (audio mix + static hash,
-    // see its doc above) sampled at each layer's pseudo-segment grid and
-    // smoothly interpolated between neighbors — so which segments spike,
-    // and by how much, is a direct function of the current bass/mid/high/
-    // rms balance. Different audio content produces a genuinely different
-    // silhouette, not a resized copy of the same one. Two textured,
-    // bouncing echo copies trail each peak (Echo Bounce), matching the
-    // reference look of secondary reflections riding each spike.
+    // Rev 4's actual bug, found after it still showed the same symptoms:
+    // removing the sin() wave wasn't enough, because the replacement
+    // (gbSegHeight) was still a fixed spatial grid whose control points
+    // only varied in HOW MUCH they responded to audio, not WHEN — every
+    // segment still read the same shared instantaneous bass/mid/high on
+    // the same frame, so the whole thing still moved in lockstep, and the
+    // regular segment spacing still read as a grid of cuts. Same problem,
+    // different disguise.
+    //
+    // Fixed for real this time by decorrelating TIME, not just amplitude.
+    // Each bar gets its own randomized hit period and phase (hash-seeded
+    // by bar index), producing a deterministic but independent schedule
+    // of "hit" moments; brightness at any instant is an exponential decay
+    // measured from that bar's own most recent hit. Shaders have no
+    // memory across frames, so this schedule has to be computed
+    // algebraically from u_time rather than simulated with a running
+    // cooldown variable — same end result, different mechanism. A hit's
+    // magnitude is still only ever this frame's bass/mid/high/rms (the
+    // only audio data a fragment shader ever has — see header note), but
+    // weighted by a hash unique to that specific hit, so different hits
+    // favor different parts of the spectrum: a bass-heavy moment visibly
+    // lights up a different set of bars than a bright, high-heavy one.
+    //
+    // No explicit trigger-threshold control: hit magnitude already tracks
+    // current audio energy directly, so quiet passages read as sparse and
+    // dim and loud passages read as busy and bright with no separate gate
+    // needed — simpler, and correctly stateless.
     int layers = u_gbLayers;
     for (int i = 0; i < 5; i++) {
       if (i >= layers) break;
       float fi = float(i);
       float mirrorSign = mod(fi, 2.0) < 0.5 ? 1.0 : -1.0;
 
-      float segScale = 26.0;
-      float sx = (p.x * 0.5 + 0.5) * segScale + fi * 5.0;
-      float si = floor(sx);
-      float sf = fract(sx);
-      float sf2 = sf * sf * (3.0 - 2.0 * sf);
+      float nBars = float(u_gbBars);
+      float slotW = 1.0 / nBars;
+      float barIndexF = floor((p.x + 0.5) / slotW);
+      float barCenterX = (barIndexF + 0.5) * slotW - 0.5;
+      float barSeedA = hash21(vec2(barIndexF, fi * 13.0 + 5.0));
+      float barSeedB = hash21(vec2(barIndexF, fi * 13.0 + 19.0));
 
-      float h0 = gbSegHeight(si, fi, bass, mid, high, rms);
-      float h1 = gbSegHeight(si + 1.0, fi, bass, mid, high, rms);
-      float baseHeight = mix(h0, h1, sf2);
+      // Independent clock per bar: period, phase, and decay rate are all
+      // hash-seeded per bar index, so no two bars share a schedule.
+      float period = mix(0.12, 0.55, barSeedB);
+      float phase = barSeedA * 41.0;
+      float decayRate = mix(2.2, 6.5, barSeedA);
+      float slot0 = floor(u_time / period + phase);
 
-      float jitter = (hash21(vec2(floor(sx * 3.0), fi)) - 0.5) * 2.0;
-      float shape = (baseHeight * 0.22 + jitter * (0.015 + high * 0.05)) * mirrorSign;
+      // Check this slot and the previous one, use whichever hit most
+      // recently actually happened (guards against sampling "this slot"
+      // before its own jittered hit time has arrived yet).
+      float timeSince = 1.0e5;
+      float hitMag = 0.0;
+      for (int k = 0; k < 2; k++) {
+        float slot = slot0 - float(k);
+        float hitJitter = hash21(vec2(barIndexF, slot + fi * 7.0 + 91.0));
+        float hitTime = (slot - phase) * period + hitJitter * period * 0.55;
+        float since = u_time - hitTime;
+        if (since >= 0.0 && since < timeSince) {
+          timeSince = since;
+          float wB = hash21(vec2(barIndexF, slot + 3.0));
+          float wM = hash21(vec2(barIndexF, slot + 17.0));
+          float wH = hash21(vec2(barIndexF, slot + 29.0));
+          float wR = hash21(vec2(barIndexF, slot + 43.0));
+          float wsum = max(wB + wM + wH + wR, 0.001);
+          hitMag = (bass * wB + mid * wM + high * wH + rms * wR) / wsum;
+        }
+      }
 
-      float centerOffset = (fi - (float(layers) - 1.0) * 0.5) * (0.12 + u_gbSpread * 0.16);
-      float d = abs(p.y - centerOffset - shape);
-      float thickness = 0.02 + abs(shape) * 0.6;
-      // Blurred, textured edge: width varies with fbm() instead of a
-      // fixed constant, so the falloff itself reads as organic rather
-      // than vector-clean. Kept modest (not extreme) per feedback.
-      float edgeSoft = 0.018 + fbm(vec2(sx * 1.5, fi * 4.0 + u_time * 0.2)) * 0.045;
-      float mask = smoothstep(thickness + edgeSoft, thickness - edgeSoft, d);
+      float envelope = exp(-timeSince * decayRate);
+      float barHeight = clamp(hitMag * envelope, 0.0, 1.4) * 0.34;
+
+      float centerOffset = (fi - (float(layers) - 1.0) * 0.5) * (0.10 + u_gbSpread * 0.14);
+      float within = step(abs(p.x - barCenterX), slotW * 0.42);
+
+      // Soft, textured top edge instead of a hard step — same "blurred,
+      // not extreme" edge treatment as earlier revisions, applied to a
+      // bar's tip rather than a continuous ribbon's silhouette.
+      float edgeSoft = 0.012 + fbm(vec2(barIndexF * 1.3, fi * 4.0 + u_time * 0.25)) * 0.03;
+      float tipDist = mirrorSign * (p.y - centerOffset);
+      float mask = within * step(0.0, tipDist) * smoothstep(-edgeSoft, edgeSoft, barHeight - tipDist);
 
       float colorT = 0.5 + 0.5 * sin(p.x * 4.5 - u_time * 0.5 + fi * 2.1);
       colorT = clamp(colorT + (fbm(vec2(p.x * 2.0, u_time * 0.06 + fi * 3.0)) - 0.5) * 0.3, 0.0, 1.0);
-      float ledTexture = 0.88 + 0.12 * hash21(vec2(si, fi + 3.0));
       vec3 layerColor = palette(clamp(colorT + bass * u_colorWarmth * 0.15, 0.0, 1.0));
 
-      // Echo Bounce: two decaying, textured trails offset from the same
-      // audio-driven peak (not a separate shape), each bouncing with its
-      // own settling oscillation so they read as a reflection off the
-      // peak rather than a clean parallel duplicate.
-      float echoAcc = 0.0;
-      for (int e = 1; e <= 2; e++) {
-        float fe = float(e);
-        float echoSeed = hash21(vec2(si, fi + fe * 13.0));
-        float bounceDecay = exp(-fe * 1.15);
-        float bounceOffset = mirrorSign * (0.04 + echoSeed * 0.05) * fe
-          * (1.0 + 0.3 * sin(u_time * (1.4 + echoSeed) - fe * 1.7));
-        float echoD = abs(p.y - centerOffset - shape - bounceOffset);
-        float echoTex = fbm(vec2(sx * 2.3 + fe * 4.0, u_time * 0.3 + fe * 1.7));
-        float echoThickness = max(thickness * (0.55 - fe * 0.12), 0.006);
-        float echoSoft = edgeSoft * 1.4;
-        echoAcc += smoothstep(echoThickness + echoSoft, echoThickness - echoSoft, echoD)
-          * bounceDecay * (0.35 + echoTex * 0.45);
-      }
+      // Echo Bounce: the same hit, a slower second decay constant, so it
+      // reads as a ring-out/after-glow trailing the main hit rather than
+      // a duplicate line. Only visible once it extends past the main
+      // bar's current height (i.e., during the tail after the main
+      // envelope has decayed below it).
+      float echoEnvelope = exp(-timeSince * decayRate * 0.35);
+      float echoHeight = clamp(hitMag * echoEnvelope, 0.0, 1.4) * 0.34;
+      float echoTex = fbm(vec2(barIndexF * 1.7, u_time * 0.3 + fi));
+      float echoTipDist = mirrorSign * (p.y - centerOffset);
+      float echoMask = within * step(0.0, echoTipDist)
+        * smoothstep(-edgeSoft * 1.6, edgeSoft * 1.6, echoHeight - echoTipDist)
+        * step(barHeight, echoHeight) * (0.3 + echoTex * 0.4);
 
-      col += layerColor * mask * ledTexture * (1.0 - fi * 0.12);
-      col += layerColor * echoAcc * u_gbEcho * (1.0 - fi * 0.12);
+      col += layerColor * mask * (1.0 - fi * 0.1);
+      col += layerColor * echoMask * u_gbEcho * (1.0 - fi * 0.1);
     }
   } else if (u_mode == 1) {
     // Mirror — REBUILT (rev 3). Rev 2 gave each bar a per-bar hash
