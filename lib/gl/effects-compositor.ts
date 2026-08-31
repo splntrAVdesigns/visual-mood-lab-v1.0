@@ -186,6 +186,36 @@ export function compositeEffects(
   const active = input.effects.filter((e) => e.enabled);
   if (active.length === 0) return;
 
+  // Every step below touches the GL context, a 2D canvas, or a compiled
+  // program — any one of them can throw given an edge case a specific
+  // effect's shader or params happen to hit (a bad uniform value, a
+  // degenerate w/h, a canvas op on a context that's mid-loss). Before this
+  // wrap, nothing here was contained: an uncaught throw partway through a
+  // pass would propagate straight out of compositeEffects() into whatever
+  // called it. Depending on how the caller's own render loop is
+  // structured, that's either "this one tile silently stays blank forever"
+  // or, if the call site has no per-card containment of its own either,
+  // "the shared render loop itself dies and every live tile on the board
+  // freezes" — the exact failure mode already identified and fixed for
+  // getTrackFrequencyData() elsewhere in the render pipeline (see that
+  // function's own doc comment). Same class of risk, same fix: fail
+  // closed. On a throw, this leaves `dest` exactly as it already was —
+  // the tile's own un-composited render, drawn by the caller before this
+  // function runs — rather than a blank/frozen canvas, and logs once so
+  // the failure is visible instead of silent.
+  try {
+    compositeEffectsUnsafe(stage, dest, input, active);
+  } catch (err) {
+    console.error(`[effects] composite failed for ${input.cardId}:`, err);
+  }
+}
+
+function compositeEffectsUnsafe(
+  stage: GLStage,
+  dest: HTMLCanvasElement,
+  input: CompositeInput,
+  active: EffectInstance[],
+): void {
   const w = Math.max(1, Math.round(input.width));
   const h = Math.max(1, Math.round(input.height));
 

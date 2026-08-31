@@ -156,41 +156,47 @@ void main() {
   vec3 col = vec3(0.0);
 
   if (u_mode == 0) {
-    // Gradient Bands — REBUILT (rev 5): true percussive bars. This is
-    // "Concept B" from the redesign review, not a tuning pass on rev 4.
+    // Gradient Bands — REBUILT (rev 6): magnitude decoupled from live audio.
     //
-    // Rev 4's actual bug, found after it still showed the same symptoms:
-    // removing the sin() wave wasn't enough, because the replacement
-    // (gbSegHeight) was still a fixed spatial grid whose control points
-    // only varied in HOW MUCH they responded to audio, not WHEN — every
-    // segment still read the same shared instantaneous bass/mid/high on
-    // the same frame, so the whole thing still moved in lockstep, and the
-    // regular segment spacing still read as a grid of cuts. Same problem,
-    // different disguise.
+    // Rev 5 fixed bar TIMING (independently scheduled hits — confirmed by
+    // standalone simulation: 27/28 bars peaked at distinct moments) but
+    // not bar MAGNITUDE. hitMag was recomputed from the CURRENT frame's
+    // bass/mid/high/rms every frame, for every bar, regardless of how
+    // long ago that bar's own hit actually fired. A shader has no memory
+    // of what audio was doing at a past instant — "reading live audio for
+    // an already-decaying hit" always means reading RIGHT NOW's value,
+    // not the value at that hit's onset. That meant every bar's displayed
+    // height kept re-tracking the SAME shared, instantaneous bass curve
+    // for as long as it stayed active, just scaled by a different weight
+    // per bar. Different weights don't fix a SHARED TEMPORAL SHAPE: when
+    // most bars rise and fall following the same underlying bass envelope
+    // at the same moments, it reads as one coordinated pulse no matter
+    // how much the peak SIZES vary from bar to bar — which is exactly
+    // "pushing forward and back."
     //
-    // Fixed for real this time by decorrelating TIME, not just amplitude.
-    // Each bar gets its own randomized hit period and phase (hash-seeded
-    // by bar index), producing a deterministic but independent schedule
-    // of "hit" moments; brightness at any instant is an exponential decay
-    // measured from that bar's own most recent hit. Shaders have no
-    // memory across frames, so this schedule has to be computed
-    // algebraically from u_time rather than simulated with a running
-    // cooldown variable — same end result, different mechanism. A hit's
-    // magnitude is still only ever this frame's bass/mid/high/rms (the
-    // only audio data a fragment shader ever has — see header note), but
-    // weighted by a hash unique to that specific hit, so different hits
-    // favor different parts of the spectrum: a bass-heavy moment visibly
-    // lights up a different set of bars than a bright, high-heavy one.
-    //
-    // No explicit trigger-threshold control: hit magnitude already tracks
-    // current audio energy directly, so quiet passages read as sparse and
-    // dim and loud passages read as busy and bright with no separate gate
-    // needed — simpler, and correctly stateless.
+    // Fixed for real this time: hit magnitude is now a pure hash function
+    // of (bar index, hit slot) — zero live-audio term. A bar's displayed
+    // value can now never re-couple to what audio is doing after its own
+    // hit has already fired, which is what actually guarantees no shared
+    // pulse — not a matter of degree, an architectural guarantee. This is
+    // a real, honest tradeoff, not a free improvement: bar height no
+    // longer literally tracks live loudness the way rev 4/5 attempted.
+    // Without a feedback texture (a real "Option B" — sampling the
+    // previous rendered frame to hold a true per-bar envelope across
+    // frames — not attempted here, needs its own platform check first),
+    // decorrelated-in-time and live-audio-coupled are in direct tension
+    // in a memoryless fragment shader; this picks decorrelated, which is
+    // what was asked for. Timing (period/phase/decayRate) unchanged from
+    // rev 5. Bars now grow symmetrically up AND down from each layer's
+    // own centerline (previously one direction per layer). Color is now
+    // a monotonic function of bar position only — no oscillation, no
+    // time drift, no per-layer phase offset — matching the clean
+    // left-to-right sweep of the reference mockup instead of cycling
+    // through the palette.
     int layers = u_gbLayers;
     for (int i = 0; i < 5; i++) {
       if (i >= layers) break;
       float fi = float(i);
-      float mirrorSign = mod(fi, 2.0) < 0.5 ? 1.0 : -1.0;
 
       float nBars = float(u_gbBars);
       float slotW = 1.0 / nBars;
@@ -218,43 +224,46 @@ void main() {
         float since = u_time - hitTime;
         if (since >= 0.0 && since < timeSince) {
           timeSince = since;
-          float wB = hash21(vec2(barIndexF, slot + 3.0));
-          float wM = hash21(vec2(barIndexF, slot + 17.0));
-          float wH = hash21(vec2(barIndexF, slot + 29.0));
-          float wR = hash21(vec2(barIndexF, slot + 43.0));
-          float wsum = max(wB + wM + wH + wR, 0.001);
-          hitMag = (bass * wB + mid * wM + high * wH + rms * wR) / wsum;
+          // Pure hash — deliberately no bass/mid/high/rms term. See the
+          // mode header comment: any live-audio dependency here
+          // re-creates the shared-pulse bug regardless of how it's
+          // weighted, because it re-reads NOW's audio every frame for a
+          // hit that fired at some other, past moment.
+          hitMag = mix(0.3, 1.0, hash21(vec2(barIndexF, slot * 3.7 + 61.0)));
         }
       }
 
       float envelope = exp(-timeSince * decayRate);
-      float barHeight = clamp(hitMag * envelope, 0.0, 1.4) * 0.34;
+      float barHeight = hitMag * envelope * 0.34;
 
+      // Symmetric up/down from this layer's own centerline — every bar
+      // grows both above and below the line at once, not one direction
+      // per layer.
       float centerOffset = (fi - (float(layers) - 1.0) * 0.5) * (0.10 + u_gbSpread * 0.14);
       float within = step(abs(p.x - barCenterX), slotW * 0.42);
+      float dist = abs(p.y - centerOffset);
 
-      // Soft, textured top edge instead of a hard step — same "blurred,
-      // not extreme" edge treatment as earlier revisions, applied to a
-      // bar's tip rather than a continuous ribbon's silhouette.
+      // Soft, textured tip edge instead of a hard step — same "blurred,
+      // not extreme" edge treatment as earlier revisions.
       float edgeSoft = 0.012 + fbm(vec2(barIndexF * 1.3, fi * 4.0 + u_time * 0.25)) * 0.03;
-      float tipDist = mirrorSign * (p.y - centerOffset);
-      float mask = within * step(0.0, tipDist) * smoothstep(-edgeSoft, edgeSoft, barHeight - tipDist);
+      float mask = within * smoothstep(-edgeSoft, edgeSoft, barHeight - dist);
 
-      float colorT = 0.5 + 0.5 * sin(p.x * 4.5 - u_time * 0.5 + fi * 2.1);
-      colorT = clamp(colorT + (fbm(vec2(p.x * 2.0, u_time * 0.06 + fi * 3.0)) - 0.5) * 0.3, 0.0, 1.0);
-      vec3 layerColor = palette(clamp(colorT + bass * u_colorWarmth * 0.15, 0.0, 1.0));
+      // Monotonic horizontal gradient — bar position directly picks the
+      // palette position, once, with no oscillation and no per-layer
+      // phase offset. u_colorWarmth's bass link is a small hue nudge
+      // only (not magnitude), same as every other mode already does.
+      float colorT = clamp(barIndexF / max(nBars - 1.0, 1.0), 0.0, 1.0);
+      vec3 layerColor = palette(clamp(colorT + bass * u_colorWarmth * 0.1, 0.0, 1.0));
 
       // Echo Bounce: the same hit, a slower second decay constant, so it
       // reads as a ring-out/after-glow trailing the main hit rather than
-      // a duplicate line. Only visible once it extends past the main
-      // bar's current height (i.e., during the tail after the main
-      // envelope has decayed below it).
+      // a duplicate line. Symmetric up/down like the primary bar, visible
+      // only once it extends past the main bar's current extent.
       float echoEnvelope = exp(-timeSince * decayRate * 0.35);
-      float echoHeight = clamp(hitMag * echoEnvelope, 0.0, 1.4) * 0.34;
+      float echoHeight = hitMag * echoEnvelope * 0.34;
       float echoTex = fbm(vec2(barIndexF * 1.7, u_time * 0.3 + fi));
-      float echoTipDist = mirrorSign * (p.y - centerOffset);
-      float echoMask = within * step(0.0, echoTipDist)
-        * smoothstep(-edgeSoft * 1.6, edgeSoft * 1.6, echoHeight - echoTipDist)
+      float echoMask = within
+        * smoothstep(-edgeSoft * 1.6, edgeSoft * 1.6, echoHeight - dist)
         * step(barHeight, echoHeight) * (0.3 + echoTex * 0.4);
 
       col += layerColor * mask * (1.0 - fi * 0.1);
