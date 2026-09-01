@@ -4,24 +4,22 @@ precision highp float;
 uniform vec2 u_resolution;
 uniform float u_time;
 
-uniform int   u_mode;        // @label(Pattern Mode) @select(Halftone Warp=0 | Topographic=1 | Flow Lines=2) @default(0)
-uniform float u_direction;   // @label(Direction) @range(0.0, 360.0) @default(45.0) @group(Motion)
-uniform float u_speed;       // @label(Speed) @range(0.1, 3.0) @default(1.0) @group(Motion)
-uniform float u_turbulence;  // @label(Turbulence) @range(0.3, 2.2) @default(1.0) @group(Motion)
-uniform vec3  u_bgColor;     // @label(Background) @color @default(0.0, 0.0, 0.0) @group(Color)
-uniform vec3  u_colorA;      // @label(Color A) @color @default(0.92, 0.95, 1.0) @group(Color)
-uniform vec3  u_colorB;      // @label(Color B) @color @default(0.37, 0.45, 0.84) @group(Color)
-uniform float u_density;     // @label(Density) @range(0.2, 1.0) @default(0.5) @group(Pattern)
-uniform float u_thickness;   // @label(Thickness) @range(0.3, 2.2) @default(1.0) @group(Pattern)
+uniform int   u_mode;         // @label(Pattern Mode) @select(Halftone Warp=0 | Topographic=1 | Flow Lines=2) @default(0)
+uniform float u_direction;    // @label(Direction) @range(0.0, 360.0) @default(45.0) @group(Motion)
+uniform float u_speed;        // @label(Speed) @range(0.1, 3.0) @default(1.0) @group(Motion)
+uniform float u_turbulence;   // @label(Turbulence Amount) @range(0.0, 2.0) @default(0.8) @group(Motion)
+uniform float u_morphSpeed;   // @label(Morph Speed) @range(0.05, 2.0) @default(0.4) @group(Motion)
+uniform float u_complexity;   // @label(Complexity) @range(0.4, 2.2) @default(1.0) @group(Pattern)
+uniform vec3  u_bgColor;      // @label(Background) @color @default(0.0, 0.0, 0.0) @group(Color)
+uniform vec3  u_colorA;       // @label(Color A) @color @default(0.92, 0.95, 1.0) @group(Color)
+uniform vec3  u_colorB;       // @label(Color B) @color @default(0.37, 0.45, 0.84) @group(Color)
+uniform float u_density;      // @label(Density) @range(0.2, 1.0) @default(0.5) @group(Pattern)
+uniform float u_thickness;    // @label(Thickness) @range(0.3, 2.2) @default(1.0) @group(Pattern)
+uniform float u_contrast;     // @label(Contrast) @range(0.5, 2.0) @default(1.0) @group(Pattern)
 
 out vec4 fragColor;
 
 const float TAU = 6.28318530718;
-
-/* Direction genuinely advects the noise sampling coordinates over time
-   along the chosen angle, rather than just animating a fixed field in
-   place — that's what makes the whole pattern visibly drift that way,
-   the same technique used in the design-mockup pass this translates. */
 
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float valueNoise(vec2 p){
@@ -40,66 +38,110 @@ float fbm(vec2 p){
   return total;
 }
 
+/* Genuine turbulent morphing, independent of directional drift. Direction
+   translates the sample coordinates (the pattern visibly moves that way);
+   this warps them through a second, independently-evolving noise field,
+   which is what actually reshapes the pattern over time — new loops
+   forming, old ones dissolving — rather than a static field sliding past.
+   That distinction is the whole fix for "has directional flow but no
+   turbulence": translation alone can never do this, no matter how it's
+   tuned, because it's the same field frozen in place, just moved. */
+vec2 morphWarp(vec2 p, float t, float amount){
+  float wx = fbm(p * 0.6 + vec2(3.1, 1.7) + t * 0.15);
+  float wy = fbm(p * 0.6 + vec2(9.4, 2.3) - t * 0.13);
+  return vec2(wx, wy) * amount;
+}
+
 void main(){
   vec2 uv = gl_FragCoord.xy / u_resolution.xy;
   float aspect = u_resolution.x / u_resolution.y;
   vec2 p = vec2(uv.x * aspect, uv.y);
 
   float tm = mod(u_time, TAU * 50.0) * u_speed;
+  float morphT = mod(u_time, TAU * 50.0) * u_morphSpeed;
   float dirRad = u_direction * 3.14159265 / 180.0;
   vec2 drift = vec2(cos(dirRad), sin(dirRad)) * tm;
 
   vec3 col = u_bgColor;
 
   if(u_mode == 0){
-    /* Halftone warp: dot grid displaced along a flowing noise field. */
-    float freq = u_turbulence * 1.4 * u_density;
-    vec2 gp = p * (10.0 * u_density);
-    vec2 cell = floor(gp);
-    vec2 cellUV = fract(gp) - 0.5;
-    vec2 sampleP = cell * 0.22 * freq - drift * 0.3;
-    float ang = fbm(sampleP) * TAU;
-    float mag = (fbm(sampleP + 40.0) + 1.0) * 0.5;
-    vec2 offset = vec2(cos(ang), sin(ang)) * mag * 0.35;
-    float d = length(cellUV - offset);
-    float r = (0.08 + mag * 0.22) * u_thickness;
-    float dotMask = 1.0 - smoothstep(r - 0.03, r, d);
-    col = mix(u_bgColor, mix(u_colorA, u_colorB, mag), dotMask * (0.5 + mag * 0.5));
+    /* Halftone warp — rebuilt. Density now spans a genuinely large dot
+       count (was capped under ~100 regardless of slider position because
+       the old frequency formula never actually scaled), and every dot is
+       resolved by checking the 3x3 neighborhood of grid cells rather than
+       displacing strictly within its own cell — the old version hard-
+       clipped any dot that drifted near a cell boundary, which is exactly
+       the cutoff-at-the-edges artifact reported. */
+    float freq = mix(16.0, 60.0, u_density) * u_complexity;
+    vec2 gp = p * freq;
+    vec2 gcell = floor(gp);
+    float bestAlpha = 0.0;
+    vec3 bestCol = u_bgColor;
+    for(int oy = -1; oy <= 1; oy++){
+      for(int ox = -1; ox <= 1; ox++){
+        vec2 cell = gcell + vec2(float(ox), float(oy));
+        vec2 cellCenter = cell + 0.5;
+        vec2 sampleP = cell * 0.16 * u_turbulence - drift * 0.3;
+        vec2 warp = morphWarp(sampleP, morphT, u_turbulence * 0.6);
+        float ang = fbm(sampleP + warp) * TAU;
+        float mag = clamp((fbm(sampleP + warp + 40.0) + 1.0) * 0.5 * u_contrast, 0.0, 1.0);
+        vec2 dotPos = cellCenter + vec2(cos(ang), sin(ang)) * mag * 0.42;
+        float d = length(gp - dotPos);
+        float r = (0.09 + mag * 0.24) * u_thickness;
+        float a = 1.0 - smoothstep(r - 0.05, r, d);
+        if(a > bestAlpha){ bestAlpha = a; bestCol = mix(u_colorA, u_colorB, mag); }
+      }
+    }
+    col = mix(u_bgColor, bestCol, bestAlpha);
 
   } else if(u_mode == 1){
-    /* Topographic: banded isolines of a drifting fbm heightfield, tinted
-       by elevation (colorA = low band, colorB = high band). */
-    float freq = u_turbulence * 2.2 * u_density;
-    float h = fbm(p * freq - drift * 0.15);
-    float levels = 12.0;
+    /* Topographic — morphWarp added on top of the directional drift so
+       contour bands actually reshape (merge, split, pinch off) instead of
+       only scrolling. */
+    float freq = 1.8 * u_complexity;
+    vec2 warp = morphWarp(p * freq * 0.6, morphT, u_turbulence);
+    float h = fbm(p * freq - drift * 0.15 + warp);
+    float levels = 12.0 * u_density * 1.6;
     float band = fract(h * levels);
     float lineW = 0.045 * u_thickness;
     float line = 1.0 - smoothstep(0.0, lineW, min(band, 1.0 - band));
-    vec3 elevColor = mix(u_colorA, u_colorB, clamp(h, 0.0, 1.0));
+    vec3 elevColor = mix(u_colorA, u_colorB, clamp(h * u_contrast, 0.0, 1.0));
     col = mix(u_bgColor, elevColor, line);
 
   } else {
-    /* Flow lines: short streaks traced along the curl of the drifting
-       field — curl noise is divergence-free by construction, which is
-       what keeps this from collapsing into a radial "flower" artifact
-       the way naive angle-from-noise sampling can. */
-    float freq = u_turbulence * 1.1 * u_density;
-    vec2 sp = p * freq - drift * 0.12;
+    /* Flow lines — real multi-tap line-integral-convolution instead of
+       the threshold-blob approximation last round shipped. A STATIC base
+       noise field (no time term) supplies the streak texture; what
+       animates is the sampling DIRECTION, driven by a curl field built
+       from time-evolving, domain-warped noise. That split is what real
+       LIC animation does: stable texture, moving vector field — it reads
+       as flowing liquid rather than a field of morphing blotches, which
+       is what a single evolving noise field produces when thresholded
+       directly (the actual bug in the previous version). */
+    float freq = 1.3 * u_complexity;
+    vec2 sp = p * freq - drift * 0.1;
+    vec2 warp = morphWarp(sp * 0.7, morphT, u_turbulence * 1.3);
+    vec2 curlP = sp + warp;
     float eps = 0.02;
-    float n1 = fbm(sp + vec2(0.0, eps)), n2 = fbm(sp - vec2(0.0, eps));
-    float n3 = fbm(sp + vec2(eps, 0.0)), n4 = fbm(sp - vec2(eps, 0.0));
+    float n1 = fbm(curlP + vec2(0.0, eps)), n2 = fbm(curlP - vec2(0.0, eps));
+    float n3 = fbm(curlP + vec2(eps, 0.0)), n4 = fbm(curlP - vec2(eps, 0.0));
     vec2 curl = vec2((n1 - n2) / (2.0 * eps), -(n3 - n4) / (2.0 * eps));
     float curlLen = length(curl) + 1e-5;
     vec2 dir = curl / curlLen;
-    float streak = 0.0;
-    for(int i = -3; i <= 3; i++){
+
+    float licSum = 0.0, licWeight = 0.0;
+    const int TAPS = 12;
+    for(int i = -TAPS; i <= TAPS; i++){
       float fi = float(i);
-      vec2 samplePos = sp + dir * fi * 0.06;
-      float v = fbm(samplePos * 3.0);
-      streak += smoothstep(0.55, 0.62, v) * (1.0 - abs(fi) / 4.0);
+      float w = 1.0 - abs(fi) / float(TAPS + 1);
+      vec2 samplePos = p * (5.0 * u_complexity) + dir * fi * 0.045 * u_thickness;
+      licSum += fbm(samplePos) * w;
+      licWeight += w;
     }
-    streak = clamp(streak * u_thickness, 0.0, 1.0);
-    col = mix(u_bgColor, mix(u_colorA, u_colorB, clamp(curlLen * 2.0, 0.0, 1.0)), streak);
+    float lic = licSum / max(0.001, licWeight);
+    float streak = smoothstep(0.42, 0.58, lic * u_contrast);
+    vec3 streakCol = mix(u_colorA, u_colorB, clamp(curlLen * 2.0, 0.0, 1.0));
+    col = mix(u_bgColor, streakCol, streak);
   }
 
   fragColor = vec4(col, 1.0);

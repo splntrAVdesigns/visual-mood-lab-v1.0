@@ -980,7 +980,8 @@
         "reaction-diffusion",
         "metaball",
         "liquid",
-        "cellular"
+        "cellular",
+        "raymarch"
       ]
     },
     {
@@ -993,7 +994,8 @@
         "flow-field",
         "topographic",
         "directional",
-        "warp"
+        "warp",
+        "lic"
       ]
     },
     {
