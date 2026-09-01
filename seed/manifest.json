@@ -969,6 +969,45 @@
         "radial",
         "glow"
       ]
+    },
+    {
+      "slug": "ferro-field",
+      "type": "shader",
+      "file": "shaders/ferro-field.frag",
+      "title": "Ferro Field",
+      "tags": [
+        "organic",
+        "reaction-diffusion",
+        "metaball",
+        "liquid",
+        "cellular"
+      ]
+    },
+    {
+      "slug": "turbulent-flow",
+      "type": "shader",
+      "file": "shaders/turbulent-flow.frag",
+      "title": "Turbulent Flow",
+      "tags": [
+        "noise",
+        "flow-field",
+        "topographic",
+        "directional",
+        "warp"
+      ]
+    },
+    {
+      "slug": "geo-patterns",
+      "type": "shader",
+      "file": "shaders/geo-patterns.frag",
+      "title": "Geo Patterns",
+      "tags": [
+        "geometric",
+        "tessellation",
+        "fractal",
+        "weave",
+        "seamless"
+      ]
     }
   ]
 }
