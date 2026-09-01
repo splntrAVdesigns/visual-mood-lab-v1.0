@@ -981,7 +981,8 @@
         "metaball",
         "liquid",
         "cellular",
-        "raymarch"
+        "raymarch",
+        "crt"
       ]
     },
     {

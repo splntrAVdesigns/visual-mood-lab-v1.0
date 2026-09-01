@@ -5,16 +5,16 @@ uniform vec2 u_resolution;
 uniform float u_time;
 
 uniform int   u_algorithm;   // @label(Algorithm) @select(Iso Cubes=0 | Y-Tribar Weave=1 | Fractal Subdivide=2) @default(0)
-uniform int   u_baseShape;   // @label(Base Shape) @select(Triangle=0 | Square=1 | Hexagon=2) @default(0) @group(Fractal)
-uniform int   u_faceStyle;   // @label(Face Style) @select(Solid=0 | Nested Diamond=1) @default(0) @group(Cubes)
+uniform int   u_baseShape;   // @label(Base Shape) @select(Triangle=0 | Square=1 | Hexagon=2) @default(0) @group(Fractal) @showIf(u_algorithm=2)
+uniform int   u_faceStyle;   // @label(Face Style) @select(Solid=0 | Nested Diamond=1) @default(0) @group(Cubes) @showIf(u_algorithm=0)
 uniform float u_scale;       // @label(Scale) @range(0.4, 1.8) @default(1.0)
 uniform float u_stroke;      // @label(Stroke Weight) @range(0.2, 3.0) @default(1.0)
-uniform int   u_depth;       // @label(Recursion Depth) @range(2, 7) @default(5) @group(Fractal)
-uniform float u_fillRatio;   // @label(Fill Ratio) @range(0.3, 0.7) @default(0.5) @group(Fractal)
-uniform float u_gap;         // @label(Gap) @range(0.0, 0.6) @default(0.0) @group(Cubes)
-uniform float u_faceContrast;// @label(Face Contrast) @range(0.0, 1.0) @default(0.6) @group(Cubes)
-uniform float u_weaveCurl;   // @label(Weave Curl) @range(0.0, 1.0) @default(0.65) @group(Weave)
-uniform float u_layers;      // @label(Harmonic Layers) @range(1.0, 4.0) @default(1.0) @group(Weave)
+uniform int   u_depth;       // @label(Recursion Depth) @range(2, 7) @default(5) @group(Fractal) @showIf(u_algorithm=2)
+uniform float u_fillRatio;   // @label(Fill Ratio) @range(0.3, 0.7) @default(0.5) @group(Fractal) @showIf(u_algorithm=2)
+uniform float u_gap;         // @label(Gap) @range(0.0, 0.6) @default(0.0) @group(Cubes) @showIf(u_algorithm=0)
+uniform float u_faceContrast;// @label(Face Contrast) @range(0.0, 1.0) @default(0.6) @group(Cubes) @showIf(u_algorithm=0)
+uniform float u_weaveCurl;   // @label(Weave Curl) @range(0.0, 1.0) @default(0.65) @group(Weave) @showIf(u_algorithm=1)
+uniform float u_layers;      // @label(Harmonic Layers) @range(1.0, 4.0) @default(1.0) @group(Weave) @showIf(u_algorithm=1)
 uniform float u_rotation;    // @label(Rotation) @range(0.0, 360.0) @default(0.0) @group(Transform)
 uniform float u_oscRate;     // @label(Oscillation Rate) @range(0.0, 2.0) @default(0.3) @group(Motion)
 uniform float u_oscAmount;   // @label(Oscillation Amount) @range(0.0, 1.0) @default(0.3) @group(Motion)
@@ -26,18 +26,19 @@ out vec4 fragColor;
 const float PI = 3.14159265;
 const float PHI_INV = 0.618;
 
+/* NOTE ON @showIf: this is the one syntax detail in this file I'm inferring
+   rather than confirming — the docs I have name the feature but not its
+   exact grammar. I've matched the `key=value` style your @select tag
+   already uses (`@select(Grid=0 | Halftone=1)`), on the theory that's the
+   most internally consistent guess. If parse-uniforms.ts expects different
+   punctuation, every showIf tag in this file needs the same correction —
+   worth confirming before assuming the grouping request from last round
+   actually landed. */
+
 mat2 rot2(float a){ float c = cos(a), s = sin(a); return mat2(c, -s, s, c); }
 float hash1(float n){ return fract(sin(n) * 43758.5453); }
 float cross2(vec2 a, vec2 b){ return a.x*b.y - a.y*b.x; }
 
-/* Convex-quad point test via consistent edge-side sign check — used for
-   Iso Cubes' three rhombic faces, ported directly from the vertex sets
-   already proven correct in the canvas mockup rather than re-derived as a
-   dot-product shortcut. That shortcut is exactly what broke last time: it
-   conflated row-parity offset with face selection and produced garbage
-   cell-local coordinates (the scattered arc fragments in the screenshot
-   were broken pieces of the nested-diamond ring math operating on that
-   garbage). */
 bool insideQuad(vec2 p, vec2 a, vec2 b, vec2 c, vec2 d){
   float s1 = sign(cross2(b-a, p-a));
   float s2 = sign(cross2(c-b, p-b));
@@ -52,14 +53,28 @@ bool insideTri(vec2 p, vec2 a, vec2 b, vec2 c){
   return !(hasNeg && hasPos);
 }
 
+/* A rhombus IS the unit ball of the L1 (taxicab) norm in a basis aligned
+   with its own two diagonals — that's not an approximation, it's exact:
+   every point on a rhombus boundary has |u|+|v|=1 in that basis, verified
+   by hand at both vertex points and edge midpoints before writing this.
+   The bug this replaces used length() (Euclidean/circular distance), which
+   is why "nested diamond" rendered as literal circles — confirmed directly
+   against the screenshot, this isn't a guess. */
+float diamondDist(vec2 p, vec2 a, vec2 b, vec2 c, vec2 d){
+  vec2 center = (a + b + c + d) * 0.25;
+  vec2 diag1 = c - a;
+  vec2 diag2 = d - b;
+  float len1 = length(diag1), len2 = length(diag2);
+  vec2 dir1 = diag1 / max(0.0001, len1);
+  vec2 dir2 = diag2 / max(0.0001, len2);
+  vec2 rel = p - center;
+  float u = dot(rel, dir1) / max(0.0001, len1 * 0.5);
+  float v = dot(rel, dir2) / max(0.0001, len2 * 0.5);
+  return abs(u) + abs(v);
+}
+
 /* ============================================================
-   ISO CUBES — rebuilt from scratch.
-   Cell selection: nearest-grid-center via round(), using the exact same
-   dx=1.74s / dy=1.5s / odd-row-offset spacing the canvas version used —
-   a direct port of proven grid math, not a re-derivation.
-   Face selection: explicit point-in-quad tests against the exact 4-vertex
-   rhombus definitions from the canvas version (top/left/right), not an
-   angle or dot-product heuristic. */
+   ISO CUBES */
 vec3 isoCubes(vec2 p, float scale, float gap, int faceStyle, float stroke, float faceContrast, vec3 colA, vec3 colB){
   float s = 46.0 * scale;
   float dx = s * 1.74, dy = s * 1.5;
@@ -82,35 +97,31 @@ vec3 isoCubes(vec2 p, float scale, float gap, int faceStyle, float stroke, float
 
   if(!inTop && !inLeft && !inRight) return colB;
 
+  vec2 faceA, faceB, faceC, faceD;
+  if(inTop){ faceA=topA; faceB=topB; faceC=topC; faceD=topD; }
+  else if(inLeft){ faceA=leftA; faceB=leftB; faceC=leftC; faceD=leftD; }
+  else { faceA=rightA; faceB=rightB; faceC=rightC; faceD=rightD; }
+
+  float dd = diamondDist(local, faceA, faceB, faceC, faceD);
+
   if(faceStyle == 1){
-    vec2 faceA, faceB, faceC, faceD;
-    if(inTop){ faceA=topA; faceB=topB; faceC=topC; faceD=topD; }
-    else if(inLeft){ faceA=leftA; faceB=leftB; faceC=leftC; faceD=leftD; }
-    else { faceA=rightA; faceB=rightB; faceC=rightC; faceD=rightD; }
-    vec2 faceCenter = (faceA+faceB+faceC+faceD)*0.25;
-    float ringPos = length(local - faceCenter) / s;
-    float ring = fract(ringPos * 5.0);
+    float ring = fract(dd * 5.0);
     float lineW = 0.05 * stroke;
-    float line = 1.0 - smoothstep(0.0, lineW, min(ring, 1.0-ring));
+    float line = 1.0 - smoothstep(0.0, lineW, min(ring, 1.0 - ring));
     return mix(colB, colA, line);
   }
 
   float faceMix = inTop ? 1.0 : (inLeft ? (1.0 - faceContrast*0.4) : (1.0 - faceContrast*0.85));
-  return mix(colB, colA, faceMix);
+  vec3 faceCol = mix(colB, colA, faceMix);
+  // thin inset edge so faces read as distinct facets rather than one flat hexagon
+  float edgeLine = smoothstep(0.88, 1.0, dd);
+  faceCol = mix(faceCol, colB, edgeLine * 0.45);
+  return faceCol;
 }
 
 /* ============================================================
-   Y-TRIBAR WEAVE — same connectivity guarantee as before (every triangle
-   draws an arm to all three of its edge midpoints; every internal edge is
-   shared by exactly one neighbor, and both sides always draw to it, so
-   every arm endpoint is structurally guaranteed to match its neighbor's).
-   Two defensive fixes this round: u_layers is now a float (uniform int
-   upload for a stepper-mapped control was the suspected cause of it doing
-   nothing at all; casting internally sidesteps the ambiguity regardless
-   of root cause), and stroke width now scales relative to L (cell size)
-   instead of an absolute pixel value — the absolute version was small
-   enough relative to typical cell spacing to be nearly invisible across
-   the slider's whole range, which matches exactly what was reported. */
+   Y-TRIBAR WEAVE — unchanged from last round (no new reports against its
+   correctness this round beyond the general perf/UI audit). */
 float triSegDist(vec2 p, vec2 a, vec2 b){
   vec2 pa = p - a, ba = b - a;
   float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
@@ -168,12 +179,21 @@ vec3 yTribarWeave(vec2 p, float scale, float stroke, float curl, float layersF, 
 }
 
 /* ============================================================
-   FRACTAL SUBDIVIDE — the "solid white tile" bug was a missing bounds
-   check: triangle and hexagon modes ran the subdivision loop for EVERY
-   pixel on the whole canvas with no test for whether that pixel was
-   inside the original shape first, so every pixel fell through to colA
-   regardless of position. Square mode already had this check; triangle
-   and hexagon now do too. */
+   FRACTAL SUBDIVIDE — coordinate handling rewritten to be fully explicit
+   and self-contained rather than sharing the outer rotation pipeline.
+   Two confirmed fixes: Scale previously had zero effect on this mode (it
+   was computed in main() but never actually passed through — a plain
+   omission, not a math error); and this rewrite applies rotation and
+   scale directly to the fractal's own local coordinate rather than to a
+   shared "uv" that also feeds the other two algorithms.
+   I could not reproduce the reported "orbits around the frame edge"
+   behavior through code review — a shape defined and rotated around a
+   shared origin shouldn't be able to drift off-center, mathematically —
+   so I'm not claiming this rewrite fixes that specific symptom with
+   certainty. What it does fix for certain: Scale now works, and the
+   coordinate handling is isolated enough that if the orbit bug persists,
+   it's now much easier to tell whether the cause is in this function or
+   upstream in the shared transform. */
 vec3 fractalTriangleLike(vec2 q, vec2 a0, vec2 b0, vec2 c0, int depth, float fillRatio, vec3 colA, vec3 colB){
   if(!insideTri(q, a0, b0, c0)) return colB;
   vec2 a = a0, b = b0, c = c0;
@@ -192,7 +212,12 @@ vec3 fractalTriangleLike(vec2 q, vec2 a0, vec2 b0, vec2 c0, int depth, float fil
   return colA;
 }
 
-vec3 fractalSubdivide(vec2 q, int baseShape, int depth, float fillRatio, vec3 colA, vec3 colB){
+vec3 fractalSubdivide(vec2 screenQ, int baseShape, int depth, float fillRatio, float scale, float rotation, vec3 colA, vec3 colB){
+  // Explicit, local transform: rotate then scale the fractal's own sample
+  // point, independent of anything computed for Iso Cubes / Y-Tribar.
+  vec2 q = rot2(rotation * PI / 180.0) * screenQ;
+  q = q / max(0.2, scale);
+
   if(baseShape == 1){
     vec2 uv = q * 0.28 + 0.5;
     if(uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return colB;
@@ -229,24 +254,20 @@ void main(){
   vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;
   uv *= 2.4;
 
-  /* Oscillation — gentle, continuous, applied per-algorithm so the tile
-     reads as alive without ever destabilizing the tessellation math (same
-     controlled-perturbation principle as Ferro Field's perpetual motion:
-     it nudges parameters, never the connectivity-critical geometry). */
   float osc = sin(u_time * u_oscRate) * u_oscAmount;
   float rotationLive = u_rotation + osc * 25.0;
   float curlLive = clamp(u_weaveCurl + osc * 0.18, 0.0, 1.0);
   float scaleLive = u_scale * (1.0 + osc * 0.08);
 
-  uv = rot2(rotationLive * PI / 180.0) * uv;
-
   vec3 col;
   if(u_algorithm == 0){
-    col = isoCubes(uv * 100.0, scaleLive, u_gap, u_faceStyle, u_stroke, u_faceContrast, u_colorA, u_colorB);
+    vec2 rotated = rot2(rotationLive * PI / 180.0) * uv;
+    col = isoCubes(rotated * 100.0, scaleLive, u_gap, u_faceStyle, u_stroke, u_faceContrast, u_colorA, u_colorB);
   } else if(u_algorithm == 1){
-    col = yTribarWeave(uv * 100.0, scaleLive, u_stroke, curlLive, u_layers, u_colorA, u_colorB);
+    vec2 rotated = rot2(rotationLive * PI / 180.0) * uv;
+    col = yTribarWeave(rotated * 100.0, scaleLive, u_stroke, curlLive, u_layers, u_colorA, u_colorB);
   } else {
-    col = fractalSubdivide(uv, u_baseShape, u_depth, u_fillRatio, u_colorA, u_colorB);
+    col = fractalSubdivide(uv, u_baseShape, u_depth, u_fillRatio, scaleLive, rotationLive, u_colorA, u_colorB);
   }
 
   fragColor = vec4(col, 1.0);

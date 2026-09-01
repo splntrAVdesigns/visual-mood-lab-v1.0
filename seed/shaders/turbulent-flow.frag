@@ -31,21 +31,13 @@ float valueNoise(vec2 p){
 }
 float fbm(vec2 p){
   float total = 0.0, amp = 0.5, freq = 1.0;
-  for(int o = 0; o < 4; o++){
+  for(int o = 0; o < 3; o++){
     total += valueNoise(p * freq) * amp;
     amp *= 0.5; freq *= 2.0;
   }
   return total;
 }
 
-/* Genuine turbulent morphing, independent of directional drift. Direction
-   translates the sample coordinates (the pattern visibly moves that way);
-   this warps them through a second, independently-evolving noise field,
-   which is what actually reshapes the pattern over time — new loops
-   forming, old ones dissolving — rather than a static field sliding past.
-   That distinction is the whole fix for "has directional flow but no
-   turbulence": translation alone can never do this, no matter how it's
-   tuned, because it's the same field frozen in place, just moved. */
 vec2 morphWarp(vec2 p, float t, float amount){
   float wx = fbm(p * 0.6 + vec2(3.1, 1.7) + t * 0.15);
   float wy = fbm(p * 0.6 + vec2(9.4, 2.3) - t * 0.13);
@@ -65,13 +57,6 @@ void main(){
   vec3 col = u_bgColor;
 
   if(u_mode == 0){
-    /* Halftone warp — rebuilt. Density now spans a genuinely large dot
-       count (was capped under ~100 regardless of slider position because
-       the old frequency formula never actually scaled), and every dot is
-       resolved by checking the 3x3 neighborhood of grid cells rather than
-       displacing strictly within its own cell — the old version hard-
-       clipped any dot that drifted near a cell boundary, which is exactly
-       the cutoff-at-the-edges artifact reported. */
     float freq = mix(16.0, 60.0, u_density) * u_complexity;
     vec2 gp = p * freq;
     vec2 gcell = floor(gp);
@@ -95,9 +80,6 @@ void main(){
     col = mix(u_bgColor, bestCol, bestAlpha);
 
   } else if(u_mode == 1){
-    /* Topographic — morphWarp added on top of the directional drift so
-       contour bands actually reshape (merge, split, pinch off) instead of
-       only scrolling. */
     float freq = 1.8 * u_complexity;
     vec2 warp = morphWarp(p * freq * 0.6, morphT, u_turbulence);
     float h = fbm(p * freq - drift * 0.15 + warp);
@@ -109,18 +91,21 @@ void main(){
     col = mix(u_bgColor, elevColor, line);
 
   } else {
-    /* Flow lines — real multi-tap line-integral-convolution instead of
-       the threshold-blob approximation last round shipped. A STATIC base
-       noise field (no time term) supplies the streak texture; what
-       animates is the sampling DIRECTION, driven by a curl field built
-       from time-evolving, domain-warped noise. That split is what real
-       LIC animation does: stable texture, moving vector field — it reads
-       as flowing liquid rather than a field of morphing blotches, which
-       is what a single evolving noise field produces when thresholded
-       directly (the actual bug in the previous version). */
-    float freq = 1.3 * u_complexity;
-    vec2 sp = p * freq - drift * 0.1;
-    vec2 warp = morphWarp(sp * 0.7, morphT, u_turbulence * 1.3);
+    /* Flow lines — the real bug in the previous version: LIC needs
+       high-frequency, low-correlation "grain" as its base texture (that's
+       what real LIC implementations use white noise for). I was
+       averaging smooth 3-octave fbm along the flow direction — smooth
+       noise averaged with more smooth noise just produces more smooth
+       noise, not streaks, no matter how many taps. Two fixes: swap the
+       base texture for actual high-frequency grain, and widen the tap
+       spacing enough to traverse real noise variation (the old spacing
+       moved each tap by a small fraction of one noise cell — visually
+       almost the same sample repeated). Averaging also mechanically
+       reduces contrast (basic box-filter behavior), so contrast is
+       explicitly restored after the average rather than left flat. */
+    float freq = u_complexity;
+    vec2 sp = p * (3.0 * freq) - drift * 0.1;
+    vec2 warp = morphWarp(sp * 0.5, morphT, u_turbulence * 1.3);
     vec2 curlP = sp + warp;
     float eps = 0.02;
     float n1 = fbm(curlP + vec2(0.0, eps)), n2 = fbm(curlP - vec2(0.0, eps));
@@ -130,16 +115,18 @@ void main(){
     vec2 dir = curl / curlLen;
 
     float licSum = 0.0, licWeight = 0.0;
-    const int TAPS = 12;
+    const int TAPS = 14;
     for(int i = -TAPS; i <= TAPS; i++){
       float fi = float(i);
       float w = 1.0 - abs(fi) / float(TAPS + 1);
-      vec2 samplePos = p * (5.0 * u_complexity) + dir * fi * 0.045 * u_thickness;
-      licSum += fbm(samplePos) * w;
+      vec2 samplePos = p * (9.0 * freq) + dir * fi * 0.6 * u_thickness;
+      float grain = valueNoise(samplePos) * 0.65 + valueNoise(samplePos * 2.3 + 11.0) * 0.35;
+      licSum += grain * w;
       licWeight += w;
     }
     float lic = licSum / max(0.001, licWeight);
-    float streak = smoothstep(0.42, 0.58, lic * u_contrast);
+    lic = clamp((lic - 0.5) * 3.2 + 0.5, 0.0, 1.0); // restore contrast lost to averaging
+    float streak = smoothstep(0.5 - 0.16/u_contrast, 0.5 + 0.16/u_contrast, lic);
     vec3 streakCol = mix(u_colorA, u_colorB, clamp(curlLen * 2.0, 0.0, 1.0));
     col = mix(u_bgColor, streakCol, streak);
   }
