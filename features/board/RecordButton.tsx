@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Button, RecordIcon, Tooltip } from '@/components/ui';
+import { Button, RecordIcon, Toast, Tooltip } from '@/components/ui';
 import { useBoardStore } from '@/stores';
 import type { Asset } from '@/types/asset';
 import { getPool } from '@/lib/render/pool';
@@ -130,6 +130,16 @@ export function RecordButton({ asset, canCapture, format, durationSec, variant }
     }
   };
 
+  // Gated exactly as the old inline span was (message only shown while
+  // phase is 'done'/'error'). The 3000ms effect above that resets phase
+  // back to 'idle' is doing double duty — it's the whole button's
+  // cooldown, not just the message's timer — so it stays as the thing
+  // that actually clears this, rather than trying to fold its job into
+  // Toast's own internal timer. onDismiss just re-fires the same reset
+  // in case Toast's own timer ever completes first; setPhase('idle') is
+  // idempotent, so there's no ordering hazard either way.
+  const shownMessage = message && (phase === 'done' || phase === 'error') ? message : null;
+
   return (
     <span className={s.recordGroup} data-recording={phase === 'recording' ? 'true' : undefined}>
       <Tooltip content={tooltipText}>
@@ -153,11 +163,13 @@ export function RecordButton({ asset, canCapture, format, durationSec, variant }
               : 'Record')}
         </Button>
       </Tooltip>
-      {message && (phase === 'done' || phase === 'error') && (
-        <span className={s.savedNote} data-error={phase === 'error' ? 'true' : undefined}>
-          {message}
-        </span>
-      )}
+      <Toast
+        message={shownMessage}
+        error={phase === 'error'}
+        onDismiss={() => {
+          if (mountedRef.current) setPhase('idle');
+        }}
+      />
     </span>
   );
 }

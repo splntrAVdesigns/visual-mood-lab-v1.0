@@ -93,6 +93,7 @@
   --z-scrim: 45;
   --z-tooltip: 70;
   --z-dialog: 80;
+  --z-toast: 90; /* above dialog — a completion message should never be hidden behind whatever else is open */
 }
 
 @media (prefers-reduced-motion: reduce) {

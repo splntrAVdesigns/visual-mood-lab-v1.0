@@ -497,8 +497,17 @@
 
 .swatchChip {
   position: relative;
-  width: 18px;
-  height: 18px;
+  /* Was a hardcoded 18x18px — well under both the app's own
+     --touch-target token (36px, 44px on coarse pointer) and the ~44pt
+     comfortable-tap guideline. .swatchInput mirrors this size via
+     inset:0 (below), so the enlarged hit area follows automatically.
+     The chip now overflows .swatch's own --control-h row height
+     slightly (36-44px chip inside a 28-34px row) — deliberate, and a
+     common pattern for a touch-friendly control in a compact row, not
+     a layout bug; .swatch's align-items:center lets it overflow
+     top/bottom evenly. Verified by render, not just asserted. */
+  width: var(--touch-target);
+  height: var(--touch-target);
   flex: none;
   border-radius: 2px;
   border: 1px solid var(--border-hi);
@@ -2462,11 +2471,36 @@
   flex: none;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   height: var(--header-h);
   padding: 0 var(--space-2) 0 var(--space-4);
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
+  /* Now holds every header-row action (Code/VCapture/Record/Snapshot/
+     Restore, plus the pre-existing Fullscreen/Close) instead of just
+     title+badge+Fullscreen+Close — .mobileActions below is retired
+     entirely rather than re-padded a third time; see that removed
+     rule's old comment trail for why padding alone had already hit its
+     floor. overflow-x is a safety valve, not the primary plan: verified
+     via render that the common case (all actions present) fits at
+     375/390/414px with zero overflow, so this should rarely if ever
+     engage — it exists for a hypothetical asset variant with more
+     conditional actions than exist today, not because the common case
+     needs it. */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* VCapture's compact label — deliberately text, not icon-only. Sitting
+   as a tiny icon right next to Record's icon at mobile header size risks
+   exactly the ambiguity VCaptureIcon's own doc comment already worries
+   about (two small camera-ish glyphs side by side reading as "two states
+   of the same button"). "VC" settles that for free without needing a
+   full-width label. */
+.vcaptureCompact {
+  padding: 0 var(--space-2);
+  font-family: var(--font-mono);
+  letter-spacing: var(--tracking-mono);
 }
 
 .mobileFocusTitle {
@@ -2506,22 +2540,21 @@
   overflow: hidden;
 }
 
-.mobileActions {
+/* Snapshot-only delete — deliberately NOT folded into the icon-only
+   header alongside Code/VCapture/Record/Snapshot/Restore. A destructive
+   action sitting as one more small icon among six others is one
+   mis-tap away from an accidental delete; this stays a distinct,
+   full-width, clearly-labeled row, and only exists in the DOM at all
+   when asset.isSnapshot is true — so the common case (a normal mood
+   tile, not a saved snapshot) never renders this row and never risks
+   the canvas-overlap problem the old .mobileActions row had, since nothing
+   here is unconditionally present. */
+.mobileDangerRow {
   flex: none;
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  /* Tightened again — was `var(--space-1) var(--space-3)`, still left the
-     inspector's top edge overlapping more of the live canvas than wanted
-     on mobile. Buttons keep their full --control-h touch target
-     regardless (untouched); this only shrinks the wrapper's own
-     breathing room above/below the row, down to a literal 2px since
-     --space-1 was already the smallest named spacing token available —
-     nowhere smaller to reach for in the scale itself. */
-  padding: 2px var(--space-3);
+  padding: var(--space-2) var(--space-4);
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
-  overflow-x: auto;
 }
 
 .mobileTabs {
@@ -2564,8 +2597,14 @@
  * close; this mirrors that same reduction using layout instead of a browser
  * API — same intent, since the API itself isn't available here.
  */
-.mobileFocus[data-fullscreen='true'] .mobileActions,
+/* .mobileActions no longer exists as a separate row — its content moved
+   into .mobileFocusHeader above — so pseudo-fullscreen no longer needs
+   to hide it here. Header itself stays visible even in fullscreen (it
+   still holds Fullscreen/Close, which fullscreen mode still needs), so
+   it's deliberately absent from this hide-list rather than added back
+   under a different name. */
 .mobileFocus[data-fullscreen='true'] .mobileTabs,
+.mobileFocus[data-fullscreen='true'] .mobileDangerRow,
 .mobileFocus[data-fullscreen='true'] .mobileSheet {
   display: none;
 }
@@ -2599,6 +2638,28 @@
 /* ---- mobile board ------------------------------------------------ */
 
 @media (max-width: 820px) {
+  /* .controlRow (Parameters tab rows) gets the same hairline divider
+     Modulate's rows (.modPanelRow, above) already have. The two were
+     never actually different in horizontal padding — both inherit
+     .mobileSheet's padding equally — the real mismatch was that
+     Modulate's rows are visually separated by a border and Parameters'
+     aren't, which reads as "less organized" even with identical padding
+     tokens. Scoped to this breakpoint (not added to .controlRow
+     directly) so desktop's InspectorDrawer, which renders the exact
+     same ControlRow component, is completely unaffected — matches the
+     existing convention this file already uses for the mobile board
+     styles directly below. Skips the last row in each group the same
+     way .modPanelRow:last-child does, so groups don't end on a
+     dangling line. */
+  .controlRow {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: var(--space-1);
+  }
+  .controlRow:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
   /* Touch targets: 44px is the long-standing floor for a comfortable tap,
      and several controls sized for a mouse sit below it. */
   .sortButton {

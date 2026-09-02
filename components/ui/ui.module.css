@@ -593,3 +593,44 @@
   color: var(--text-mute);
   padding: var(--space-2) 0;
 }
+
+/* ------------------------------------------------------------------ *
+ * Toast — see Toast.tsx's own doc for why this exists (replacing an
+ * inline status message that was reflowing the row it lived in).
+ * ------------------------------------------------------------------ */
+
+.toastWrap {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: var(--z-toast);
+  pointer-events: none;
+}
+
+.toast {
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-raised);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-lg);
+  font-size: var(--step--1);
+  color: var(--text);
+  white-space: nowrap;
+  animation: toastIn var(--dur-base) var(--ease);
+}
+
+.toast[data-error='true'] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+@keyframes toastIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

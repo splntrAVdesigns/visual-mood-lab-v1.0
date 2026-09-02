@@ -96,6 +96,21 @@ export const VCaptureIcon = (p: IconProps) => (
   </Svg>
 );
 
+/** Still-camera body (viewfinder bump + lens) for Snapshot — deliberately
+    NOT a rect+play-triangle like VCaptureIcon above, for the same reason
+    that icon's own doc comment gives: two actions sitting right next to
+    each other in the mobile header (Snapshot and VCapture/Record) need
+    silhouettes that read as different things at a glance, not two
+    variations on "camera." A photo camera's viewfinder hump vs. a video
+    camera's film-strip rectangle is a standard, immediately legible
+    distinction for exactly that reason. */
+export const CameraIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M2 6a1 1 0 0 1 1-1h1.5l.7-1.2a1 1 0 0 1 .86-.5h3.88a1 1 0 0 1 .86.5L11.5 5H13a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" />
+    <circle cx="8" cy="8.5" r="2.25" />
+  </Svg>
+);
+
 /** Speaker cone plus either sound-wave arcs or an X, same on/off-prop
     pattern as FullscreenIcon below. Used for the header master mute
     toggle (Phase 4.8, Stage 1). */

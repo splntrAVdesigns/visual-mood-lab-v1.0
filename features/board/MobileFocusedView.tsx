@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Badge, Button, CloseIcon, CodeIcon, DownloadIcon, FullscreenIcon, IconButton, Tooltip, VCaptureIcon } from '@/components/ui';
+import { Badge, Button, CameraIcon, CloseIcon, CodeIcon, DownloadIcon, FullscreenIcon, IconButton, ResetIcon, Toast, Tooltip } from '@/components/ui';
 import {
   selectSelectedAsset,
   useBoardStore,
@@ -87,12 +87,6 @@ export function MobileFocusedView() {
     // reopening the SAME asset would otherwise leave pseudoFullscreen (and
     // the tab/scroll state) stuck exactly where it was left last time.
   }, [asset?.itemId, open]);
-
-  useEffect(() => {
-    if (!savedNote) return;
-    const t = setTimeout(() => setSavedNote(null), 2600);
-    return () => clearTimeout(t);
-  }, [savedNote]);
 
   // Freeze the board behind, same as desktop: nothing off-screen should be
   // burning a renderer slot while a focused asset needs it.
@@ -226,6 +220,67 @@ export function MobileFocusedView() {
         <span className={s.mobileFocusTitle}>{asset.title}</span>
         <Badge>{asset.isSnapshot ? 'SNAP' : ASSET_TYPE_BADGE[asset.type]}</Badge>
         <span className={s.mobileFocusSpacer} />
+
+        {hasSource && (
+          <IconButton
+            label="Code"
+            icon={<CodeIcon />}
+            active={showCode}
+            onClick={() => setShowCode((v) => !v)}
+          />
+        )}
+
+        {canCapture && (
+          <>
+            <Tooltip content="Set export format and duration">
+              <Button
+                variant="ghost"
+                className={s.vcaptureCompact}
+                active={tab === 'capture'}
+                onClick={() => setTab((t) => (t === 'capture' ? 'controls' : 'capture'))}
+              >
+                VC
+              </Button>
+            </Tooltip>
+            <RecordButton
+              asset={asset}
+              canCapture={canCapture}
+              format={captureFormat}
+              durationSec={captureDuration}
+              variant="icon"
+            />
+          </>
+        )}
+
+        {!asset.isSnapshot && (
+          <Tooltip content={saving ? 'Saving…' : 'Save snapshot'}>
+            <IconButton label="Save snapshot" icon={<CameraIcon />} onClick={saveSnapshot} disabled={saving} />
+          </Tooltip>
+        )}
+        {asset.isSnapshot && (
+          <Tooltip content={downloadingSnapshot ? 'Downloading…' : 'Download'}>
+            <IconButton
+              label="Download"
+              icon={<DownloadIcon />}
+              onClick={downloadSnapshot}
+              disabled={downloadingSnapshot}
+            />
+          </Tooltip>
+        )}
+        {isDeletableUpload && (
+          <Tooltip content={downloadingUpload ? 'Downloading…' : 'Download this file'}>
+            <IconButton
+              label="Download"
+              icon={<DownloadIcon />}
+              onClick={() => void downloadUpload()}
+              disabled={downloadingUpload}
+            />
+          </Tooltip>
+        )}
+
+        <Tooltip content="Restore this asset's library defaults">
+          <IconButton label="Restore defaults" icon={<ResetIcon />} onClick={resetAll} />
+        </Tooltip>
         <Tooltip content={pseudoFullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
           <IconButton
             label="Toggle fullscreen"
@@ -242,65 +297,19 @@ export function MobileFocusedView() {
         <RendererStage asset={asset} focused />
       </div>
 
-      <div className={s.mobileActions}>
-        {hasSource && (
-          <Button variant="ghost" active={showCode} onClick={() => setShowCode((v) => !v)}>
-            <CodeIcon />
-            Code
-          </Button>
-        )}
-        {canCapture && (
-          <>
-            <Tooltip content="Set export format and duration">
-              <Button
-                variant="ghost"
-                active={tab === 'capture'}
-                onClick={() => setTab((t) => (t === 'capture' ? 'controls' : 'capture'))}
-              >
-                <VCaptureIcon />
-                VCapture
-              </Button>
-            </Tooltip>
-            <RecordButton
-              asset={asset}
-              canCapture={canCapture}
-              format={captureFormat}
-              durationSec={captureDuration}
-              variant="icon"
-            />
-          </>
-        )}
-        {!asset.isSnapshot && (
-          <Button variant="ghost" onClick={saveSnapshot} disabled={saving}>
-            {saving ? 'Saving…' : 'Snapshot'}
-          </Button>
-        )}
-        {asset.isSnapshot && (
-          <Button variant="ghost" onClick={downloadSnapshot} disabled={downloadingSnapshot}>
-            {downloadingSnapshot ? 'Downloading…' : 'Download'}
-          </Button>
-        )}
-        {isDeletableUpload && (
-          <Tooltip content="Download this file">
-            <IconButton
-              label={downloadingUpload ? 'Downloading…' : 'Download'}
-              icon={<DownloadIcon />}
-              onClick={() => void downloadUpload()}
-              disabled={downloadingUpload}
-            />
-          </Tooltip>
-        )}
-        {asset.isSnapshot && (
+      {/* Snapshot-only, and only this — see .mobileDangerRow's own CSS
+          comment for why Delete stays out of the icon header above.
+          Everything else that used to live in the now-retired
+          .mobileActions row moved into the header instead of here. */}
+      {asset.isSnapshot && (
+        <div className={s.mobileDangerRow}>
           <Button variant="danger" onClick={removeSnapshot}>
-            Delete
+            Delete snapshot
           </Button>
-        )}
-        <span className={s.mobileFocusSpacer} />
-        {savedNote && <span className={s.savedNote}>{savedNote}</span>}
-        <Button variant="ghost" onClick={resetAll}>
-          Restore
-        </Button>
-      </div>
+        </div>
+      )}
+
+      <Toast message={savedNote} onDismiss={() => setSavedNote(null)} durationMs={2600} />
 
       {(canModulate || canSound || canVfx) && (
         <div className={s.mobileTabs} role="tablist">
