@@ -4,7 +4,7 @@ precision highp float;
 uniform vec2 u_resolution;
 uniform float u_time;
 
-// ===== GLOBAL (applies across all algorithms) =====
+// ===== GLOBAL =====
 uniform int   u_algorithm;   // @label(Algorithm) @select(Iso Cubes=0 | Y-Tribar Weave=1 | Fractal Subdivide=2) @default(0) @group(Global)
 uniform float u_scale;       // @label(Scale) @range(0.4, 1.8) @default(1.0) @group(Global)
 uniform float u_stroke;      // @label(Stroke Weight) @range(0.2, 3.0) @default(1.0) @group(Global)
@@ -16,23 +16,24 @@ uniform float u_oscAmount;   // @label(Oscillation Amount) @range(0.0, 1.0) @def
 uniform vec3  u_colorA;      // @label(Color A) @color @default(0.95, 0.95, 0.95) @group(Color)
 uniform vec3  u_colorB;      // @label(Color B) @color @default(0.04, 0.04, 0.05) @group(Color)
 
-// ===== CUBES (Iso Cubes only) =====
+// ===== CUBES =====
 uniform int   u_faceStyle;    // @label(Face Style) @select(Solid=0 | Nested Diamond=1) @default(0) @group(Cubes) @showIf(u_algorithm=0)
 uniform float u_gap;          // @label(Gap) @range(0.0, 0.6) @default(0.0) @group(Cubes) @showIf(u_algorithm=0)
 uniform float u_faceContrast; // @label(Face Contrast) @range(0.0, 1.0) @default(0.6) @group(Cubes) @showIf(u_algorithm=0)
 uniform float u_bevelStrength;// @label(Bevel Strength) @range(0.0, 1.0) @default(0.4) @group(Cubes) @showIf(u_algorithm=0)
 uniform float u_facetDetail;  // @label(Facet Detail) @range(0.0, 1.0) @default(0.3) @group(Cubes) @showIf(u_algorithm=0)
 
-// ===== WEAVE (Y-Tribar only) =====
+// ===== WEAVE =====
 uniform float u_weaveCurl;   // @label(Weave Curl) @range(0.0, 1.0) @default(0.65) @group(Weave) @showIf(u_algorithm=1)
 uniform float u_layers;      // @label(Harmonic Layers) @range(1.0, 4.0) @default(1.0) @group(Weave) @showIf(u_algorithm=1)
-uniform int   u_weaveStyle;  // @label(Weave Style) @select(Chevron=0 | S-Curve=1) @default(0) @group(Weave) @showIf(u_algorithm=1)
+uniform int   u_weaveStyle;  // @label(Weave Style) @select(Chevron=0 | S-Curve=1 | Diamond=2) @default(0) @group(Weave) @showIf(u_algorithm=1)
 uniform float u_armTaper;    // @label(Arm Taper) @range(0.0, 1.0) @default(0.0) @group(Weave) @showIf(u_algorithm=1)
 
-// ===== FRACTAL (Fractal Subdivide only) =====
+// ===== FRACTAL =====
 uniform int   u_baseShape;   // @label(Base Shape) @select(Triangle=0 | Square=1 | Hexagon=2) @default(0) @group(Fractal) @showIf(u_algorithm=2)
 uniform int   u_depth;       // @label(Recursion Depth) @range(2, 7) @default(5) @group(Fractal) @showIf(u_algorithm=2)
 uniform float u_fillRatio;   // @label(Fill Ratio) @range(0.3, 0.7) @default(0.5) @group(Fractal) @showIf(u_algorithm=2)
+uniform float u_tiling;      // @label(Tiling) @range(1.0, 6.0) @default(1.0) @group(Fractal) @showIf(u_algorithm=2)
 
 out vec4 fragColor;
 
@@ -69,21 +70,35 @@ float diamondDist(vec2 p, vec2 a, vec2 b, vec2 c, vec2 d){
 
 /* ============================================================
    ISO CUBES
-   Gap fix: the previous version shrank the query point uniformly around
-   the shared cube-local origin (0,0) — but that point is only a shared
-   VERTEX of all three rhombic faces, not any individual face's own
-   center. Scaling toward a point that isn't a shape's centroid distorts
-   it asymmetrically, which is exactly the "corners cut off on two sides"
-   report. Fixed by determining face membership at full size first, then
-   shrinking relative to THAT face's own centroid specifically. */
+   Cell selection rebuilt as a genuine nearest-neighbor search. The prior
+   version picked a cell via independent row-then-column rounding, which
+   is only valid for a plain grid — this is a row-offset brick pattern,
+   where the true nearest cell center near a diagonal boundary can belong
+   to a different row than the naive formula assumes. That mismatch is
+   consistent with exactly the reported symptom: a diagonal seam where
+   some pixels render as part of the wrong, more-distant cube. This checks
+   three candidate rows and picks whichever center is actually closest by
+   real distance, the same "check real neighbors, don't assume the
+   formula" principle already proven correct in Y-Tribar Weave. */
+vec2 nearestCubeCenter(vec2 p, float dx, float dy){
+  float rowGuess = p.y / dy;
+  float bestDist = 1e18;
+  vec2 bestCenter = vec2(0.0);
+  for(int dr = -1; dr <= 1; dr++){
+    float row = floor(rowGuess + 0.5) + float(dr);
+    float rowOffset = mod(abs(row), 2.0) * dx * 0.5;
+    float col = floor((p.x - rowOffset) / dx + 0.5);
+    vec2 center = vec2(col * dx + rowOffset, row * dy);
+    float d = length(p - center);
+    if(d < bestDist){ bestDist = d; bestCenter = center; }
+  }
+  return bestCenter;
+}
+
 vec3 isoCubes(vec2 p, float scale, float gap, int faceStyle, float stroke, float faceContrast, float bevelStrength, float facetDetail, vec3 colA, vec3 colB){
   float s = 46.0 * scale;
   float dx = s * 1.74, dy = s * 1.5;
-
-  float row = floor(p.y / dy + 0.5);
-  float rowOffset = mod(abs(row), 2.0) * (dx * 0.5);
-  float col = floor((p.x - rowOffset) / dx + 0.5);
-  vec2 cellCenter = vec2(col * dx + rowOffset, row * dy);
+  vec2 cellCenter = nearestCubeCenter(p, dx, dy);
   vec2 local = p - cellCenter;
 
   vec2 v0 = vec2(0.0, 0.0);
@@ -107,46 +122,71 @@ vec3 isoCubes(vec2 p, float scale, float gap, int faceStyle, float stroke, float
   if(!insideQuad(localShrunk, faceA, faceB, faceC, faceD)) return colB;
 
   float dd = diamondDist(localShrunk, faceA, faceB, faceC, faceD);
-  float facetRings = fract(dd * mix(2.0, 10.0, facetDetail));
-  float facetLine = 1.0 - smoothstep(0.0, 0.04, min(facetRings, 1.0 - facetRings));
-  float faceMix = inTop ? 1.0 : (inLeft ? (1.0 - faceContrast*(0.4+bevelStrength*0.3)) : (1.0 - faceContrast*(0.85+bevelStrength*0.1)));
-  faceMix = clamp(faceMix, 0.0, 1.0);
+
+  // Real stroke-controlled outline, now present in BOTH face styles —
+  // previously u_stroke was only read inside the Nested Diamond branch,
+  // which is exactly why it had no effect on the far more common Solid
+  // mode. This draws an actual outline whose width tracks the slider.
+  float strokeW = mix(0.015, 0.09, clamp(stroke / 3.0, 0.0, 1.0));
+  float outline = 1.0 - smoothstep(1.0 - strokeW*2.0, 1.0 - strokeW*0.4, dd);
+  float outlineMask = 1.0 - outline; // 1 = outline pixel
+
+  float facetRings = fract(dd * mix(2.0, 12.0, facetDetail));
+  // Facet Detail was previously multiplied by 0.08 AND gated by an
+  // unrelated slider (bevelStrength), which capped its visible effect at
+  // roughly 3% blend regardless of setting — confirmed dead-weak, not a
+  // tuning issue. Now a real, independently-controlled line overlay.
+  float facetLine = (1.0 - smoothstep(0.0, 0.035, min(facetRings, 1.0 - facetRings))) * facetDetail;
 
   if(faceStyle == 1){
-    // Nested Diamond: previous version drew rings using raw colA/colB with
-    // no reference to faceMix at all, which is why Face Contrast had zero
-    // effect in this mode and the result read as "barely visible" (thin
-    // lines directly on colB with no fill underneath). Now tints the face
-    // background with the same faceMix logic Solid mode uses, then draws
-    // rings on top of that.
     float ring = fract(dd * 5.0);
-    float lineW = 0.05 * stroke;
+    float lineW = 0.05 * mix(0.4, 1.6, clamp(stroke/2.0, 0.0, 1.0));
     float line = 1.0 - smoothstep(0.0, lineW, min(ring, 1.0 - ring));
+    float faceMix = inTop ? 1.0 : (inLeft ? (1.0 - faceContrast*0.4) : (1.0 - faceContrast*0.85));
     vec3 bgTint = mix(colB, mix(colB, colA, faceMix), 0.4);
     vec3 outCol = mix(bgTint, colA, line);
-    outCol = mix(outCol, colA, facetLine * 0.15);
+    outCol = mix(outCol, colA, facetLine * 0.5);
+    outCol = mix(outCol, colB, outlineMask * 0.7);
     return outCol;
   }
 
-  vec3 faceCol = mix(colB, colA, faceMix);
-  float edgeLine = smoothstep(0.88, 1.0, dd);
-  faceCol = mix(faceCol, colB, edgeLine * (0.3 + bevelStrength * 0.4));
-  faceCol = mix(faceCol, colA, facetLine * 0.08 * bevelStrength);
+  // Bevel Strength rebuilt as real directional shading across each face
+  // (a linear gradient along the face's own "up" diagonal, like a light
+  // catching a beveled edge) instead of a small additive nudge to
+  // faceContrast's already-small effect — that's what made it read as
+  // doing almost nothing regardless of setting.
+  vec2 diag1 = normalize(faceC - faceA);
+  float bevelGrad = dot(normalize(localShrunk - faceCenter + 1e-6), diag1);
+  float bevelShade = 1.0 + bevelGrad * bevelStrength * 0.5;
+
+  float faceMix = inTop ? 1.0 : (inLeft ? (1.0 - faceContrast*0.4) : (1.0 - faceContrast*0.85));
+  vec3 faceCol = mix(colB, colA, clamp(faceMix, 0.0, 1.0)) * clamp(bevelShade, 0.3, 1.6);
+  float edgeLine = smoothstep(0.86, 1.0, dd);
+  faceCol = mix(faceCol, colB, edgeLine * 0.35);
+  faceCol = mix(faceCol, colA, facetLine * 0.4);
+  faceCol = mix(faceCol, colB, outlineMask * 0.75);
   return faceCol;
 }
 
 /* ============================================================
-   Y-TRIBAR WEAVE — connectivity guarantee unchanged (every triangle
-   still draws to all three of its own edge midpoints, both sides of every
-   shared edge always draw to it). Two additions, both applied only to
-   the control-point path between center and endpoint, never to the
-   endpoint itself, so neither can break the tessellation: Weave Style
-   swaps the single sharp bend for a two-point S-curve; Arm Taper varies
-   stroke width by (approximate) distance from cell center. */
-float triSegDist(vec2 p, vec2 a, vec2 b){
+   Y-TRIBAR WEAVE
+   Arm Taper rebuilt: the previous version tapered stroke width based on
+   raw grid-fraction distance, a value with no real relationship to
+   position along the actual rendered arm — that's why it read as no
+   change at all, it was varying width somewhat randomly relative to what
+   was visible. This version tracks the true parametric position (0 at
+   center, 1 at the tip) of whichever segment produced the winning
+   distance, so taper now genuinely follows each arm from thick-at-center
+   to thin-at-tip.
+   Third weave style, Diamond: a sharp, asymmetric kite silhouette (bend
+   point close to center with a large perpendicular offset) instead of a
+   symmetric bend — a genuinely different look, still exactly two
+   segments (same cost as Chevron), still terminating at the same fixed,
+   connectivity-guaranteeing edge midpoint. */
+vec2 segDistT(vec2 p, vec2 a, vec2 b){
   vec2 pa = p - a, ba = b - a;
   float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
-  return length(pa - ba * h);
+  return vec2(length(pa - ba * h), h);
 }
 
 vec3 yTribarWeave(vec2 p, float scale, float stroke, float curl, float layersF, int weaveStyle, float armTaper, vec3 colA, vec3 colB){
@@ -156,6 +196,7 @@ vec3 yTribarWeave(vec2 p, float scale, float stroke, float curl, float layersF, 
   float j0 = floor(gp.y / (sqrt(3.0) * 0.5));
   float i0 = floor(gp.x - 0.5 * j0);
   float minD = 1e5;
+  float minT = 0.0;
 
   for(int dj = -1; dj <= 1; dj++){
     for(int di = -1; di <= 1; di++){
@@ -184,55 +225,55 @@ vec3 yTribarWeave(vec2 p, float scale, float stroke, float curl, float layersF, 
           for(int l = 0; l < 4; l++){
             if(l >= layers) break;
             float sL = pow(PHI_INV, float(l));
-            float d;
+
             if(weaveStyle == 1){
               vec2 bendPt2 = mix(bendPt, target, 0.5) + perp * bendOff * 0.4;
-              vec2 tL = mix(cen, target, sL);
-              vec2 bL = mix(cen, bendPt, sL);
-              vec2 bL2 = mix(cen, bendPt2, sL);
-              d = min(triSegDist(p, cen, bL), min(triSegDist(p, bL, bL2), triSegDist(p, bL2, tL)));
+              vec2 tL = mix(cen, target, sL), bL = mix(cen, bendPt, sL), bL2 = mix(cen, bendPt2, sL);
+              vec2 dt1 = segDistT(p, cen, bL), dt2 = segDistT(p, bL, bL2), dt3 = segDistT(p, bL2, tL);
+              if(dt1.x < minD){ minD = dt1.x; minT = dt1.y * 0.33; }
+              if(dt2.x < minD){ minD = dt2.x; minT = 0.33 + dt2.y * 0.33; }
+              if(dt3.x < minD){ minD = dt3.x; minT = 0.66 + dt3.y * 0.34; }
+            } else if(weaveStyle == 2){
+              vec2 midSkew = mix(cen, target, 0.32);
+              vec2 bendPtSkew = midSkew + perp * bendOff * 1.6;
+              vec2 tL = mix(cen, target, sL), bL = mix(cen, bendPtSkew, sL);
+              vec2 dt1 = segDistT(p, cen, bL), dt2 = segDistT(p, bL, tL);
+              if(dt1.x < minD){ minD = dt1.x; minT = dt1.y * 0.5; }
+              if(dt2.x < minD){ minD = dt2.x; minT = 0.5 + dt2.y * 0.5; }
             } else {
-              vec2 tL = mix(cen, target, sL);
-              vec2 bL = mix(cen, bendPt, sL);
-              d = min(triSegDist(p, cen, bL), triSegDist(p, bL, tL));
+              vec2 tL = mix(cen, target, sL), bL = mix(cen, bendPt, sL);
+              vec2 dt1 = segDistT(p, cen, bL), dt2 = segDistT(p, bL, tL);
+              if(dt1.x < minD){ minD = dt1.x; minT = dt1.y * 0.5; }
+              if(dt2.x < minD){ minD = dt2.x; minT = 0.5 + dt2.y * 0.5; }
             }
-            minD = min(minD, d);
           }
         }
       }
     }
   }
 
-  vec2 cellFrac = fract(gp) - 0.5;
-  float centerProx = 1.0 - clamp(length(cellFrac) * 1.5, 0.0, 1.0);
-  float taperMul = mix(1.0, 0.5 + 0.5 * centerProx, armTaper);
-
+  float taperMul = mix(1.0, mix(1.35, 0.3, minT), armTaper);
   float w = max(0.6, stroke) * L * 0.045 * taperMul;
   float line = 1.0 - smoothstep(w*0.5, w*0.5 + L*0.02, minD);
   return mix(colB, colA, line);
 }
 
 /* ============================================================
-   FRACTAL SUBDIVIDE — Triangle/Hexagon Sierpinski algorithm was simply
-   wrong, not mistuned: real Sierpinski subdivision requires EXCLUDING the
-   middle sub-triangle at every level (that's what creates the holes).
-   The previous version never tested for that — it always picked the
-   nearest of the 3 corner sub-triangles by centroid distance and
-   recursed into it, meaning every point eventually resolved to solid
-   fill with zero holes, at every depth and fill ratio. That's exactly
-   what the "solid blue triangle" screenshot showed. Fixed with the
-   textbook algorithm: test the middle triangle first and return
-   background immediately if inside it; otherwise determine which of the
-   three CORNER triangles actually contains the point and recurse into
-   only that one. Square mode already had correct exclusion logic and is
-   unchanged.
-   Also: all three base shapes sized down about 20% from last round as a
-   safety margin against a rotated square's diagonal extent exceeding the
-   frame — a square's corner-to-corner distance is ~1.41x its edge-to-edge
-   distance, so a shape sized to just fit axis-aligned will clip its own
-   corners at 45°/135° rotation. That's a real, separate contributor to
-   "sits at the edge" regardless of the coordinate-transform question,
-   and cheap to rule out. */
+   FRACTAL SUBDIVIDE
+   Square's size bug, found and fixed: last round I described shrinking
+   "all three base shapes ~20%" as a safety margin. For triangle/hexagon
+   I reduced their radius (2.1 -> 1.7), a genuine shrink. For square I
+   changed the box-mapping multiplier from 0.28 to 0.225 — but in
+   uv = q*k + 0.5, a SMALLER k produces a LARGER effective pattern (the
+   q-range needed to cover [0,1] grows as k shrinks). I did the opposite
+   of what I described and reported doing. Square's q-reach was ~2.22
+   after that "fix," meaningfully bigger than triangle/hexagon's 1.7 —
+   which tracks exactly with only square continuing to show edge/corner
+   issues after the other two were fixed. Corrected here to k=0.294,
+   which gives square the same ±1.7 reach as the other two shapes.
+   Tiling, new: repeats the fractal across an NxN grid instead of one
+   large centered copy, each tile independently sized to fit — a genuine
+   compositional option, not a parameter tweak on the existing look. */
 vec3 fractalTriangleLike(vec2 q, vec2 a0, vec2 b0, vec2 c0, int depth, float fillRatio, vec3 colA, vec3 colB){
   if(!insideTri(q, a0, b0, c0)) return colB;
   vec2 a = a0, b = b0, c = c0;
@@ -247,12 +288,9 @@ vec3 fractalTriangleLike(vec2 q, vec2 a0, vec2 b0, vec2 c0, int depth, float fil
   return colA;
 }
 
-vec3 fractalSubdivide(vec2 screenQ, int baseShape, int depth, float fillRatio, float scale, float rotation, vec3 colA, vec3 colB){
-  vec2 q = rot2(rotation * PI / 180.0) * screenQ;
-  q = q / max(0.2, scale);
-
+vec3 fractalShape(vec2 q, int baseShape, int depth, float fillRatio, vec3 colA, vec3 colB){
   if(baseShape == 1){
-    vec2 uv = q * 0.225 + 0.5;
+    vec2 uv = q * 0.294 + 0.5;
     if(uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return colB;
     float seedAcc = 0.0;
     for(int d = 0; d < 7; d++){
@@ -283,6 +321,18 @@ vec3 fractalSubdivide(vec2 screenQ, int baseShape, int depth, float fillRatio, f
   }
 }
 
+vec3 fractalSubdivide(vec2 screenQ, int baseShape, int depth, float fillRatio, float scale, float rotation, float tiling, vec3 colA, vec3 colB){
+  vec2 q = rot2(rotation * PI / 180.0) * screenQ;
+  float tileN = max(1.0, floor(tiling + 0.5));
+  float effScale = max(0.2, scale) / tileN;
+  q = q / effScale;
+  if(tileN > 1.5){
+    float period = 3.6;
+    q = mod(q + period * 0.5, period) - period * 0.5;
+  }
+  return fractalShape(q, baseShape, depth, fillRatio, colA, colB);
+}
+
 void main(){
   vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;
   uv *= 2.4;
@@ -300,7 +350,7 @@ void main(){
     vec2 rotated = rot2(rotationLive * PI / 180.0) * uv;
     col = yTribarWeave(rotated * 100.0, scaleLive, u_stroke, curlLive, u_layers, u_weaveStyle, u_armTaper, u_colorA, u_colorB);
   } else {
-    col = fractalSubdivide(uv, u_baseShape, u_depth, u_fillRatio, scaleLive, rotationLive, u_colorA, u_colorB);
+    col = fractalSubdivide(uv, u_baseShape, u_depth, u_fillRatio, scaleLive, rotationLive, u_tiling, u_colorA, u_colorB);
   }
 
   fragColor = vec4(col, 1.0);

@@ -982,7 +982,8 @@
         "liquid",
         "cellular",
         "raymarch",
-        "crt"
+        "crt",
+        "chromatic-aberration"
       ]
     },
     {
@@ -1009,7 +1010,8 @@
         "tessellation",
         "fractal",
         "weave",
-        "seamless"
+        "seamless",
+        "tiling"
       ]
     }
   ]

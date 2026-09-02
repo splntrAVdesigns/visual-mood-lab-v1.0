@@ -4,7 +4,7 @@ precision highp float;
 uniform vec2 u_resolution;
 uniform float u_time;
 
-// ===== GLOBAL (applies to all 3 pattern modes, verified below) =====
+// ===== GLOBAL =====
 uniform int   u_mode;          // @label(Pattern Mode) @select(Coral Veins=0 | Organic Cells=1 | Fluid Spikes=2) @default(0) @group(Global)
 uniform float u_speed;         // @label(Speed) @range(0.1, 3.0) @default(1.0) @group(Global)
 uniform float u_chaos;         // @label(Chaos) @range(0.1, 2.2) @default(1.0) @group(Global)
@@ -12,14 +12,14 @@ uniform float u_glow;          // @label(Glow) @range(0.0, 1.5) @default(0.8) @g
 uniform float u_lightAngle;    // @label(Light Angle) @range(0.0, 360.0) @default(200.0) @group(Global)
 uniform float u_crtAmount;     // @label(CRT Amount) @range(0.0, 1.0) @default(0.0) @group(Global)
 uniform float u_crtScanline;   // @label(Scanline Density) @range(0.3, 3.0) @default(1.0) @group(Global) @showIf(u_crtAmount>0)
+uniform float u_chromaticAberration; // @label(Chromatic Aberration) @range(0.0, 1.0) @default(0.0) @group(Global)
 
 // ===== COLOR =====
 uniform vec3  u_bgColor;       // @label(Background) @color @default(0.02, 0.02, 0.03) @group(Color)
 uniform vec3  u_cellColor;     // @label(Cell Color) @color @default(0.54, 0.66, 1.0) @group(Color)
 uniform vec3  u_highlight;     // @label(Highlight) @color @default(0.92, 0.95, 1.0) @group(Color)
 
-// ===== CORAL & CELLS (both consume these; Spikes does not — see PLACEMENT.md
-//       on why these aren't marked @showIf despite not being truly global) =====
+// ===== CORAL & CELLS =====
 uniform float u_channelWidth;  // @label(Channel Width) @range(0.1, 0.9) @default(0.5) @group(Coral & Cells)
 uniform float u_density;       // @label(Density) @range(0.1, 1.0) @default(0.55) @group(Coral & Cells)
 uniform float u_complexity;    // @label(Complexity) @range(0.5, 2.2) @default(1.1) @group(Coral & Cells)
@@ -60,7 +60,6 @@ float fbm(vec2 p){
   return total;
 }
 
-/* CORAL VEINS — unchanged visually from last round. */
 float coralField(vec2 p, float t, float density, float complexity){
   vec2 pp = p * mix(1.6, 4.2, density);
   vec2 w1 = vec2(
@@ -74,7 +73,33 @@ float coralField(vec2 p, float t, float density, float complexity){
   return fbm(pp + w2 * complexity * 2.6 + t * 0.02);
 }
 
-/* ORGANIC CELLS — unchanged visually from last round. */
+vec3 renderCoral(vec2 p, float t, float density, float complexity, float channelWidth, float edgeDarkness, float lightAngle, float glow, vec3 bg, vec3 cellColor, vec3 hi){
+  float field = coralField(p, t, density, complexity);
+  vec2 e = vec2(0.01, 0.0);
+  float fx = coralField(p + e.xy, t, density, complexity) - coralField(p - e.xy, t, density, complexity);
+  float fy = coralField(p + e.yx, t, density, complexity) - coralField(p - e.yx, t, density, complexity);
+  vec2 grad = vec2(fx, fy) / (2.0 * e.x);
+
+  float mid = 1.0 - channelWidth;
+  float band = 0.12;
+  float mask = smoothstep(mid - band, mid + band, field);
+
+  vec3 col = bg;
+  if(mask > 0.01){
+    vec3 n = normalize(vec3(-grad * 0.6, 1.0));
+    float la = lightAngle * PI / 180.0;
+    vec3 L = normalize(vec3(cos(la) * 0.78, sin(la) * 0.78, 0.6));
+    float diffuse = max(dot(n, L), 0.0);
+    float spec = pow(diffuse, 14.0) * glow;
+    float shade = 0.42 + 0.66 * diffuse;
+    vec3 lit = cellColor * shade + hi * spec;
+    float edge = clamp(length(grad) * 1.4 * edgeDarkness, 0.0, 1.0);
+    lit *= (1.0 - edge * 0.6);
+    col = mix(bg, lit, mask);
+  }
+  return col;
+}
+
 vec3 organicCells(vec2 p, float density, float complexity, float chaos, float speed, float sizeMin, float sizeMax, float colorVariance, float edgeDarkness, float innerTexture, vec3 bg, vec3 cellCol, vec3 hi, float glow, float lightAngle, float channelWidth){
   float t = u_time * speed;
   int count = int(mix(14.0, 40.0, density) * clamp(complexity, 0.6, 1.6));
@@ -138,15 +163,6 @@ vec3 organicCells(vec2 p, float density, float complexity, float chaos, float sp
   return col;
 }
 
-/* FLUID SPIKES — same SDF/shading as last round, but Light Angle and
-   Speed are now real inputs instead of hardcoded constants. Last round
-   these two sat in the "global" group visually without actually reaching
-   this mode — a genuine wiring gap the same audit that surfaced the Geo
-   Patterns/Turbulent Flow issues also caught here. Rotation Speed stays
-   a separate Spikes-only control for camera orbit specifically; Speed now
-   additionally scales the surface noise's own time evolution, so the
-   spike crown visibly breathes/reforms at a rate tied to the same global
-   Speed control every other mode already respects. */
 float spikeSDF(vec3 p, float density, float sharpness, float t){
   float r = length(p);
   vec3 dir = p / max(r, 0.0001);
@@ -206,51 +222,60 @@ vec3 applyCRT(vec3 col, vec2 fragCoord, vec2 resolution, float amount, float sca
   float scanMask = mix(1.0, 0.82 + 0.18 * scan, amount);
   vec2 uv = fragCoord / resolution;
   float vig = 1.0 - smoothstep(0.55, 1.05, length(uv - 0.5) * 1.3);
-  vec3 fringed = col * vec3(1.03, 1.0, 0.97);
-  vec3 out_ = mix(col, fringed, amount * 0.5);
-  out_ *= scanMask;
+  vec3 out_ = col * scanMask;
   out_ *= mix(1.0, vig, amount * 0.7);
   out_ += amount * 0.02 * vec3(1.0);
   return out_;
 }
 
+/* CHROMATIC ABERRATION — genuine per-channel resampling, not a tint.
+   The CRT pass above fakes a color fringe with a flat per-channel
+   weight because a literal version there would mean re-rendering the
+   whole scene three times just for a background scanline effect. This
+   is different: it's the actual requested effect, so it earns the real
+   cost. Each color channel is computed by re-evaluating the SAME pattern
+   function at a slightly different sample position (Coral Veins, Organic
+   Cells) or by re-raymarching with a slightly offset ray direction
+   (Fluid Spikes) — the way real lens chromatic aberration works, where
+   different wavelengths refract at slightly different angles.
+   Cost note, worth knowing before this ships: Fluid Spikes already
+   raymarches up to 56 steps once per pixel; with aberration enabled it
+   raymarches up to three separate times (once per channel offset). That
+   is a real, non-trivial GPU cost increase specifically in the mode this
+   was requested for — worth a frame-time check on target hardware before
+   defaulting it on, which is exactly why it defaults to 0. */
 void main(){
   vec2 uv = gl_FragCoord.xy / u_resolution.xy;
   vec2 aspectUV = vec2((uv.x - 0.5) * (u_resolution.x / u_resolution.y) + 0.5, uv.y);
   vec2 p = (aspectUV - 0.5) * 2.4;
 
   vec3 col;
+  float caAmt = u_chromaticAberration * 0.045;
+  bool doCA = u_chromaticAberration > 0.003;
 
   if(u_mode == 1){
     col = organicCells(p, u_density, u_complexity, u_chaos, u_speed, u_sizeMin, u_sizeMax, u_colorVariance, u_edgeDarkness, u_innerTexture, u_bgColor, u_cellColor, u_highlight, u_glow, u_lightAngle, u_channelWidth);
+    if(doCA){
+      vec3 colR = organicCells(p + vec2(caAmt,0.0), u_density, u_complexity, u_chaos, u_speed, u_sizeMin, u_sizeMax, u_colorVariance, u_edgeDarkness, u_innerTexture, u_bgColor, u_cellColor, u_highlight, u_glow, u_lightAngle, u_channelWidth);
+      vec3 colB2 = organicCells(p - vec2(caAmt,0.0), u_density, u_complexity, u_chaos, u_speed, u_sizeMin, u_sizeMax, u_colorVariance, u_edgeDarkness, u_innerTexture, u_bgColor, u_cellColor, u_highlight, u_glow, u_lightAngle, u_channelWidth);
+      col = vec3(colR.r, col.g, colB2.b);
+    }
 
   } else if(u_mode == 2){
     col = fluidSpikes(p * 0.75, u_spikeDensity, u_spikeSharp, u_iridescence, u_rotSpeed, u_speed, u_lightAngle, u_bgColor, u_cellColor, u_highlight, u_glow);
+    if(doCA){
+      vec3 colR = fluidSpikes(p * 0.75 + vec2(caAmt,0.0), u_spikeDensity, u_spikeSharp, u_iridescence, u_rotSpeed, u_speed, u_lightAngle, u_bgColor, u_cellColor, u_highlight, u_glow);
+      vec3 colB2 = fluidSpikes(p * 0.75 - vec2(caAmt,0.0), u_spikeDensity, u_spikeSharp, u_iridescence, u_rotSpeed, u_speed, u_lightAngle, u_bgColor, u_cellColor, u_highlight, u_glow);
+      col = vec3(colR.r, col.g, colB2.b);
+    }
 
   } else {
     float t = u_time * u_speed;
-    float field = coralField(p, t, u_density, u_complexity);
-    vec2 e = vec2(0.01, 0.0);
-    float fx = coralField(p + e.xy, t, u_density, u_complexity) - coralField(p - e.xy, t, u_density, u_complexity);
-    float fy = coralField(p + e.yx, t, u_density, u_complexity) - coralField(p - e.yx, t, u_density, u_complexity);
-    vec2 grad = vec2(fx, fy) / (2.0 * e.x);
-
-    float mid = 1.0 - u_channelWidth;
-    float band = 0.12;
-    float mask = smoothstep(mid - band, mid + band, field);
-
-    col = u_bgColor;
-    if(mask > 0.01){
-      vec3 n = normalize(vec3(-grad * 0.6, 1.0));
-      float la = u_lightAngle * PI / 180.0;
-      vec3 L = normalize(vec3(cos(la) * 0.78, sin(la) * 0.78, 0.6));
-      float diffuse = max(dot(n, L), 0.0);
-      float spec = pow(diffuse, 14.0) * u_glow;
-      float shade = 0.42 + 0.66 * diffuse;
-      vec3 lit = u_cellColor * shade + u_highlight * spec;
-      float edge = clamp(length(grad) * 1.4 * u_edgeDarkness, 0.0, 1.0);
-      lit *= (1.0 - edge * 0.6);
-      col = mix(u_bgColor, lit, mask);
+    col = renderCoral(p, t, u_density, u_complexity, u_channelWidth, u_edgeDarkness, u_lightAngle, u_glow, u_bgColor, u_cellColor, u_highlight);
+    if(doCA){
+      vec3 colR = renderCoral(p + vec2(caAmt,0.0), t, u_density, u_complexity, u_channelWidth, u_edgeDarkness, u_lightAngle, u_glow, u_bgColor, u_cellColor, u_highlight);
+      vec3 colB2 = renderCoral(p - vec2(caAmt,0.0), t, u_density, u_complexity, u_channelWidth, u_edgeDarkness, u_lightAngle, u_glow, u_bgColor, u_cellColor, u_highlight);
+      col = vec3(colR.r, col.g, colB2.b);
     }
   }
 

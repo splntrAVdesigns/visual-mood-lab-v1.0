@@ -4,7 +4,7 @@ precision highp float;
 uniform vec2 u_resolution;
 uniform float u_time;
 
-// ===== GLOBAL (applies to all 3 pattern modes) =====
+// ===== GLOBAL =====
 uniform int   u_mode;         // @label(Pattern Mode) @select(Halftone Warp=0 | Topographic=1 | Flow Lines=2) @default(0) @group(Global)
 uniform float u_patternScale; // @label(Scale) @range(0.4, 2.5) @default(1.0) @group(Global)
 uniform int   u_direction;    // @label(Direction) @select(North=0 | Northeast=1 | East=2 | Southeast=3 | South=4 | Southwest=5 | West=6 | Northwest=7) @default(2) @group(Global)
@@ -34,32 +34,31 @@ float valueNoise(vec2 p){
   vec2 u = f * f * (3.0 - 2.0 * f);
   return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
 }
-/* Complexity now genuinely changes pattern DETAIL (extra octave blended
-   in at high settings) rather than just resizing — Scale is the only
-   thing that resizes now. Previously Complexity and Density both fed
-   directly into the sampling frequency, which is why they read as doing
-   the same job: they were. */
+/* Complexity rebuilt. Previous version: `octaves = complexity>1.3 ? 4 : 3`
+   — a binary switch, meaning roughly 70% of the slider's range (0.4-1.3)
+   did nothing at all, confirmed by rereading the code. Now 5 octaves
+   total, with each higher octave's weight fading in smoothly and
+   continuously as complexity increases, so every point on the slider
+   changes something. */
 float fbm(vec2 p, float complexity){
   float total = 0.0, amp = 0.5, freq = 1.0;
-  int octaves = complexity > 1.3 ? 4 : 3;
-  for(int o = 0; o < 4; o++){
-    if(o >= octaves) break;
-    total += valueNoise(p * freq) * amp;
+  float cNorm = clamp((complexity - 0.4) / (2.2 - 0.4), 0.0, 1.0) * 5.0;
+  for(int o = 0; o < 5; o++){
+    float w = (o == 0) ? 1.0 : clamp(cNorm - float(o - 1), 0.0, 1.0);
+    total += valueNoise(p * freq) * amp * w;
     amp *= 0.5; freq *= 2.0;
   }
   return total;
 }
 
 vec2 morphWarp(vec2 p, float t, float amount, float complexity){
-  float wx = fbm(p * 0.6 + vec2(3.1, 1.7) + t * 0.15, complexity);
-  float wy = fbm(p * 0.6 + vec2(9.4, 2.3) - t * 0.13, complexity);
+  float wx = fbm(p * 0.6 + vec2(3.1, 1.7) + t * 0.4, complexity);
+  float wy = fbm(p * 0.6 + vec2(9.4, 2.3) - t * 0.35, complexity);
   return vec2(wx, wy) * amount;
 }
 
 vec2 directionVector(int dir){
   float ang = float(dir) * 45.0 * DEG2RAD;
-  // 0=North: screen-space "up" is -y in this shader's y-down uv convention,
-  // so North maps to (0,-1) etc, going clockwise to match compass order
   return vec2(sin(ang), -cos(ang));
 }
 
@@ -69,34 +68,35 @@ void main(){
   vec2 p = vec2(uv.x * aspect, uv.y) * u_patternScale;
 
   float tm = mod(u_time, TAU * 50.0) * u_speed;
-  float morphT = mod(u_time, TAU * 50.0) * u_morphSpeed * 1.6;
+  // Morph Speed's effect was too subtle to read at default settings —
+  // widened both the base multiplier here and morphWarp's internal time
+  // coefficients (0.15/0.13 -> 0.4/0.35) so the change is unambiguous
+  // across the slider's range, not just at its extremes.
+  float morphT = mod(u_time, TAU * 50.0) * u_morphSpeed * 2.2;
   vec2 dirVec = directionVector(u_direction);
-  // Direction previously moved the "drift" term by a small fraction
-  // relative to the turbulence/morph terms, so the pattern technically
-  // shifted but not by enough to read as a clear directional current.
-  // Multiplier raised substantially so the set direction is unambiguous
-  // at any turbulence setting.
   vec2 drift = dirVec * tm * 1.8;
 
   vec3 col = u_bgColor;
 
   if(u_mode == 0){
-    // Density no longer drives sampling frequency (that was the redundancy
-    // with Complexity) — dot count is now fixed and Density instead drives
-    // the per-dot shading below.
     float freq = 32.0;
     vec2 gp = p * freq;
     vec2 gcell = floor(gp);
     float bestAlpha = 0.0;
     vec3 bestCol = u_bgColor;
-    float bestLight = 0.0;
     vec2 bestLocal = vec2(0.0);
     for(int oy = -1; oy <= 1; oy++){
       for(int ox = -1; ox <= 1; ox++){
         vec2 cell = gcell + vec2(float(ox), float(oy));
         vec2 cellCenter = cell + 0.5;
-        vec2 sampleP = cell * 0.16 * u_turbulence - drift * 0.3;
-        vec2 warp = morphWarp(sampleP, morphT, u_turbulence * 0.6, u_complexity);
+        // Turbulence previously multiplied straight into this sampling
+        // coordinate (`cell*0.16*u_turbulence`), which is mechanically a
+        // zoom operation — confirmed exactly the "scaling, not enhancing
+        // turbulence" report. Turbulence now ONLY controls the warp
+        // amount below, which is what actually reshapes the field rather
+        // than resizing it.
+        vec2 sampleP = cell * 0.16 - drift * 0.3;
+        vec2 warp = morphWarp(sampleP, morphT, u_turbulence * 0.9, u_complexity);
         float ang = fbm(sampleP + warp, u_complexity) * TAU;
         float mag = clamp((fbm(sampleP + warp + 40.0, u_complexity) + 1.0) * 0.5 * u_contrast, 0.0, 1.0);
         vec2 dotPos = cellCenter + vec2(cos(ang), sin(ang)) * mag * 0.42;
@@ -106,19 +106,19 @@ void main(){
         float a = 1.0 - smoothstep(r - 0.05, r, d);
         if(a > bestAlpha){
           bestAlpha = a; bestCol = mix(u_colorA, u_colorB, mag);
-          bestLocal = local / max(0.001, r); bestLight = mag;
+          bestLocal = local / max(0.001, r);
         }
       }
     }
-    /* Density repurposed: it was doing the same job as Complexity (both
-       just scaled frequency). Now it drives a fake-sphere radial shading
-       per dot — a bright offset highlight fading to a darker rim — which
-       is what actually reads as 3D instead of flat filled circles. */
+    // Density strengthened substantially — was a mix(1.0, x, density)
+    // against a fairly subtle x, and a rim term capped at *0.4. Both
+    // ranges widened so low vs. high density is unmistakable.
     vec2 lightDir = normalize(vec2(-0.4, -0.6));
-    float ndotl = clamp(dot(-bestLocal, lightDir) * 0.6 + 0.55, 0.0, 1.0);
-    vec3 shaded = bestCol * mix(1.0, ndotl * 1.3, u_density);
-    float rim = pow(clamp(length(bestLocal), 0.0, 1.0), 3.0) * u_density * 0.4;
-    shaded = mix(shaded, shaded * 0.5, rim);
+    float ndotl = clamp(dot(-bestLocal, lightDir) * 0.7 + 0.5, 0.0, 1.0);
+    vec3 shaded = bestCol * mix(1.0, ndotl * 1.8, u_density);
+    float rim = pow(clamp(length(bestLocal), 0.0, 1.0), 2.5) * u_density * 0.75;
+    shaded = mix(shaded, shaded * 0.35, rim);
+    shaded += bestCol * pow(ndotl, 6.0) * u_density * 0.6; // small hot highlight, density-driven
     col = mix(u_bgColor, shaded, bestAlpha);
 
   } else if(u_mode == 1){
