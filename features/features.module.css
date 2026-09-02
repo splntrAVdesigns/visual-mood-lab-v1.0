@@ -1968,7 +1968,7 @@
    versions, so this avoids that risk entirely rather than assuming it
    works. Targets the button element one level down instead. */
 .recordGroup[data-recording='true'] button {
-  color: var(--danger);
+  color: var(--accent);
   animation: recordPulse 1.6s ease-in-out infinite;
 }
 
@@ -2510,6 +2510,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* Without this, a flex item's min-width defaults to 'auto', which for
+     nowrap text equals its full untruncated width — text-overflow:
+     ellipsis never gets a chance to engage because the item refuses to
+     shrink below that in the first place. That's what was actually
+     happening: at tighter header widths the title held its full intrinsic
+     width, the row ran out of room, and the type badge (plus the header's
+     own overflow-x: auto) is what ended up visible instead of the name. */
+  min-width: 0;
 }
 
 .mobileFocusSpacer {
@@ -2540,6 +2548,24 @@
   overflow: hidden;
 }
 
+/* .cardStage (RendererStage.tsx) sizes itself via `flex: 1`, which only
+   does anything when its immediate parent is a flex container — true for
+   the grid-card .card, NOT true here (.mobileStage is a plain positioned
+   box, not display:flex). Without this override, .cardStage's flex:1 was
+   dead weight and its real height fell back to auto/content-driven —
+   specifically the poster <img>'s own aspect ratio (.cardPoster's
+   height:100% resolves to auto against a parent with no defined height),
+   which rarely matches this stage's actual square area. Since the live
+   canvas is sized off this exact box (pool.ts's ResizeObserver watches
+   the RendererStage host element), an undersized/wrong-ratio .cardStage
+   meant the live render target wasn't reliably the full square this
+   container promises — not a z-index/overlap bug so much as the stage
+   never being the size it was supposed to be in the first place. */
+.mobileStage .cardStage {
+  width: 100%;
+  height: 100%;
+}
+
 /* Snapshot-only delete — deliberately NOT folded into the icon-only
    header alongside Code/VCapture/Record/Snapshot/Restore. A destructive
    action sitting as one more small icon among six others is one
@@ -2566,7 +2592,11 @@
 
 .mobileTab {
   flex: 1;
-  height: 42px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
   font-size: var(--step--1);
   color: var(--text-dim);
   border-bottom: 2px solid transparent;

@@ -9,8 +9,8 @@ uniform int   u_algorithm;   // @label(Algorithm) @select(Iso Cubes=0 | Y-Tribar
 uniform float u_scale;       // @label(Scale) @range(0.4, 1.8) @default(1.0) @group(Global)
 uniform float u_stroke;      // @label(Stroke Weight) @range(0.2, 3.0) @default(1.0) @group(Global)
 uniform float u_rotation;    // @label(Rotation) @range(0.0, 360.0) @default(0.0) @group(Global)
-uniform float u_oscRate;     // @label(Oscillation Rate) @range(0.0, 2.0) @default(0.3) @group(Global)
-uniform float u_oscAmount;   // @label(Oscillation Amount) @range(0.0, 1.0) @default(0.3) @group(Global)
+uniform float u_oscRate;     // @label(Oscillation Rate) @range(0.0, 2.0) @default(0.0) @group(Global)
+uniform float u_oscAmount;   // @label(Oscillation Amount) @range(0.0, 1.0) @default(0.0) @group(Global)
 
 // ===== COLOR =====
 uniform vec3  u_colorA;      // @label(Color A) @color @default(0.95, 0.95, 0.95) @group(Color)
@@ -34,6 +34,7 @@ uniform int   u_baseShape;   // @label(Base Shape) @select(Triangle=0 | Square=1
 uniform int   u_depth;       // @label(Recursion Depth) @range(2, 7) @default(5) @group(Fractal) @showIf(u_algorithm=2)
 uniform float u_fillRatio;   // @label(Fill Ratio) @range(0.3, 0.7) @default(0.5) @group(Fractal) @showIf(u_algorithm=2)
 uniform float u_tiling;      // @label(Tiling) @range(1.0, 6.0) @default(1.0) @group(Fractal) @showIf(u_algorithm=2)
+uniform bool  u_tilingInvert;// @label(Invert Tiling) @default(false) @group(Fractal) @showIf(u_algorithm=2)
 
 out vec4 fragColor;
 
@@ -143,9 +144,28 @@ vec3 isoCubes(vec2 p, float scale, float gap, int faceStyle, float stroke, float
     float lineW = 0.05 * mix(0.4, 1.6, clamp(stroke/2.0, 0.0, 1.0));
     float line = 1.0 - smoothstep(0.0, lineW, min(ring, 1.0 - ring));
     float faceMix = inTop ? 1.0 : (inLeft ? (1.0 - faceContrast*0.4) : (1.0 - faceContrast*0.85));
-    vec3 bgTint = mix(colB, mix(colB, colA, faceMix), 0.4);
+
+    // Bevel Strength now applies here too, identically to the Solid-mode
+    // math below — previously this branch returned before bevelStrength
+    // was ever read at all, so the slider had no effect whenever Nested
+    // Diamond was the active Face Style. Same shading model, same face
+    // diagonal, just applied to this branch's own tint instead of Solid's.
+    vec2 diag1 = normalize(faceC - faceA);
+    float bevelGrad = dot(normalize(localShrunk - faceCenter + 1e-6), diag1);
+    float bevelShade = 1.0 + bevelGrad * bevelStrength * 0.5;
+
+    // Full-strength faceMix blend, matching Solid mode's own faceCol
+    // exactly, then bevel-shaded on top. The previous
+    // mix(colB, mix(colB, colA, faceMix), 0.4) capped every nested face at
+    // 40% of its intended saturation no matter what Face Contrast or the
+    // color pickers were set to — a hardcoded damping constant, not a
+    // rendering weakness, and the actual cause of "barely visible."
+    vec3 bgTint = mix(colB, colA, clamp(faceMix, 0.0, 1.0)) * clamp(bevelShade, 0.3, 1.6);
     vec3 outCol = mix(bgTint, colA, line);
-    outCol = mix(outCol, colA, facetLine * 0.5);
+    // Facet Detail's weight raised slightly (0.5 -> 0.6) now that it's no
+    // longer sitting on a washed-out background — it was already wired in
+    // here, but read as weak partly because of what it was blending onto.
+    outCol = mix(outCol, colA, facetLine * 0.6);
     outCol = mix(outCol, colB, outlineMask * 0.7);
     return outCol;
   }
@@ -290,17 +310,17 @@ vec3 fractalTriangleLike(vec2 q, vec2 a0, vec2 b0, vec2 c0, int depth, float fil
 
 vec3 fractalShape(vec2 q, int baseShape, int depth, float fillRatio, vec3 colA, vec3 colB){
   if(baseShape == 1){
-    vec2 uv = q * 0.294 + 0.5;
-    if(uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return colB;
-    float seedAcc = 0.0;
+    float R = 1.7;
+    if(max(abs(q.x), abs(q.y)) > R) return colB;
+    vec2 center = vec2(0.0);
+    float half_ = R;
     for(int d = 0; d < 7; d++){
       if(d >= depth) break;
-      vec2 cell = floor(uv * 2.0);
-      float idx = cell.x + cell.y * 2.0;
-      seedAcc += idx * 7.0 + float(d) * 131.0;
-      float skip = floor(hash1(seedAcc) * 4.0);
-      if(idx == skip) return colB;
-      uv = fract(uv * 2.0);
+      vec2 rel = (q - center) / half_;               // [-1, 1] within the current cell
+      vec2 cell = clamp(floor((rel * 0.5 + 0.5) * 3.0), 0.0, 2.0); // which of 3x3 sub-cells
+      if(cell.x == 1.0 && cell.y == 1.0) return colB;  // center cell excluded — real carpet
+      center += (cell - 1.0) * (half_ * 2.0 / 3.0);
+      half_ /= 3.0;
     }
     return colA;
 
@@ -321,7 +341,7 @@ vec3 fractalShape(vec2 q, int baseShape, int depth, float fillRatio, vec3 colA, 
   }
 }
 
-vec3 fractalSubdivide(vec2 screenQ, int baseShape, int depth, float fillRatio, float scale, float rotation, float tiling, vec3 colA, vec3 colB){
+vec3 fractalSubdivide(vec2 screenQ, int baseShape, int depth, float fillRatio, float scale, float rotation, float tiling, bool tilingInvert, vec3 colA, vec3 colB){
   vec2 q = rot2(rotation * PI / 180.0) * screenQ;
   float tileN = max(1.0, floor(tiling + 0.5));
   float effScale = max(0.2, scale) / tileN;
@@ -330,6 +350,10 @@ vec3 fractalSubdivide(vec2 screenQ, int baseShape, int depth, float fillRatio, f
     float period = 3.6;
     q = mod(q + period * 0.5, period) - period * 0.5;
   }
+  // Invert Tiling: mirrors everything below the local y=0 line back onto
+  // the upper half, applied after the tile wrap above so it reflects
+  // within each tile at Tiling > 1, not just once across the whole canvas.
+  if(tilingInvert && q.y < 0.0) q.y = -q.y;
   return fractalShape(q, baseShape, depth, fillRatio, colA, colB);
 }
 
@@ -350,7 +374,7 @@ void main(){
     vec2 rotated = rot2(rotationLive * PI / 180.0) * uv;
     col = yTribarWeave(rotated * 100.0, scaleLive, u_stroke, curlLive, u_layers, u_weaveStyle, u_armTaper, u_colorA, u_colorB);
   } else {
-    col = fractalSubdivide(uv, u_baseShape, u_depth, u_fillRatio, scaleLive, rotationLive, u_tiling, u_colorA, u_colorB);
+    col = fractalSubdivide(uv, u_baseShape, u_depth, u_fillRatio, scaleLive, rotationLive, u_tiling, u_tilingInvert, u_colorA, u_colorB);
   }
 
   fragColor = vec4(col, 1.0);

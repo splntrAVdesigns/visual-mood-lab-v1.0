@@ -394,8 +394,15 @@ export function MobileFocusedView() {
                       space on a screen that's already tight. A schema
                       with multiple real groups still gets a heading per
                       group, since those actually need distinguishing
-                      from each other. */}
-                  {groups.length > 1 && <h2 className={s.mobileGroupLabel}>{group.label}</h2>}
+                      from each other — EXCEPT "Global" specifically,
+                      which never told the user anything (every control
+                      is implicitly global unless some other group says
+                      otherwise) and just sat there as boilerplate above
+                      the first control. Dropped unconditionally; every
+                      other group label is untouched. */}
+                  {groups.length > 1 && group.label.trim().toLowerCase() !== 'global' && (
+                    <h2 className={s.mobileGroupLabel}>{group.label}</h2>
+                  )}
                   {rows.map((c) => (
                     <ControlRow
                       key={c.id}

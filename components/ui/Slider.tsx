@@ -49,7 +49,12 @@ export function Slider({
       const el = trackRef.current;
       if (!el) return value;
       const rect = el.getBoundingClientRect();
-      const t = clamp01((clientX - rect.left) / Math.max(rect.width, 1));
+      // Mirrors thumbLeft()/fillWidth() below — hit-testing has to use the
+      // same inset travel range as the visual thumb, or a drag to either
+      // physical end of the track would stop just short of / overshoot
+      // min/max relative to where the thumb is actually drawn.
+      const usable = Math.max(rect.width - THUMB_PX, 1);
+      const t = clamp01((clientX - rect.left - THUMB_PX / 2) / usable);
       return quantise(fromNorm(t, min, max, scale), min, max, step);
     },
     [min, max, scale, step, value],
@@ -212,10 +217,46 @@ export function Slider({
       onKeyDown={handleKeyDown}
     >
       <div className={s.sliderTrack} />
-      <div className={s.sliderFill} style={{ width: `${norm * 100}%` }} />
-      <div className={s.sliderThumb} style={{ left: `${norm * 100}%` }} />
+      <div className={s.sliderFill} style={{ width: fillWidth(norm) }} />
+      <div className={s.sliderThumb} style={{ left: thumbLeft(norm) }} />
     </div>
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * Thumb/fill geometry
+ *
+ * .sliderTrack/.sliderFill span the full width of .slider (inset-inline:
+ * 0), and .sliderThumb self-centers on its `left` point via a negative
+ * margin-left equal to half its own width (ui.module.css). Placing the
+ * thumb's `left` at raw norm*100% therefore put the thumb's *center* at
+ * the physical container edge at norm=0/1 — with the self-centering
+ * margin, half the thumb rendered outside the track at both extremes,
+ * and was the easiest thing in the world to overshoot with a drag.
+ *
+ * THUMB_PX must be kept in sync with --slider-thumb's default in
+ * ui.module.css (.sliderThumb). That custom property's own doc comment
+ * notes an ancestor CAN override it via the cascade — if one ever does,
+ * this JS constant will silently drift from the actual rendered thumb
+ * size and the inset below will be slightly off. No ancestor overrides
+ * it today, so not solving for that case now, just flagging it.
+ * ------------------------------------------------------------------ */
+const THUMB_PX = 12;
+
+/** Center point for the thumb's `left`, inset by half its own width on
+ *  each side so its circle stays fully inside the track at norm=0/1. */
+function thumbLeft(norm: number): string {
+  return `calc(${THUMB_PX / 2}px + (100% - ${THUMB_PX}px) * ${norm})`;
+}
+
+/** Fill terminates exactly at the thumb's *left edge* (not its center) —
+ *  this is deliberately NOT thumbLeft(norm): using thumbLeft would leave
+ *  a permanent ~6px sliver of fill visible even at norm=0 (thumbLeft(0)
+ *  is THUMB_PX/2, not 0). This formula is exactly thumbLeft(norm) minus
+ *  THUMB_PX/2, so it's genuinely 0 at the minimum and lines up flush
+ *  with the thumb's edge everywhere in between. */
+function fillWidth(norm: number): string {
+  return `calc((100% - ${THUMB_PX}px) * ${norm})`;
 }
 
 /* ------------------------------------------------------------------ *
