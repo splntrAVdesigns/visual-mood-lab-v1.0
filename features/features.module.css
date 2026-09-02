@@ -2615,7 +2615,10 @@
      board underneath. */
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: var(--space-3) var(--space-4) var(--space-8);
+  /* Was --space-4 (16px) horizontally — technically non-zero, but tight
+     enough for a thumb-drag gesture on a real touchscreen that it still
+     read as "hugging the edge." Bumped a full step up the spacing scale. */
+  padding: var(--space-3) var(--space-5) var(--space-8);
 }
 
 /*
@@ -2641,8 +2644,12 @@
 
 .mobileFocus[data-fullscreen='true'] .mobileStage {
   flex: 1;
+  min-height: 0;
   max-height: none;
-  aspect-ratio: unset;
+  width: auto;
+  height: 100%;
+  max-width: 100%;
+  margin-inline: auto;
 }
 
 .mobileGroup {

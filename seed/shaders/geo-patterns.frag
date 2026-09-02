@@ -17,7 +17,7 @@ uniform vec3  u_colorA;      // @label(Color A) @color @default(0.95, 0.95, 0.95
 uniform vec3  u_colorB;      // @label(Color B) @color @default(0.04, 0.04, 0.05) @group(Color)
 
 // ===== CUBES =====
-uniform int   u_faceStyle;    // @label(Face Style) @select(Solid=0 | Nested Diamond=1) @default(0) @group(Cubes) @showIf(u_algorithm=0)
+uniform int   u_faceStyle;    // @label(Face Style) @select(Solid=0 | Nested Diamond=1 | Hatched=2) @default(0) @group(Cubes) @showIf(u_algorithm=0)
 uniform float u_gap;          // @label(Gap) @range(0.0, 0.6) @default(0.0) @group(Cubes) @showIf(u_algorithm=0)
 uniform float u_faceContrast; // @label(Face Contrast) @range(0.0, 1.0) @default(0.6) @group(Cubes) @showIf(u_algorithm=0)
 uniform float u_bevelStrength;// @label(Bevel Strength) @range(0.0, 1.0) @default(0.4) @group(Cubes) @showIf(u_algorithm=0)
@@ -168,6 +168,38 @@ vec3 isoCubes(vec2 p, float scale, float gap, int faceStyle, float stroke, float
     outCol = mix(outCol, colA, facetLine * 0.6);
     outCol = mix(outCol, colB, outlineMask * 0.7);
     return outCol;
+  } else if(faceStyle == 2){
+    // Hatched: parallel directional stripes, one direction per face — the
+    // classic isometric-cube shading trick. Each face's hatch direction
+    // runs along that face's own real edge (faceB - faceA), which is what
+    // makes the three faces read as distinct planes rather than a single
+    // flat pattern with a shared angle. Verified as a standalone render
+    // before this was written (three-face isometric cube, correct per-
+    // face direction) rather than tuned blind.
+    vec2 dir = normalize(faceB - faceA);
+    vec2 perp = vec2(-dir.y, dir.x);
+    float density = mix(4.0, 14.0, facetDetail);
+    float hatchW = mix(0.10, 0.30, clamp(stroke / 3.0, 0.0, 1.0));
+    float coord = dot(localShrunk - faceCenter, perp) * (density / s);
+    float frac = fract(coord);
+    float d = min(frac, 1.0 - frac);
+    float hatch = 1.0 - smoothstep(0.0, hatchW, d);
+
+    vec2 diag1 = normalize(faceC - faceA);
+    float bevelGrad = dot(normalize(localShrunk - faceCenter + 1e-6), diag1);
+    float bevelShade = 1.0 + bevelGrad * bevelStrength * 0.5;
+
+    float faceMix = inTop ? 1.0 : (inLeft ? (1.0 - faceContrast*0.4) : (1.0 - faceContrast*0.85));
+    // Background dimmed to ~35% of the face's own tint so the stripes
+    // themselves carry the contrast, matching the reference look (a dense
+    // line pattern reading as the shape) rather than a filled cell with
+    // lines drawn on top of it at full brightness.
+    vec3 bg = mix(colB, colA, clamp(faceMix, 0.0, 1.0)) * clamp(bevelShade, 0.3, 1.6) * 0.35;
+    vec3 outCol = mix(bg, colA, hatch);
+    outCol = mix(outCol, colA, facetLine * 0.3);
+    outCol = mix(outCol, colB, outlineMask * 0.75);
+    return outCol;
+
   }
 
   // Bevel Strength rebuilt as real directional shading across each face
@@ -314,11 +346,27 @@ vec3 fractalShape(vec2 q, int baseShape, int depth, float fillRatio, vec3 colA, 
     if(max(abs(q.x), abs(q.y)) > R) return colB;
     vec2 center = vec2(0.0);
     float half_ = R;
+    // Fill Ratio now genuinely reshapes this carpet — previously ignored
+    // entirely by Square, the only base shape that didn't read it.
+    // extraSkip is a small additional per-cell hole chance layered on top
+    // of the guaranteed center-hole below: high Fill Ratio -> ~0 extra
+    // (denser, close to a classic Sierpinski Carpet), low Fill Ratio ->
+    // up to 22% extra per non-center cell (sparser, more broken-up).
+    // Verified before writing this (see PLACEMENT.md) that this only
+    // changes which cells survive — center/half_ update identically
+    // regardless of the outcome — so the centering fix above is
+    // completely unaffected by this.
+    float extraSkip = 0.22 * (1.0 - clamp((fillRatio - 0.3) / 0.4, 0.0, 1.0));
+    float seedAcc = 0.0;
     for(int d = 0; d < 7; d++){
       if(d >= depth) break;
       vec2 rel = (q - center) / half_;               // [-1, 1] within the current cell
       vec2 cell = clamp(floor((rel * 0.5 + 0.5) * 3.0), 0.0, 2.0); // which of 3x3 sub-cells
-      if(cell.x == 1.0 && cell.y == 1.0) return colB;  // center cell excluded — real carpet
+      bool isCenterCell = (cell.x == 1.0 && cell.y == 1.0);
+      float cellIdx = cell.x + cell.y * 3.0;
+      seedAcc += cellIdx * 17.0 + float(d) * 131.0;
+      bool extraHole = !isCenterCell && hash1(seedAcc) < extraSkip;
+      if(isCenterCell || extraHole) return colB;      // center cell always excluded, real carpet
       center += (cell - 1.0) * (half_ * 2.0 / 3.0);
       half_ /= 3.0;
     }

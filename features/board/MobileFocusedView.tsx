@@ -1,14 +1,13 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Badge, Button, CameraIcon, CloseIcon, CodeIcon, DownloadIcon, FullscreenIcon, IconButton, ResetIcon, Toast, Tooltip } from '@/components/ui';
+import { Button, CameraIcon, CloseIcon, CodeIcon, DownloadIcon, FullscreenIcon, IconButton, ResetIcon, Toast, Tooltip } from '@/components/ui';
 import {
   selectSelectedAsset,
   useBoardStore,
   useInspectorStore,
   usePlaybackStore,
 } from '@/stores';
-import { ASSET_TYPE_BADGE } from '@/types/asset';
 import { groupedControls, isVisible, isDisabledByState } from '@/renderers/control-schema';
 import { ControlRow } from '@/features/inspector/ControlRow';
 import { ModulationPanel } from '@/features/inspector/ModulationPanel';
@@ -208,6 +207,21 @@ export function MobileFocusedView() {
     }
   };
 
+  // Mirrors FocusedAssetOverlay's identical removeUpload — this was the
+  // actual gap the earlier download-only pass flagged and deliberately
+  // left open. Same confirm, same endpoint, same cleanup.
+  const removeUpload = async () => {
+    if (!isDeletableUpload) return;
+    if (!window.confirm(`Delete "${asset.title}"? This can't be undone.`)) return;
+    const res = await fetch(`/api/assets/${asset.id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      setSavedNote('Delete failed');
+      return;
+    }
+    useBoardStore.getState().removeAsset(asset.itemId);
+    closeAsset();
+  };
+
   return (
     <div
       className={s.mobileFocus}
@@ -218,7 +232,6 @@ export function MobileFocusedView() {
     >
       <header className={s.mobileFocusHeader}>
         <span className={s.mobileFocusTitle}>{asset.title}</span>
-        <Badge>{asset.isSnapshot ? 'SNAP' : ASSET_TYPE_BADGE[asset.type]}</Badge>
         <span className={s.mobileFocusSpacer} />
 
         {hasSource && (
@@ -297,14 +310,26 @@ export function MobileFocusedView() {
         <RendererStage asset={asset} focused />
       </div>
 
-      {/* Snapshot-only, and only this — see .mobileDangerRow's own CSS
-          comment for why Delete stays out of the icon header above.
-          Everything else that used to live in the now-retired
-          .mobileActions row moved into the header instead of here. */}
+      {/* Snapshot delete and upload/recording delete share this row —
+          both are destructive and both deliberately stay out of the icon
+          header for the same reason (.mobileDangerRow's own CSS comment):
+          a destructive action as one more small icon among six others is
+          one mis-tap away from an accidental delete. Mutually exclusive in
+          practice (a snapshot is never also a deletable upload), so only
+          one button ever renders here. Everything else that used to live
+          in the now-retired .mobileActions row moved into the header
+          instead of here. */}
       {asset.isSnapshot && (
         <div className={s.mobileDangerRow}>
           <Button variant="danger" onClick={removeSnapshot}>
             Delete snapshot
+          </Button>
+        </div>
+      )}
+      {isDeletableUpload && (
+        <div className={s.mobileDangerRow}>
+          <Button variant="danger" onClick={() => void removeUpload()}>
+            Delete
           </Button>
         </div>
       )}

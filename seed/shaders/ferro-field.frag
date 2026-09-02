@@ -51,14 +51,16 @@ float valueNoise(vec2 p){
   vec2 u = f * f * (3.0 - 2.0 * f);
   return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
 }
-float fbm(vec2 p){
+float fbm(vec2 p, int octaves){
   float total = 0.0, amp = 0.5, freq = 1.0;
   for(int o = 0; o < 3; o++){
+    if(o >= octaves) break;
     total += valueNoise(p * freq) * amp;
     amp *= 0.5; freq *= 2.0;
   }
   return total;
 }
+float fbm(vec2 p){ return fbm(p, 3); }
 
 float coralField(vec2 p, float t, float density, float complexity){
   vec2 pp = p * mix(1.6, 4.2, density);
@@ -163,18 +165,19 @@ vec3 organicCells(vec2 p, float density, float complexity, float chaos, float sp
   return col;
 }
 
-float spikeSDF(vec3 p, float density, float sharpness, float t){
+float spikeSDF(vec3 p, float density, float sharpness, float t, int octaves){
   float r = length(p);
   vec3 dir = p / max(r, 0.0001);
   float lon = atan(dir.z, dir.x);
   float lat = asin(clamp(dir.y, -1.0, 1.0));
   vec2 sph = vec2(lon, lat) * density;
-  float n = fbm(sph + vec2(t * 0.06, t * 0.04));
+  float n = fbm(sph + vec2(t * 0.06, t * 0.04), octaves);
   float spikes = pow(clamp(n, 0.0, 1.0), sharpness) * 0.55;
   return r - (1.0 + spikes);
 }
+float spikeSDF(vec3 p, float density, float sharpness, float t){ return spikeSDF(p, density, sharpness, t, 3); }
 
-vec3 fluidSpikes(vec2 uv, float density, float sharpness, float iridescence, float rotSpeed, float speed, float lightAngle, vec3 bg, vec3 baseCol, vec3 hi, float glow){
+vec3 fluidSpikes(vec2 uv, float density, float sharpness, float iridescence, float rotSpeed, float speed, float lightAngle, vec3 bg, vec3 baseCol, vec3 hi, float glow, int maxSteps, int octaves){
   float t = u_time * speed;
   float camAng = u_time * rotSpeed;
   vec3 ro = vec3(sin(camAng) * 3.2, 0.4, cos(camAng) * 3.2);
@@ -187,8 +190,9 @@ vec3 fluidSpikes(vec2 uv, float density, float sharpness, float iridescence, flo
   vec3 p = ro;
   bool hit = false;
   for(int i = 0; i < 56; i++){
+    if(i >= maxSteps) break;
     p = ro + rd * tt;
-    float d = spikeSDF(p, density, sharpness, t);
+    float d = spikeSDF(p, density, sharpness, t, octaves);
     if(d < 0.002){ hit = true; break; }
     tt += d * 0.55;
     if(tt > 8.0) break;
@@ -198,9 +202,9 @@ vec3 fluidSpikes(vec2 uv, float density, float sharpness, float iridescence, flo
 
   vec2 e = vec2(0.0025, 0.0);
   vec3 n = normalize(vec3(
-    spikeSDF(p + e.xyy, density, sharpness, t) - spikeSDF(p - e.xyy, density, sharpness, t),
-    spikeSDF(p + e.yxy, density, sharpness, t) - spikeSDF(p - e.yxy, density, sharpness, t),
-    spikeSDF(p + e.yyx, density, sharpness, t) - spikeSDF(p - e.yyx, density, sharpness, t)
+    spikeSDF(p + e.xyy, density, sharpness, t, octaves) - spikeSDF(p - e.xyy, density, sharpness, t, octaves),
+    spikeSDF(p + e.yxy, density, sharpness, t, octaves) - spikeSDF(p - e.yxy, density, sharpness, t, octaves),
+    spikeSDF(p + e.yyx, density, sharpness, t, octaves) - spikeSDF(p - e.yyx, density, sharpness, t, octaves)
   ));
 
   float fresnel = pow(1.0 - max(0.0, dot(n, -rd)), 3.0);
@@ -214,6 +218,9 @@ vec3 fluidSpikes(vec2 uv, float density, float sharpness, float iridescence, flo
   shaded += fresnel * hi * 0.3;
 
   return shaded;
+}
+vec3 fluidSpikes(vec2 uv, float density, float sharpness, float iridescence, float rotSpeed, float speed, float lightAngle, vec3 bg, vec3 baseCol, vec3 hi, float glow){
+  return fluidSpikes(uv, density, sharpness, iridescence, rotSpeed, speed, lightAngle, bg, baseCol, hi, glow, 56, 3);
 }
 
 vec3 applyCRT(vec3 col, vec2 fragCoord, vec2 resolution, float amount, float scanlineDensity){
@@ -250,7 +257,11 @@ void main(){
   vec2 p = (aspectUV - 0.5) * 2.4;
 
   vec3 col;
-  float caAmt = u_chromaticAberration * 0.045;
+  // Throttled from 0.045 — Chromatic Aberration's offset was reaching
+  // further than the effect needed to read clearly, which is both a
+  // visual and (via Fluid Spikes' raymarch cost below) a performance
+  // problem for no real benefit.
+  float caAmt = u_chromaticAberration * 0.03;
   bool doCA = u_chromaticAberration > 0.003;
 
   if(u_mode == 1){
@@ -264,8 +275,16 @@ void main(){
   } else if(u_mode == 2){
     col = fluidSpikes(p * 0.75, u_spikeDensity, u_spikeSharp, u_iridescence, u_rotSpeed, u_speed, u_lightAngle, u_bgColor, u_cellColor, u_highlight, u_glow);
     if(doCA){
-      vec3 colR = fluidSpikes(p * 0.75 + vec2(caAmt,0.0), u_spikeDensity, u_spikeSharp, u_iridescence, u_rotSpeed, u_speed, u_lightAngle, u_bgColor, u_cellColor, u_highlight, u_glow);
-      vec3 colB2 = fluidSpikes(p * 0.75 - vec2(caAmt,0.0), u_spikeDensity, u_spikeSharp, u_iridescence, u_rotSpeed, u_speed, u_lightAngle, u_bgColor, u_cellColor, u_highlight, u_glow);
+      // Adaptive quality: these two samples are a thin color fringe, not
+      // the hero image — the eye doesn't need full raymarch precision or
+      // fbm detail here the way it does for the primary pass above. This
+      // is what actually removes most of Chromatic Aberration's extra
+      // cost in this mode specifically (56-step raymarch x3 was the real
+      // bottleneck, not CRT, which is O(1) per pixel and cheap on its
+      // own). Main pass above is untouched — 56 steps, 3 octaves — so
+      // rendering with Chromatic Aberration off is completely unaffected.
+      vec3 colR = fluidSpikes(p * 0.75 + vec2(caAmt,0.0), u_spikeDensity, u_spikeSharp, u_iridescence, u_rotSpeed, u_speed, u_lightAngle, u_bgColor, u_cellColor, u_highlight, u_glow, 24, 2);
+      vec3 colB2 = fluidSpikes(p * 0.75 - vec2(caAmt,0.0), u_spikeDensity, u_spikeSharp, u_iridescence, u_rotSpeed, u_speed, u_lightAngle, u_bgColor, u_cellColor, u_highlight, u_glow, 24, 2);
       col = vec3(colR.r, col.g, colB2.b);
     }
 
