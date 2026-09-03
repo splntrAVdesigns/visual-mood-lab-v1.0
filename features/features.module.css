@@ -2646,10 +2646,25 @@
   flex: 1;
   min-height: 0;
   max-height: none;
+  width: 100%;
+  aspect-ratio: unset;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* Square constraint lives here instead of on .mobileStage itself — see
+   that rule's own comment. .cardStage isn't flex-grown, so aspect-ratio
+   resolves cleanly against its centered position within the filled
+   .mobileStage rather than being overridden by flex's main-size
+   distribution the way it was when both properties sat on the same
+   growing element. */
+.mobileFocus[data-fullscreen='true'] .mobileStage .cardStage {
   width: auto;
   height: 100%;
   max-width: 100%;
-  margin-inline: auto;
+  aspect-ratio: 1;
 }
 
 .mobileGroup {
@@ -2676,12 +2691,19 @@
 
 @media (max-width: 820px) {
   /* .controlRow (Parameters tab rows) gets the same hairline divider
-     Modulate's rows (.modPanelRow, above) already have. The two were
-     never actually different in horizontal padding — both inherit
-     .mobileSheet's padding equally — the real mismatch was that
-     Modulate's rows are visually separated by a border and Parameters'
-     aren't, which reads as "less organized" even with identical padding
-     tokens. Scoped to this breakpoint (not added to .controlRow
+     Modulate's rows (.modPanelRow, above) already have, AND the same
+     extra horizontal inset Modulate's expanded rows carry.
+     CORRECTION: an earlier version of this comment claimed Parameters
+     and Modulate "inherit .mobileSheet's padding equally" — that was
+     wrong. Modulate's actual controls render inside .modPanelBody,
+     which carries its own `padding: 0 16px 16px 16px` on top of
+     .mobileSheet's outer padding (two layers, itself a documented
+     bugfix on .modPanelBody for the exact same "hugs the edge"
+     symptom — see that rule's own comment). .controlRow only ever had
+     the single outer layer, which is the real, confirmed reason
+     Parameters' sliders/dropdowns sat visibly closer to the screen
+     edge than Modulate's. Matched here, not invented — same var(),
+     same value. Scoped to this breakpoint (not added to .controlRow
      directly) so desktop's InspectorDrawer, which renders the exact
      same ControlRow component, is completely unaffected — matches the
      existing convention this file already uses for the mobile board
@@ -2689,6 +2711,7 @@
      way .modPanelRow:last-child does, so groups don't end on a
      dangling line. */
   .controlRow {
+    padding-inline: var(--space-4);
     border-bottom: 1px solid var(--border);
     padding-bottom: var(--space-1);
   }
