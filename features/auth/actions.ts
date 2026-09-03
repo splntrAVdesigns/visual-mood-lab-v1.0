@@ -34,6 +34,7 @@ import {
   consumeVerificationToken,
   createPasswordResetToken,
   sendPasswordResetEmail,
+  sendPasswordChangedEmail,
   consumePasswordResetToken,
 } from '@/lib/auth/verification';
 
@@ -373,7 +374,32 @@ export async function resetPasswordAction(
     return { error: 'This account no longer exists.' };
   }
 
-  if (await isPasswordReused(user.id, password, user.passwordHash)) {
+  // Password-history is treated as best-effort, not a gate on the core
+  // "can this person get back into their account" flow. If this table is
+  // missing or broken (most plausibly: migration 0010 hasn't been applied
+  // to this environment yet, e.g. `relation "passwordHistory" does not
+  // exist`), the WORST outcome from skipping the check is someone reusing
+  // an old password — a minor policy miss, not an account-takeover risk.
+  // Letting it throw uncaught here, on the other hand, takes down the
+  // ENTIRE reset flow: this is a Server Action, and an unhandled throw
+  // from one is surfaced through the same client-side error boundary as
+  // an RSC render failure — in this project that's the root `app/error.tsx`,
+  // which is why a broken passwordHistory table would present as the
+  // exact same generic crash card as any other unrelated server error,
+  // with no indication of the real cause anywhere the person can see.
+  // Failing open here and logging loudly server-side is the correct
+  // trade-off: a real person's ability to regain access to their account
+  // must never depend on an auxiliary subsystem being fully healthy.
+  let blockedByReuse = false;
+  try {
+    blockedByReuse = await isPasswordReused(user.id, password, user.passwordHash);
+  } catch (err) {
+    console.error(
+      '[reset-password] password-history reuse check failed — proceeding without it:',
+      err,
+    );
+  }
+  if (blockedByReuse) {
     return {
       error: "You've used this password recently. Choose one you haven't used on this account before.",
     };
@@ -407,7 +433,30 @@ export async function resetPasswordAction(
     })
     .where(eq(users.id, user.id));
 
-  await recordPasswordHistory(user.id, passwordHash);
+  // The password change above already succeeded and is durable at this
+  // point — recording it into history is bookkeeping for FUTURE reuse
+  // checks, not a condition of this one succeeding. Same fail-open
+  // reasoning as the check above: never let this turn an actually-
+  // successful password change into a reported failure (or, worse, an
+  // app-wide crash) for the person who just changed it.
+  try {
+    await recordPasswordHistory(user.id, passwordHash);
+  } catch (err) {
+    console.error(
+      '[reset-password] failed to record password history — password change itself still succeeded:',
+      err,
+    );
+  }
+
+  // Same fail-open reasoning as the history block above, applied to the
+  // confirmation email: the password has already changed successfully by
+  // this point. A Resend hiccup here is real (worth logging) but must
+  // never turn an actually-successful reset into a reported failure.
+  try {
+    await sendPasswordChangedEmail(email);
+  } catch (err) {
+    console.error('[reset-password] failed to send confirmation email:', err);
+  }
 
   return { success: true };
 }

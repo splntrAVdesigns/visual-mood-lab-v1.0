@@ -110,6 +110,27 @@ export async function sendPasswordResetEmail(email: string, token: string): Prom
   });
 }
 
+/**
+ * Sent once a reset actually completes — distinct from sendPasswordResetEmail
+ * above, which is the earlier "click here to choose a new password" link.
+ * This didn't previously exist: the only reset-related email in this file
+ * was the link itself, so a person had no separate confirmation that their
+ * password had actually finished changing. Best-effort and non-blocking by
+ * design — see the call site in resetPasswordAction (features/auth/actions.ts)
+ * for why a failure here must never affect whether the reset itself is
+ * reported as successful.
+ */
+export async function sendPasswordChangedEmail(email: string): Promise<void> {
+  const baseUrl = process.env.APP_URL ?? 'http://localhost:3000';
+  await sendAuthEmail({
+    to: email,
+    subject: 'Your password was changed — Visual Mood Lab',
+    html: `<p>This confirms your Visual Mood Lab password was just changed. You've been logged out on any other devices as a precaution.</p><p>If you didn't make this change, reset your password again immediately: <a href="${baseUrl}/forgot-password">${baseUrl}/forgot-password</a></p>`,
+    devLogLabel: 'password-changed',
+    devLink: `${baseUrl}/login`,
+  });
+}
+
 /* ------------------------------------------------------------------ *
  * Shared send path
  * ------------------------------------------------------------------ */
