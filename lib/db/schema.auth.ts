@@ -14,6 +14,7 @@ import {
   timestamp,
   primaryKey,
   integer,
+  index,
 } from "drizzle-orm/pg-core";
 import type { AdapterAccountType } from "next-auth/adapters";
 
@@ -77,5 +78,35 @@ export const verificationTokens = pgTable(
   },
   (vt) => ({
     compoundKey: primaryKey({ columns: [vt.identifier, vt.token] }),
+  })
+);
+
+/**
+ * Password reuse history — see lib/auth/password-history.ts for the full
+ * rationale (NIST 800-63B-informed: bounded by COUNT via application logic
+ * in that file, not by a calendar window or a DB constraint here). Rows
+ * beyond HISTORY_SIZE for a given user are pruned by
+ * recordPasswordHistory() on write, not by anything in this schema —
+ * there's no CHECK/trigger enforcing the cap at the DB layer, by design,
+ * to keep the cap's value (HISTORY_SIZE) a single source of truth in code
+ * rather than duplicated into a migration.
+ */
+export const passwordHistory = pgTable(
+  "passwordHistory",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => crypto.randomUUID()),
+    userId: text("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    passwordHash: text("passwordHash").notNull(),
+    createdAt: timestamp("createdAt", { mode: "date" }).defaultNow().notNull(),
+  },
+  (ph) => ({
+    userIdCreatedAtIdx: index("passwordHistory_userId_createdAt_idx").on(
+      ph.userId,
+      ph.createdAt
+    ),
   })
 );

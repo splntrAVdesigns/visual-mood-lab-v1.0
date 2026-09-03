@@ -4,12 +4,47 @@ import { useEffect, useActionState, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Route } from 'next';
 import { TextInput, Button, Tooltip } from '@/components/ui';
-import { loginAction, loginWithGitHubAction, loginWithAppleAction, type FormState } from './actions';
+import {
+  loginAction,
+  loginWithGitHubAction,
+  loginWithAppleAction,
+  resendVerificationAction,
+  type FormState,
+} from './actions';
 import { emailSchema } from '@/lib/validation/auth';
 import { appleSignInEnabled } from '@/lib/auth/flags';
 import s from './auth.module.css';
 
 const initialState: FormState = {};
+
+// Small, self-contained follow-up shown only when loginAction's response
+// carries code: 'unverified_email' — i.e. the password was actually
+// correct, but the account hasn't completed signup verification yet (see
+// lib/auth/errors.ts / lib/auth/config.ts for why that distinction is even
+// visible here now: previously every authorize() failure collapsed into
+// the same generic "Invalid email or password", so there was no reliable
+// signal to hang this follow-up off of).
+function ResendVerification({ email }: { email: string }) {
+  const [state, formAction, pending] = useActionState(resendVerificationAction, initialState);
+
+  if (state.success) {
+    return <p className={s.notice}>New verification link sent — check your email.</p>;
+  }
+
+  return (
+    <form action={formAction} style={{ marginTop: 'var(--space-2)' }}>
+      <input type="hidden" name="email" value={email} />
+      {state.error && (
+        <p className={s.error} role="alert">
+          {state.error}
+        </p>
+      )}
+      <Button type="submit" variant="outline" block disabled={pending}>
+        {pending ? 'Sending…' : 'Resend verification email'}
+      </Button>
+    </form>
+  );
+}
 
 export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
   const [state, formAction, pending] = useActionState(loginAction, initialState);
@@ -103,6 +138,8 @@ export function LoginForm({ callbackUrl }: { callbackUrl: string }) {
           {pending ? 'Logging in…' : state.success ? 'Redirecting…' : 'Log in'}
         </Button>
       </form>
+
+      {state.code === 'unverified_email' && <ResendVerification email={email} />}
 
       <div className={s.divider}>or</div>
 

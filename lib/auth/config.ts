@@ -42,6 +42,7 @@ import { getDb } from "@/lib/db/client";
 import { users, accounts, sessions, verificationTokens } from "@/lib/db/schema.auth";
 import { verifyPassword } from "./hash";
 import { loginRateLimit } from "./rate-limit";
+import { UnverifiedEmailError, RateLimitedError } from "./errors";
 
 // getDb() is async — it has to decide Neon vs. PGlite before returning.
 // NextAuth() needs a resolved adapter at config time, so we resolve once
@@ -118,9 +119,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Rate limit BEFORE touching the DB — this is the brute-force
         // choke point. Keyed by email, not IP alone, so a distributed
         // attempt against one account still gets throttled.
+        //
+        // Throws a typed CredentialsSignin subclass (see ./errors.ts),
+        // NOT a plain Error — Auth.js v5 silently discards the message of
+        // anything that isn't a CredentialsSignin subclass, which used to
+        // make this indistinguishable from a wrong password on the client.
         const { success } = await loginRateLimit.limit(email.toLowerCase());
         if (!success) {
-          throw new Error("Too many attempts. Try again shortly.");
+          throw new RateLimitedError();
         }
 
         const [user] = await db
@@ -130,14 +136,17 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           .limit(1);
 
         // No user, or account is OAuth-only (no passwordHash) — fail
-        // without revealing which case it was.
+        // without revealing which case it was. Bare `return null` here
+        // (rather than a thrown error) is what Auth.js turns into the
+        // generic, undistinguished CredentialsSignin — exactly the
+        // ambiguity we want for "no such user" vs "wrong password".
         if (!user || !user.passwordHash) return null;
 
         const valid = await verifyPassword(user.passwordHash, password);
         if (!valid) return null;
 
         if (!user.emailVerified) {
-          throw new Error("Please verify your email before logging in.");
+          throw new UnverifiedEmailError();
         }
 
         return user;

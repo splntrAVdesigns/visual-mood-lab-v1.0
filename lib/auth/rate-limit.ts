@@ -37,3 +37,16 @@ export const resetPasswordRateLimit = new Ratelimit({
   limiter: Ratelimit.slidingWindow(3, "300 s"),
   prefix: "ratelimit:reset-password",
 });
+
+// Same shape as resetPasswordRateLimit, separate prefix/bucket. Deliberately
+// its own limiter rather than reusing signupRateLimit or resetPasswordRateLimit
+// — this is now called from three different call sites (VerifyForm's expired-
+// link fallback, LoginForm's "please verify your email" fallback, and
+// signupAction's existing-unverified-account branch) and none of those should
+// share a budget with, or be starved by, unrelated signup/reset traffic for
+// the same email.
+export const resendVerificationRateLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(3, "300 s"),
+  prefix: "ratelimit:resend-verification",
+});
