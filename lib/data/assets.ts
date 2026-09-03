@@ -118,10 +118,10 @@ const DEFAULT_BOARD_ID = 'default';
  *
  * First creation for a real account also clones in every item from the
  * shared library's own board, so a brand-new sign-in immediately has the
- * full 50-asset starter set to look at and tune — not an empty grid. From
- * that point on it's a normal, independent board: rearranging, snapshotting,
- * or removing a library item here never touches the library or anyone
- * else's board.
+ * full starter set to look at and tune — not an empty grid. From that
+ * point on it's a normal, independent board: rearranging, snapshotting, or
+ * removing a library item here never touches the library or anyone else's
+ * board.
  */
 export async function getOrCreateDefaultBoard(ownerId: string): Promise<string> {
   const db = await getDb();
@@ -159,10 +159,56 @@ export async function getOrCreateDefaultBoard(ownerId: string): Promise<string> 
       .where(eq(schema.boardItems.boardId, id));
     const ownedAssetIds = new Set(currentItems.map((i) => i.assetId));
 
-    let nextOrder = currentItems.length;
-    for (const item of libraryItems) {
-      if (ownedAssetIds.has(item.assetId)) continue;
-      await ensureCanonicalBoardItem(id, item.assetId, nextOrder++);
+    const missing = libraryItems.filter((item) => !ownedAssetIds.has(item.assetId));
+
+    // Bulk insert instead of one SELECT-then-INSERT round trip PER missing
+    // item (the previous version called ensureCanonicalBoardItem() in a
+    // sequential, individually-awaited loop here — the ~90-item seed
+    // library meant a brand-new account's very first board load did up to
+    // ~180 serialized DB round trips, one at a time, inside a single
+    // server-rendered request; getDb()'s postgres-js client is also opened
+    // with `max: 1` (lib/db/client.ts), so there was never any
+    // parallelism available to soften that even if the calls hadn't been
+    // sequential by construction).
+    //
+    // This is what was actually behind "the board failed to load /
+    // Minified React error #441" for new users after the auth-loop fix
+    // shipped: that fix let brand-new accounts reach this code path for
+    // the first time in practice (they'd always been stuck at login
+    // before), and BoardPage's own try/catch (app/page.tsx) never got a
+    // chance to render its graceful "needsSeed" fallback for it — error
+    // #441 ("An error occurred in the Server Components render", no
+    // further detail) plus a hard client-side crash card instead of that
+    // component's own catch-driven UI is the signature of the request
+    // being killed at the platform level (Vercel's function execution
+    // limit) rather than a normal JS exception the try/catch could
+    // intercept. Existing accounts never showed it because every load
+    // after the first finds nothing missing and takes the two-query fast
+    // path above.
+    //
+    // onConflictDoNothing() replaces the old per-item existence check:
+    // each item's id is the deterministic `${id}:${item.assetId}`
+    // composite primary key (see ensureCanonicalBoardItem's own doc
+    // comment below), so a conflict here can only mean "this exact row
+    // already exists" — the same idempotency guarantee as before, now
+    // enforced by Postgres in one round trip instead of by the
+    // application in up to 2×N. It's also strictly safer than the old
+    // check-then-insert under concurrency (e.g. two requests racing to
+    // backfill the same brand-new account): DO NOTHING can't raise a
+    // duplicate-key error the way an unguarded second INSERT could.
+    if (missing.length > 0) {
+      let nextOrder = currentItems.length;
+      await db
+        .insert(schema.boardItems)
+        .values(
+          missing.map((item) => ({
+            id: `${id}:${item.assetId}`,
+            boardId: id,
+            assetId: item.assetId,
+            order: nextOrder++,
+          })),
+        )
+        .onConflictDoNothing();
     }
   }
 
@@ -259,6 +305,12 @@ export async function boardItemBelongsToBoard(itemId: string, boardId: string): 
  * only — Phase 3's deep-linkable focused view hasn't been built yet
  * (`app/asset/[id]/page.tsx` doesn't even read its own `id` param today),
  * so nothing live depends on that exact string yet.
+ *
+ * NOTE: this single-item, check-then-insert form is still exactly right
+ * for its remaining callers (lib/ingest/ingest.ts, one asset at a time at
+ * ingest time; scripts/promote-to-library.ts, a one-off script) — it's
+ * only getOrCreateDefaultBoard's bulk backfill, above, that outgrew it and
+ * now does its own batched insert instead of calling this in a loop.
  */
 export async function ensureCanonicalBoardItem(
   boardId: string,
