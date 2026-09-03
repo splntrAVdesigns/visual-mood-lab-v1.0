@@ -219,3 +219,12 @@ export const SlidersIcon = (p: IconProps) => (
     <circle cx="7.5" cy="11.5" r="1.5" />
   </Svg>
 );
+
+/** Success/valid state — password-requirements-met indicator (SignupForm,
+    ResetPasswordForm), and available anywhere else a plain confirmation
+    checkmark is needed. */
+export const CheckIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 8.5l3.25 3.25L13 5" />
+  </Svg>
+);

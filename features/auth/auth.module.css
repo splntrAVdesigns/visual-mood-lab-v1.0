@@ -115,6 +115,55 @@
   border-radius: var(--radius);
 }
 
+/* Password-requirements-met indicator — replaces the neutral hint text
+   once the password passes every rule in passwordSchema, so a person gets
+   a clear, positive "you're done" signal instead of having to infer it
+   from the absence of a red error. Cyan, not the plain --text-dim used
+   elsewhere, is a deliberate exception to the "accent on at most one
+   region" rule (styles/tokens.css) — a field-level success state is
+   exactly the kind of transient, self-clearing state that rule's own
+   reasoning (selection/focus/active only) already anticipates. */
+.passwordValid {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-ui);
+  font-size: var(--step--1);
+  color: var(--accent);
+  margin-top: var(--space-2);
+}
+
+.passwordValid svg {
+  flex-shrink: 0;
+}
+
+/* Success-state heading for in-place form → confirmation swaps
+   (SignupForm post-signup, VerifyForm post-verify). Sits below the
+   route's own static AuthShell title, so it reads as "here's what to do
+   next" rather than duplicating the page title. */
+.successTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--step-2);
+  font-weight: 600;
+  color: var(--text);
+  margin: 0 0 var(--space-3);
+}
+
+.successIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
 .error {
   font-family: var(--font-ui);
   font-size: var(--step--1);

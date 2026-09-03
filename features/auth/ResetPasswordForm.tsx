@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import { TextInput, Button } from '@/components/ui';
+import { TextInput, Button, CheckIcon } from '@/components/ui';
 import { resetPasswordAction, type FormState } from './actions';
 import {
   passwordSchema,
@@ -23,6 +23,7 @@ export function ResetPasswordForm({ email, token }: { email: string; token: stri
   const result = passwordSchema.safeParse(password);
   const error = result.success ? undefined : result.error.issues[0]?.message;
   const usesForbiddenWord = containsForbiddenWord(password);
+  const passwordValid = touched && password.length > 0 && !usesForbiddenWord && !error;
   const canSubmit = result.success && !pending;
 
   const handleGeneratePassword = () => {
@@ -72,10 +73,17 @@ export function ResetPasswordForm({ email, token }: { email: string; token: stri
           aria-describedby="password-hint password-error"
         />
 
-        <p id="password-hint" className={s.notice} style={{ marginTop: 'var(--space-2)' }}>
-          {PASSWORD_MIN}–{PASSWORD_MAX} characters, with at least one uppercase letter, one
-          number, and one special character.
-        </p>
+        {passwordValid ? (
+          <p id="password-hint" className={s.passwordValid}>
+            <CheckIcon size={14} />
+            Meets all password requirements
+          </p>
+        ) : (
+          <p id="password-hint" className={s.notice} style={{ marginTop: 'var(--space-2)' }}>
+            {PASSWORD_MIN}–{PASSWORD_MAX} characters, with at least one uppercase letter, one
+            number, and one special character.
+          </p>
+        )}
 
         {usesForbiddenWord && (
           <p className={s.error} role="alert">

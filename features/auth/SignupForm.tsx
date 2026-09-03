@@ -1,7 +1,7 @@
 'use client';
 
 import { useActionState, useMemo, useState } from 'react';
-import { TextInput, Button, Tooltip } from '@/components/ui';
+import { TextInput, Button, Tooltip, CheckIcon } from '@/components/ui';
 import { signupAction, loginWithGitHubAction, loginWithAppleAction, type FormState } from './actions';
 import { appleSignInEnabled } from '@/lib/auth/flags';
 import {
@@ -66,6 +66,14 @@ export function SignupForm({ enabled }: { enabled: boolean }) {
   // rather than a small inline message under the field.
   const usesForbiddenWord = containsForbiddenWord(values.password);
 
+  // Positive confirmation, not just the absence of a red error — a person
+  // shouldn't have to infer "I'm done" from silence. Requires the field to
+  // have been touched AND have real content, so this can't flash true for
+  // an instant on an empty, never-focused field before validation has
+  // anything to say.
+  const passwordValid =
+    touched.password && values.password.length > 0 && !usesForbiddenWord && !errors.password;
+
   const allValid = !errors.username && !errors.email && !errors.password;
   const canSubmit = enabled && allValid && !pending;
 
@@ -78,10 +86,34 @@ export function SignupForm({ enabled }: { enabled: boolean }) {
   };
 
   if (state.success) {
+    // Deliberately more than a single quiet notice line: beta testing
+    // showed this step being skipped past — people went straight to
+    // /login and hit "please verify your email" there instead, which
+    // read as the app being broken rather than as an expected next step.
+    // A heading + icon + an explicit "you can close this tab" makes the
+    // required action impossible to miss, rather than easy to skim past
+    // in a page that's otherwise mostly black negative space by design.
     return (
-      <p className={s.notice}>
-        Account created. Check your email to verify it, then log in.
-      </p>
+      <>
+        <div className={s.successTitle}>
+          <span className={s.successIcon}>
+            <CheckIcon size={18} />
+          </span>
+          Check your email
+        </div>
+        <p className={s.subtitle} style={{ marginBottom: 'var(--space-4)' }}>
+          Your account was created. We just sent a verification link to
+          your inbox — click it to activate your account, then come back
+          here and log in. You can close this tab until then.
+        </p>
+        <p className={s.notice}>
+          Don&rsquo;t see it? Check spam, or try logging in anyway — the
+          login page can resend the link from there too.
+        </p>
+        <a href="/login" className={s.footer}>
+          Go to log in →
+        </a>
+      </>
     );
   }
 
@@ -174,10 +206,17 @@ export function SignupForm({ enabled }: { enabled: boolean }) {
             aria-describedby="password-hint password-error"
           />
 
-          <p id="password-hint" className={s.notice} style={{ marginTop: 'var(--space-2)' }}>
-            {PASSWORD_MIN}–{PASSWORD_MAX} characters, with at least one uppercase letter, one
-            number, and one special character.
-          </p>
+          {passwordValid ? (
+            <p id="password-hint" className={s.passwordValid}>
+              <CheckIcon size={14} />
+              Meets all password requirements
+            </p>
+          ) : (
+            <p id="password-hint" className={s.notice} style={{ marginTop: 'var(--space-2)' }}>
+              {PASSWORD_MIN}–{PASSWORD_MAX} characters, with at least one uppercase letter, one
+              number, and one special character.
+            </p>
+          )}
 
           {usesForbiddenWord && (
             <p className={s.error} role="alert">
