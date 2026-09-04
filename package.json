@@ -21,6 +21,7 @@
     "@electric-sql/pglite": "^0.5.4",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.2",
+    "@vercel/analytics": "^2.0.1",
     "@vercel/blob": "^2.6.1",
     "argon2": "^0.45.1",
     "drizzle-orm": "^0.45.2",
