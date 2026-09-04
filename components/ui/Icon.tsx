@@ -212,6 +212,13 @@ export const TagIcon = (p: IconProps) => (
   </Svg>
 );
 
+export const GuideIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="8" cy="8" r="6" />
+    <path d="M10.2 5.8L8.8 8.8a1.13 1.13 0 0 1-1.5 1.5L5.8 10.2l1.4-3a1.13 1.13 0 0 1 1.5-1.5z" strokeLinejoin="round" />
+  </Svg>
+);
+
 export const SlidersIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M2 4.5h5M10 4.5h4M2 11.5h4M9 11.5h5" />

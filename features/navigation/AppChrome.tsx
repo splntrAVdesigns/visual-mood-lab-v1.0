@@ -9,6 +9,7 @@ import { AppHeader } from './AppHeader';
 import { NavDrawer } from './NavDrawer';
 import { AccountDialog } from './AccountDialog';
 import { CommandPalette } from './CommandPalette';
+import { OnboardingGuide } from '@/features/onboarding/OnboardingGuide';
 import s from '../features.module.css';
 
 interface AppChromeProps {
@@ -72,6 +73,15 @@ export function AppChrome({ assets, needsSeed = false, user = null }: AppChromeP
       <AppHeader onOpenSettings={() => setSettingsOpen(true)} needsSeed={needsSeed} />
       <NavDrawer user={user} onOpenAccount={() => setAccountOpen(true)} />
       <CommandPalette />
+
+      {/*
+        Onboarding guide — reads its own open/step state from
+        useOnboardingStore, triggered by AppHeader's CTA and NavDrawer's
+        "Start here" item. Mounted here (not AppShell) so it's available
+        on every route that mounts AppChrome, same reasoning as everything
+        else in this file.
+      */}
+      <OnboardingGuide />
 
       <FooterCredit />
 

@@ -7,6 +7,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { UploadDialog } from '@/features/library/UploadDialog';
 import { logoutAction } from '@/features/auth/actions';
 import type { User } from '@/lib/auth';
+import { useOnboardingStore } from '@/features/onboarding/onboardingStore';
 
 import {
   Button,
@@ -14,6 +15,7 @@ import {
   SectionLabel,
   CodeIcon,
   GridIcon,
+  GuideIcon,
   LayersIcon,
   SlidersIcon,
   TagIcon,
@@ -41,6 +43,7 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
   const [uploadOpen, setUploadOpen] = useState(false);
   const open = useInspectorStore((st) => st.navOpen);
   const setNavOpen = useInspectorStore((st) => st.setNavOpen);
+  const openGuide = useOnboardingStore((st) => st.open);
 
   const pathname = usePathname();
   const router = useRouter();
@@ -102,6 +105,8 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
         Ungrouped, no SectionLabel — this is a static destination, not a
         filter or an action, so it doesn't belong in the Board/Type/Tags
         hierarchy below. The bottom border marks it as its own category.
+        "Start here" sits alongside About for the same reason: neither
+        one is board state.
       */}
       <nav className={`${s.navSection} ${s.navAbout}`}>
         <Link
@@ -113,6 +118,17 @@ export function NavDrawer({ user = null, onOpenAccount }: NavDrawerProps) {
           <QuadrantMark tone="accent" size={12} className={s.navItemIcon} />
           About
         </Link>
+        <button
+          type="button"
+          className={s.navItem}
+          onClick={() => {
+            openGuide();
+            setNavOpen(false);
+          }}
+        >
+          <GuideIcon className={s.navItemIcon} />
+          Start here
+        </button>
       </nav>
 
       <nav className={s.navSection}>
