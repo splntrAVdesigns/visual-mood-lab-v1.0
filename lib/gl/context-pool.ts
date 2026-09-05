@@ -38,17 +38,33 @@
 export const STAGE_MIN_DIM = 900;
 
 /**
- * Hard ceiling regardless of what the driver claims it can do. Drivers
- * routinely report MAX_TEXTURE_SIZE of 8192-16384 while being unhappy about
- * actually allocating one, and past 4096 there's nothing left to gain for
- * this product anyway — a 4096 buffer is already native resolution on
- * everything short of a 5K panel, and beyond that the upscale is small
- * enough to be invisible. Capping here rather than trusting the driver
- * keeps the "one large one-shot allocation" risk (the confirmed cause of
- * CONTEXT_LOST_WEBGL on retina fullscreen — see §15 of the implementation
- * plan) bounded to something known-safe rather than open-ended.
+ * Hard ceiling regardless of what the driver claims it can do.
+ *
+ * THIS WAS 4096 AND THAT WAS A PERFORMANCE REGRESSION. The reasoning
+ * behind it — "only the one-time buffer allocation scales with the canvas,
+ * because draw() sets gl.viewport() per card" — is wrong, and two comments
+ * already in this file said so:
+ *
+ *   - the preserveDrawingBuffer comment below: the blit "costs a
+ *     full-surface copy per card per frame";
+ *   - the original MAX_DIM comment: a preview card "was paying for
+ *     1280x1280 regardless" because of "any full-surface work the driver
+ *     does".
+ *
+ * ShaderRenderer.render() finishes with drawImage(stage.canvas, ...), and
+ * that read scales with the SIZE OF THE CANVAS, not the size of the
+ * sub-rect it asks for. Every live card pays it, every frame. At 2304 the
+ * board went from 4.86M to 31.85M px/frame of blit — 6.6x — and because
+ * growth was one-way it stayed there for the rest of the session after a
+ * single tile was opened.
+ *
+ * 1280 is the value this codebase ran before the 900 reduction, so it is a
+ * known quantity rather than another guess: 2x the baseline blit and 2x
+ * the focused-tile fragment cost, in exchange for a 3x fullscreen upscale
+ * instead of 4.3x. Raising it further should be driven by measured frame
+ * time, not by reasoning about what ought to be cheap.
  */
-const STAGE_ABSOLUTE_MAX_DIM = 4096;
+const STAGE_ABSOLUTE_MAX_DIM = 1280;
 
 /**
  * Growth granularity. Rounding the target up means a slow drag-resize
@@ -57,6 +73,14 @@ const STAGE_ABSOLUTE_MAX_DIM = 4096;
  * are what actually provokes a driver into dropping the context.
  */
 const STAGE_GROWTH_STEP = 256;
+
+/**
+ * How often the stage is allowed to shrink back toward actual demand.
+ * Long enough that closing and reopening a tile doesn't thrash the
+ * allocator, short enough that the board gets its frame budget back
+ * promptly after a focused tile closes.
+ */
+const STAGE_RECONCILE_MS = 1500;
 
 export interface CompiledProgram {
   program: WebGLProgram;
@@ -126,6 +150,27 @@ export class GLStage {
   private dimH = STAGE_MIN_DIM;
 
   /**
+   * Largest region requested since the last reconcile, and when that
+   * reconcile last happened.
+   *
+   * These exist because "grow, never shrink" was the wrong policy. Closing
+   * a focused tile has to give the board its performance back: the canvas
+   * is read in full by every live card's blit every frame (see
+   * STAGE_ABSOLUTE_MAX_DIM), so leaving it at focused size after the
+   * focused tile is gone taxes the entire board indefinitely for a tile
+   * nobody is looking at any more. Shrinking is not an optimisation here,
+   * it is the difference between the board running at its budget and not.
+   *
+   * Growth stays immediate — a card must never be clamped down in the
+   * frame it is promoted. Shrinking is deferred and rate-limited, because
+   * reallocation is the operation that risks the context and there is no
+   * reason to do it eagerly.
+   */
+  private peakW = STAGE_MIN_DIM;
+  private peakH = STAGE_MIN_DIM;
+  private lastReconcileAt = 0;
+
+  /**
    * Upper bound this device has actually proven it can handle. Starts at
    * whatever the driver's own limits allow (capped by
    * STAGE_ABSOLUTE_MAX_DIM) and is lowered permanently if a growth attempt
@@ -166,48 +211,86 @@ export class GLStage {
    * clamped down to the floor.
    */
   ensureCapacity(w: number, h: number): { width: number; height: number } {
-    const current = { width: this.dimW, height: this.dimH };
-    if (!Number.isFinite(w) || !Number.isFinite(h)) return current;
-    if (w <= this.dimW && h <= this.dimH) return current;
+    if (!Number.isFinite(w) || !Number.isFinite(h)) {
+      return { width: this.dimW, height: this.dimH };
+    }
 
-    const align = (v: number, floor: number) =>
-      Math.min(this.maxDim, Math.max(floor, Math.ceil(v / STAGE_GROWTH_STEP) * STAGE_GROWTH_STEP));
+    // Record demand before anything else, so the reconcile below always
+    // sees this frame's request.
+    if (w > this.peakW) this.peakW = w;
+    if (h > this.peakH) this.peakH = h;
 
-    // Never shrink either axis: a card drawn after a fullscreen session
-    // must not force a reallocation back down, both because reallocation
-    // is the risky operation and because the next promote would just grow
-    // it again.
-    const targetW = Math.max(this.dimW, align(w, STAGE_MIN_DIM));
-    const targetH = Math.max(this.dimH, align(h, STAGE_MIN_DIM));
-    if (targetW === this.dimW && targetH === this.dimH) return current;
+    // Rate-limited shrink. Once per window, if nothing has asked for the
+    // current size recently, come back down to what is actually in use.
+    // A focused tile redraws every frame, so its demand keeps the peak
+    // pinned and no shrink happens while it is open; the window only ever
+    // elapses with a low peak once the focused tile has gone away.
+    const now = performance.now();
+    if (now - this.lastReconcileAt >= STAGE_RECONCILE_MS) {
+      this.lastReconcileAt = now;
+      const wantW = this.alignUp(this.peakW);
+      const wantH = this.alignUp(this.peakH);
+      if (wantW < this.dimW || wantH < this.dimH) {
+        this.resizeSurface(Math.min(wantW, this.dimW), Math.min(wantH, this.dimH));
+      }
+      // Seed the next window with this call's demand rather than the floor,
+      // so a large card drawing right after a reconcile is not briefly
+      // treated as absent.
+      this.peakW = w;
+      this.peakH = h;
+    }
 
+    if (w <= this.dimW && h <= this.dimH) {
+      return { width: this.dimW, height: this.dimH };
+    }
+
+    // Growth: immediate and never deferred.
+    const targetW = Math.max(this.dimW, this.alignUp(w));
+    const targetH = Math.max(this.dimH, this.alignUp(h));
+    if (targetW !== this.dimW || targetH !== this.dimH) {
+      this.resizeSurface(targetW, targetH);
+    }
+    return { width: this.dimW, height: this.dimH };
+  }
+
+  private alignUp(v: number): number {
+    return Math.min(
+      this.maxDim,
+      Math.max(STAGE_MIN_DIM, Math.ceil(v / STAGE_GROWTH_STEP) * STAGE_GROWTH_STEP),
+    );
+  }
+
+  /**
+   * The only place the shared canvas is resized. Rolls back and lowers the
+   * ceiling permanently if the allocation kills the context, so a machine
+   * that cannot take a given size pays the discovery once rather than every
+   * frame.
+   */
+  private resizeSurface(width: number, height: number): void {
+    if (width === this.dimW && height === this.dimH) return;
     const previousW = this.dimW;
     const previousH = this.dimH;
     try {
-      this.canvas.width = targetW;
-      this.canvas.height = targetH;
+      this.canvas.width = width;
+      this.canvas.height = height;
       // Resizing a canvas backed by a live WebGL context reallocates the
       // drawing buffer while leaving programs, textures and the VAO intact
       // — those are context state, not surface state, so nothing needs
       // recompiling here. What it CAN do on a constrained GPU is fail, and
       // WebGL reports that by losing the context rather than throwing, so
       // the explicit check matters more than the try/catch does.
-      if (this.gl.isContextLost()) throw new Error('context lost while growing shared stage');
-      this.dimW = targetW;
-      this.dimH = targetH;
+      if (this.gl.isContextLost()) throw new Error('context lost while resizing shared stage');
+      this.dimW = width;
+      this.dimH = height;
     } catch {
-      // Roll back to the last size known to work and never attempt to
-      // exceed it again this session. The webglcontextrestored handler
-      // below takes care of rebuilding state if the context did actually
-      // drop; this just makes sure we don't immediately walk into the same
-      // allocation a frame later.
       this.canvas.width = previousW;
       this.canvas.height = previousH;
       this.dimW = previousW;
       this.dimH = previousH;
-      this.maxDim = Math.max(STAGE_MIN_DIM, Math.max(previousW, previousH));
+      if (width > previousW || height > previousH) {
+        this.maxDim = Math.max(STAGE_MIN_DIM, Math.max(previousW, previousH));
+      }
     }
-    return { width: this.dimW, height: this.dimH };
   }
 
   constructor() {
