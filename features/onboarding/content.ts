@@ -16,7 +16,7 @@ export const STEP_EYEBROWS: Record<number, string> = {
  * ------------------------------------------------------------------ */
 export const STEP1 = {
   title: 'Not a gallery.',
-  body: "Visual Mood Lab holds shaders, sketches, video, and stills on one board — and every asset exposes its real parameters instead of hiding them behind a render. Nine quick steps show you around; skip ahead anytime.",
+  body: "Visual Mood Lab holds shaders, sketches, video, and stills on one board — and every asset exposes its real parameters instead of hiding them behind a render. Eight quick steps show you around; skip ahead anytime.",
 };
 
 /* ------------------------------------------------------------------ *
@@ -24,7 +24,10 @@ export const STEP1 = {
  * ------------------------------------------------------------------ */
 export const STEP2 = {
   title: 'One board, a few shelves.',
-  body: "Recently viewed keeps your last viewed tiles close. Library uploads and Saved snapshots hold anything you've saved or uploaded. Use the search bar in the header or the filters in the left panel drawer to find anything on the board, by type, or tag. You can also re-access this guide anytime through the left panel drawer.",
+  bodyDesktop:
+    "Recently viewed keeps your last viewed tiles close. Library uploads and Saved snapshots hold anything you've saved or uploaded. Use the search bar in the header or the filters in the left panel drawer to find anything on the board, by type, or tag. You can also re-access this guide anytime through the left panel drawer.",
+  bodyMobile:
+    "Recently viewed keeps your last viewed tiles close. Library uploads and Saved snapshots hold anything you've saved or uploaded — tap the menu to search or filter by type and tag.",
 };
 
 /* ------------------------------------------------------------------ *

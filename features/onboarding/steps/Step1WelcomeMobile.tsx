@@ -4,7 +4,7 @@ import s from '../onboarding.module.css';
 export function Step1WelcomeMobile() {
   return (
     <>
-      <div className={s.hero} style={{ height: 198, margin: '0 -18px', width: 'calc(100% + 36px)' }}>
+      <div className={s.hero} style={{ height: 236, margin: '0 -18px', width: 'calc(100% + 36px)' }}>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           className={s.heroImg}

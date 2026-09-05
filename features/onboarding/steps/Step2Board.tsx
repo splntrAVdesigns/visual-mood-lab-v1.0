@@ -41,7 +41,7 @@ export function Step2Board() {
       </div>
       <div className={s.body}>
         <h2 className={s.title}>{STEP2.title}</h2>
-        <p className={s.copy}>{STEP2.body}</p>
+        <p className={s.copy}>{STEP2.bodyDesktop}</p>
       </div>
     </>
   );
