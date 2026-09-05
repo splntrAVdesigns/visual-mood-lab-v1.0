@@ -180,19 +180,93 @@
    * budget), while fullscreen on retina scales density back down rather
    * than compounding a large canvas with a large multiplier.
    */
-  var MAX_FRAMEBUFFER_PIXELS = 4000000; // ~2000x2000 at 1x — tune against real profiling, not guessed once and left
-  function densityFor(q, targetW, targetH) {
+  /*
+   * Density budgets, split by RENDERER MODE.
+   *
+   * There was one flat 4,000,000 constant here. It exists for a real
+   * reason: a flat min(devicePixelRatio, 2) multiplier at native retina
+   * fullscreen produced a large enough one-shot WebGL drawing-buffer
+   * allocation to trigger CONTEXT_LOST_WEBGL on some GPU drivers (see §15
+   * of the implementation plan). Budgeting total pixels fixed that.
+   *
+   * But it was applied to every sketch regardless of mode, and that is
+   * where it over-corrected. A 2D p5 sketch has no WebGL drawing buffer at
+   * all — its canvas is a 2D context, so the GPU driver limit the constant
+   * was protecting against simply does not apply to it. Its constraints are
+   * memory and the browser's own canvas area cap, both far higher. Yet on a
+   * DPR-2 display the shared budget dropped 2D sketches from density 1.92
+   * in the enlarged panel to 1.39 in fullscreen — a 28% linear resolution
+   * loss, taken to avoid a failure mode those sketches cannot have.
+   *
+   * So the budget is now per-mode, detected via p5's own `_renderer.isP3D`
+   * flag (which p5 itself branches on throughout, so it is stable API in
+   * practice):
+   *
+   *   2D    — 20M px. Roughly 80MB of canvas backing store for the one
+   *           focused tile, comfortably under Chrome's ~268M area cap.
+   *           Covers full DPR-2 density up to ~3160x1580 logical, which is
+   *           every realistic desktop fullscreen.
+   *   WEBGL — 8.4M px. Deliberately raised, but only to the point where a
+   *           1920x1080 logical surface at DPR 2 (8.29M) fits exactly, so
+   *           fullscreen on a 4K panel in HiDPI mode renders at native
+   *           resolution. Beyond that it still scales down.
+   *
+   * The WEBGL raise is the one carrying real risk, so it is not a bare
+   * constant — see WEBGL_PIXELS_FLOOR and the webglcontextlost handler
+   * below for the automatic backoff that makes it self-correcting.
+   */
+  var MAX_2D_PIXELS = 20000000;
+  var MAX_WEBGL_PIXELS = 8400000;
+  /*
+   * Backoff floor: the exact value that shipped before this change and ran
+   * in the field without a reported loss. If raising the WEBGL budget turns
+   * out to be wrong on a given machine, that machine walks itself back down
+   * to a known-good number rather than to a fresh guess.
+   *
+   * Why backoff rather than the localStorage high-water mark that was
+   * originally proposed: this iframe is served with sandbox="allow-scripts"
+   * and WITHOUT allow-same-origin (see p5.renderer.ts), so it has a null
+   * origin and any localStorage access throws a SecurityError. Persisting
+   * the discovered ceiling has to live on the host side and be passed in
+   * over the protocol — worth doing, but it is host plumbing rather than a
+   * sandbox change, and it is deliberately not in this round. The cost of
+   * leaving it out is that a machine which does lose context pays the
+   * discovery once per session instead of once ever.
+   */
+  var WEBGL_PIXELS_FLOOR = 4000000;
+  /*
+   * Lowered permanently (for this iframe's lifetime) by the
+   * webglcontextlost handler. Never raised.
+   */
+  var webglPixelBudget = MAX_WEBGL_PIXELS;
+
+  /*
+   * Which budget applies right now. Before createCanvas() has run there is
+   * no renderer to inspect and the mode is genuinely unknown, so this
+   * returns the conservative WEBGL branch; the setup wrapper reconciles
+   * immediately afterwards once the mode is knowable.
+   */
+  function budgetForRenderer(renderer) {
+    if (!renderer) return webglPixelBudget;
+    return renderer.isP3D ? webglPixelBudget : MAX_2D_PIXELS;
+  }
+
+  function densityForRenderer(renderer, q, targetW, targetH) {
     if (q !== 'full') return 1;
     var dpr = Math.min(window.devicePixelRatio || 1, 2);
     var w = targetW || window.innerWidth;
     var h = targetH || window.innerHeight;
     var logicalPixels = w * h;
     if (logicalPixels <= 0) return dpr;
-    var wouldBePixels = logicalPixels * dpr * dpr;
-    if (wouldBePixels <= MAX_FRAMEBUFFER_PIXELS) return dpr;
+    var budget = budgetForRenderer(renderer);
+    if (logicalPixels * dpr * dpr <= budget) return dpr;
     // Scale density down so total framebuffer pixels stay under budget,
     // never below 1 — a canvas this large already costs plenty at 1x.
-    return Math.max(1, Math.sqrt(MAX_FRAMEBUFFER_PIXELS / logicalPixels));
+    return Math.max(1, Math.sqrt(budget / logicalPixels));
+  }
+
+  function densityFor(q, targetW, targetH) {
+    return densityForRenderer(instance && instance._renderer, q, targetW, targetH);
   }
 
   function post(msg) { parent.postMessage(msg, '*'); }
@@ -375,8 +449,26 @@
         var userSetup = typeof p.setup === 'function' ? p.setup : null;
         if (userSetup) {
           p.setup = function () {
+            // Must run BEFORE createCanvas(), which is inside userSetup —
+            // p5 only applies a density change cleanly at canvas creation.
+            // At this point p._renderer does not exist yet, so
+            // densityFor() cannot tell a 2D sketch from a WEBGL one and
+            // conservatively assumes WEBGL. That is the right default; it
+            // just isn't the final answer.
             try { p.pixelDensity(densityFor(quality, window.innerWidth, window.innerHeight)); } catch (e) { /* pre-1.x */ }
             userSetup.call(p);
+            // createCanvas() has now run, so the renderer mode is
+            // knowable. Re-derive the density against the correct budget
+            // and only re-apply if it actually differs — pixelDensity()
+            // forces a full canvas reallocation, so an unconditional
+            // second call would add one to every single mount for no
+            // reason. In practice this only fires for a 2D sketch mounted
+            // straight into full quality; preview mounts compute 1 both
+            // times and skip.
+            try {
+              var want = densityForRenderer(p._renderer, quality, window.innerWidth, window.innerHeight);
+              if (Math.abs(p.pixelDensity() - want) > 0.01) p.pixelDensity(want);
+            } catch (e) { /* private/renderer shape changed — keep the conservative value */ }
           };
         }
 
@@ -627,6 +719,30 @@
         // webglcontextrestored at all, per the WebGL spec.
         ev.preventDefault();
         contextLost = true;
+        /*
+         * Automatic backoff for the raised WEBGL density budget above.
+         *
+         * The budget was raised so fullscreen renders at native resolution
+         * on a DPR-2 panel, which is the whole point of this change — but
+         * the failure it replaced was real, and "some GPU drivers" is not a
+         * set that can be enumerated ahead of time. Rather than pick a
+         * constant conservative enough for the worst machine anyone might
+         * ever use (which is exactly how the previous value ended up
+         * penalising every machine), this treats a genuine loss as the
+         * measurement: halve the budget, floor it at the previously-shipped
+         * value, and never raise it again for this iframe's lifetime.
+         *
+         * Placed on the loss event rather than the restore event
+         * deliberately. The restore handler below has its own backoff for a
+         * different problem (repeated losses meaning the GPU is out of
+         * contexts entirely, where recreating the sketch is the wrong
+         * move); this one is about the size of a single allocation, so it
+         * needs to have already taken effect by the time recreation
+         * recomputes its density.
+         */
+        if (webglPixelBudget > WEBGL_PIXELS_FLOOR) {
+          webglPixelBudget = Math.max(WEBGL_PIXELS_FLOOR, Math.floor(webglPixelBudget / 2));
+        }
         if (instance && instance.noLoop) {
           try { instance.noLoop(); } catch (e) { /* already gone */ }
         }

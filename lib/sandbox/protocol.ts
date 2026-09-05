@@ -207,7 +207,7 @@ export const STALL_RESUME_THRESHOLD_MS = 1200;
  * itself changes, so the browser can't keep serving a stale cached copy
  * that's missing whatever bridge function or protocol change just shipped.
  */
-export const SANDBOX_RUNTIME_VERSION = '2026-09-05-1';
+export const SANDBOX_RUNTIME_VERSION = '2026-09-05-2';
 
 /**
  * How long to wait after sending `init` before declaring the sketch dead.
