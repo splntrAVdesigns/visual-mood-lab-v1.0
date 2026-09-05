@@ -69,6 +69,17 @@
   // "the host never sent anything," instead of firing unconditionally and
   // racing it. See the case 'resize' handler for the full story.
   var lastHostResizeAt = 0;
+  // The iframe's own window dimensions AT THE MOMENT applyResize() last
+  // ran. Recorded so the windowResized fallback below can tell "the host
+  // already handled this exact size" (skip — the sketch has already been
+  // resized correctly, running again would just be a duplicate
+  // resizeCanvas) from "the host handled an OLDER size and the window has
+  // moved on since" (don't skip — this is the only remaining path back to
+  // the correct size). A purely time-based guard couldn't tell those
+  // apart, which is what let a stale mid-transition size stick. See the
+  // windowResized wrapper in run() for the full story.
+  var lastAppliedWindowW = 0;
+  var lastAppliedWindowH = 0;
   // Live audio bridge — see lib/sandbox/protocol.ts's audioWaveform doc.
   // audioEnabled mirrors the host's isTileAudioActive() for this card;
   // audioWaveform is the current time-domain buffer, or null whenever
@@ -217,6 +228,12 @@
       resizeDebounceTimer = null;
     }
     applyResize = null;
+    // Zeroed alongside applyResize: a fresh instance starts with no
+    // host-applied resize to its name, and leaving these set could let the
+    // new sketch's first windowResized be skipped on the strength of the
+    // previous instance's bookkeeping.
+    lastAppliedWindowW = 0;
+    lastAppliedWindowH = 0;
     if (instance && instance.remove) {
       try { instance.remove(); } catch (e) { /* already gone */ }
     }
@@ -399,16 +416,62 @@
           try {
             p.pixelDensity(densityFor(quality, w, h));
           } catch (e) { /* pre-1.x */ }
-          // NOTE: userWindowResized's own resizeCanvas call reads
-          // p.windowWidth/p.windowHeight internally (every sketch writes
-          // it that way, not parameterized) — not the w/h passed in here.
-          // That's fine as long as this iframe's own layout has already
-          // caught up to its new CSS size by the time this runs, which it
-          // has: the host's ResizeObserver only fires after the browser
-          // has finished layout, and postMessage is asynchronous on top of
-          // that, so p.windowWidth/windowHeight are reliably current by
-          // the time this executes. Called out explicitly because it's an
-          // assumption, not a guarantee enforced anywhere in code.
+          /*
+           * userWindowResized's own resizeCanvas call reads
+           * p.windowWidth/p.windowHeight internally (every sketch writes
+           * it that way, not parameterized) — not the w/h passed in here.
+           *
+           * THE ASSUMPTION THAT USED TO BE DOCUMENTED HERE WAS WRONG, and
+           * it was the cause of the "fullscreen renders at the old size in
+           * the top-left corner" bug. The old note reasoned that layout
+           * would have caught up by the time this ran, so the values would
+           * be current. But p.windowWidth is not read from layout at all —
+           * it is a CACHED property. Confirmed directly against the
+           * vendored p5 build:
+           *
+           *   p5.prototype.windowWidth = 0
+           *   p5.prototype._onresize = function (e) {
+           *     this._setProperty('windowWidth',  getWindowWidth());
+           *     this._setProperty('windowHeight', getWindowHeight());
+           *     ... calls the sketch's windowResized ...
+           *   }
+           *   p5.prototype._updateWindowSize = function () {
+           *     this._setProperty('windowWidth',  getWindowWidth());
+           *     this._setProperty('windowHeight', getWindowHeight());
+           *   }
+           *
+           * Those are the ONLY two writers. The host-driven path calls
+           * userWindowResized directly and therefore never goes through
+           * _onresize, so whatever size _onresize last happened to cache
+           * is what the sketch resizes itself to — typically an
+           * intermediate frame of the animated fullscreen transition, or
+           * the pre-fullscreen panel size. The density above was computed
+           * from the correct w/h, so only the canvas geometry came out
+           * wrong, which is exactly how it presented: a correctly-rendered
+           * sketch at the old dimensions, anchored top-left in a
+           * full-screen black box.
+           *
+           * Refreshing the cache first removes the whole staleness class
+           * rather than patching one symptom. _updateWindowSize is a
+           * private p5 API, so it's feature-detected with an explicit
+           * _setProperty fallback; if both ever disappear, behaviour
+           * degrades to what it was before this fix rather than throwing.
+           */
+          try {
+            if (typeof p._updateWindowSize === 'function') {
+              p._updateWindowSize();
+            } else if (typeof p._setProperty === 'function') {
+              p._setProperty('windowWidth', window.innerWidth);
+              p._setProperty('windowHeight', window.innerHeight);
+            }
+          } catch (e) { /* private API moved — fall through with whatever is cached */ }
+
+          // Recorded AFTER the refresh above so it reflects the size the
+          // sketch is actually about to be resized to, not whatever was
+          // cached on entry. Read by the windowResized fallback below.
+          lastAppliedWindowW = window.innerWidth;
+          lastAppliedWindowH = window.innerHeight;
+
           if (userWindowResized) userWindowResized.call(p);
         };
 
@@ -435,8 +498,47 @@
             // in fullscreen but comes back blank" failure. The guard below
             // makes this an actual fallback instead of a second guaranteed
             // trigger: skip if the host visibly handled a resize recently.
+            //
+            // REVISED — the guard was purely time-based, and that made it
+            // possible for it to swallow the one call that would have
+            // corrected a stale resize. p5 calls this from inside
+            // _onresize, immediately AFTER _onresize has written the
+            // correct windowWidth/windowHeight. During an animated
+            // fullscreen transition the host's message routinely lands
+            // first (it fires 200ms after the ResizeObserver settles,
+            // while the iframe's own resize events are still arriving), so
+            // applyResize ran against a mid-transition size and this — the
+            // only remaining path back to the right one — then returned
+            // early because it was inside the 600ms window. Intermittent
+            // by construction: whether the final _onresize fell inside or
+            // outside that window was a race against the transition.
+            //
+            // The fix is to make the guard answer the question it was
+            // always trying to answer — "has the host already handled THIS
+            // size?" — instead of the proxy question "has the host been
+            // heard from lately?". If applyResize last ran at the window
+            // size the window is at right now, the sketch has already been
+            // resized correctly and running again would be a duplicate
+            // resizeCanvas (the expensive thing this guard exists to
+            // prevent: p5 1.x's resizeCanvas has no same-size early return,
+            // it does the full resize plus a redraw() every time, which is
+            // what stacked past the 2000ms heartbeat and got iframes torn
+            // down as hung). If the window has moved on since, the sketch
+            // is currently at the wrong size and this must run regardless
+            // of how recently the host was heard from.
+            //
+            // Deliberately compares WINDOW size, not canvas size: not
+            // every sketch sizes its canvas to the full window (some
+            // aspect-fit, some use a fixed size), so a canvas-vs-window
+            // comparison would never match for those and would reintroduce
+            // the duplicate-resize storm for exactly the sketches that
+            // can least afford it. Window-vs-window is true regardless of
+            // what the sketch chooses to do with the space.
             var recentlyHandledByHost = performance.now() - lastHostResizeAt < 600;
-            if (recentlyHandledByHost) return;
+            var hostAlreadyHandledThisSize =
+              window.innerWidth === lastAppliedWindowW &&
+              window.innerHeight === lastAppliedWindowH;
+            if (recentlyHandledByHost && hostAlreadyHandledThisSize) return;
 
             if (resizeDebounceTimer) clearTimeout(resizeDebounceTimer);
             resizeDebounceTimer = setTimeout(function () {

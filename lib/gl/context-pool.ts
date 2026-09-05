@@ -18,8 +18,45 @@
  * 1280 was wasteful: a 220px preview card only ever writes a 220px corner,
  * but the buffer allocation, and any full-surface work the driver does, was
  * paying for 1280x1280 regardless.
+ *
+ * That reasoning is still right, but the implementation it produced — a
+ * single flat 900 constant clamping EVERY consumer — capped the focused and
+ * fullscreen tile at the same ceiling as a 220px thumbnail. On a 4K display
+ * that meant a 900px buffer stretched across 3840 CSS px, a 4.3x upscale,
+ * which is the "resolution drops in fullscreen, worse on bigger screens"
+ * report. The card-grid economy and the focused tile's sharpness were never
+ * actually in tension: `draw()` sets `gl.viewport(0, 0, sw, sh)` per call,
+ * so a preview card's fragment cost is set by its own size, not by how big
+ * the shared canvas happens to be. Only the one-time buffer allocation
+ * scales with the canvas.
+ *
+ * So the ceiling is now a floor plus on-demand growth instead of a cap:
+ * start at STAGE_MIN_DIM (what a board of preview cards ever needs, and the
+ * old constant's value, so a board-only session allocates exactly what it
+ * did before), grow when a consumer genuinely asks for more, never shrink.
  */
-export const MAX_DIM = 900;
+export const STAGE_MIN_DIM = 900;
+
+/**
+ * Hard ceiling regardless of what the driver claims it can do. Drivers
+ * routinely report MAX_TEXTURE_SIZE of 8192-16384 while being unhappy about
+ * actually allocating one, and past 4096 there's nothing left to gain for
+ * this product anyway — a 4096 buffer is already native resolution on
+ * everything short of a 5K panel, and beyond that the upscale is small
+ * enough to be invisible. Capping here rather than trusting the driver
+ * keeps the "one large one-shot allocation" risk (the confirmed cause of
+ * CONTEXT_LOST_WEBGL on retina fullscreen — see §15 of the implementation
+ * plan) bounded to something known-safe rather than open-ended.
+ */
+const STAGE_ABSOLUTE_MAX_DIM = 4096;
+
+/**
+ * Growth granularity. Rounding the target up means a slow drag-resize
+ * produces one or two reallocations rather than dozens of near-identical
+ * ones — and repeated large reallocations, more than any single big one,
+ * are what actually provokes a driver into dropping the context.
+ */
+const STAGE_GROWTH_STEP = 256;
 
 export interface CompiledProgram {
   program: WebGLProgram;
@@ -75,14 +112,108 @@ export class GLStage {
    */
   private gen = 0;
 
+  /**
+   * Current shared-canvas dimensions. Each axis grows independently and
+   * neither ever shrinks.
+   *
+   * Per-axis rather than a single square edge because the regions that
+   * actually need the headroom are widescreen: a square stage sized for a
+   * 3840-wide fullscreen surface would be 3840x3840 (~59MB of drawing
+   * buffer) to serve a 3840x2160 region (~35MB). The square was harmless
+   * when the edge was 900; at fullscreen sizes it is not.
+   */
+  private dimW = STAGE_MIN_DIM;
+  private dimH = STAGE_MIN_DIM;
+
+  /**
+   * Upper bound this device has actually proven it can handle. Starts at
+   * whatever the driver's own limits allow (capped by
+   * STAGE_ABSOLUTE_MAX_DIM) and is lowered permanently if a growth attempt
+   * turns out to kill the context — so a machine that can't take the jump
+   * pays for the discovery exactly once per session instead of retrying the
+   * same doomed allocation on every promote.
+   */
+  private maxDim = STAGE_ABSOLUTE_MAX_DIM;
+
   get generation(): number {
     return this.gen;
   }
 
+  /**
+   * The largest square edge this stage will ever grow to. Consumers clamp
+   * their requested region against this rather than against a module
+   * constant, so the clamp reflects what this specific device can do.
+   */
+  get maxDimension(): number {
+    return this.maxDim;
+  }
+
+  /** Current shared-canvas dimensions. Exposed mainly for diagnostics. */
+  get dimensions(): { width: number; height: number } {
+    return { width: this.dimW, height: this.dimH };
+  }
+
+  /**
+   * Grows the shared canvas so a `w` x `h` region can be rendered at full
+   * resolution. No-op when it already fits, which is every call on a board
+   * of preview cards.
+   *
+   * Called from draw() rather than left to each consumer: the compositor
+   * (lib/gl/effects-compositor.ts) and any future consumer render through
+   * the same entry point, and making capacity a property of "something is
+   * about to be drawn at this size" rather than something each caller has
+   * to remember means there is no way to add a consumer that silently gets
+   * clamped down to the floor.
+   */
+  ensureCapacity(w: number, h: number): { width: number; height: number } {
+    const current = { width: this.dimW, height: this.dimH };
+    if (!Number.isFinite(w) || !Number.isFinite(h)) return current;
+    if (w <= this.dimW && h <= this.dimH) return current;
+
+    const align = (v: number, floor: number) =>
+      Math.min(this.maxDim, Math.max(floor, Math.ceil(v / STAGE_GROWTH_STEP) * STAGE_GROWTH_STEP));
+
+    // Never shrink either axis: a card drawn after a fullscreen session
+    // must not force a reallocation back down, both because reallocation
+    // is the risky operation and because the next promote would just grow
+    // it again.
+    const targetW = Math.max(this.dimW, align(w, STAGE_MIN_DIM));
+    const targetH = Math.max(this.dimH, align(h, STAGE_MIN_DIM));
+    if (targetW === this.dimW && targetH === this.dimH) return current;
+
+    const previousW = this.dimW;
+    const previousH = this.dimH;
+    try {
+      this.canvas.width = targetW;
+      this.canvas.height = targetH;
+      // Resizing a canvas backed by a live WebGL context reallocates the
+      // drawing buffer while leaving programs, textures and the VAO intact
+      // — those are context state, not surface state, so nothing needs
+      // recompiling here. What it CAN do on a constrained GPU is fail, and
+      // WebGL reports that by losing the context rather than throwing, so
+      // the explicit check matters more than the try/catch does.
+      if (this.gl.isContextLost()) throw new Error('context lost while growing shared stage');
+      this.dimW = targetW;
+      this.dimH = targetH;
+    } catch {
+      // Roll back to the last size known to work and never attempt to
+      // exceed it again this session. The webglcontextrestored handler
+      // below takes care of rebuilding state if the context did actually
+      // drop; this just makes sure we don't immediately walk into the same
+      // allocation a frame later.
+      this.canvas.width = previousW;
+      this.canvas.height = previousH;
+      this.dimW = previousW;
+      this.dimH = previousH;
+      this.maxDim = Math.max(STAGE_MIN_DIM, Math.max(previousW, previousH));
+    }
+    return { width: this.dimW, height: this.dimH };
+  }
+
   constructor() {
     this.canvas = document.createElement('canvas');
-    this.canvas.width = MAX_DIM;
-    this.canvas.height = MAX_DIM;
+    this.canvas.width = STAGE_MIN_DIM;
+    this.canvas.height = STAGE_MIN_DIM;
 
     const gl = this.canvas.getContext('webgl2', {
       alpha: false,
@@ -108,6 +239,21 @@ export class GLStage {
 
     if (!gl) throw new Error('WebGL2 is not available in this browser.');
     this.gl = gl;
+
+    // Narrow the growth ceiling to what this driver actually reports it can
+    // allocate. Both limits matter: the drawing buffer is bounded by
+    // MAX_RENDERBUFFER_SIZE, and the compositor uploads this same canvas
+    // back as a texture, which is bounded by MAX_TEXTURE_SIZE. Either
+    // parameter can come back 0 or undefined on an unusual driver, hence
+    // the fallbacks — an unreadable limit means "use the absolute cap",
+    // not "use zero".
+    const maxRenderbuffer = Number(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)) || 0;
+    const maxTexture = Number(gl.getParameter(gl.MAX_TEXTURE_SIZE)) || 0;
+    const reported = Math.min(
+      maxRenderbuffer || STAGE_ABSOLUTE_MAX_DIM,
+      maxTexture || STAGE_ABSOLUTE_MAX_DIM,
+    );
+    this.maxDim = Math.max(STAGE_MIN_DIM, Math.min(STAGE_ABSOLUTE_MAX_DIM, reported));
 
     this.canvas.addEventListener('webglcontextlost', (e) => {
       e.preventDefault();
@@ -317,8 +463,15 @@ export class GLStage {
     apply: (set: UniformSetter) => void,
   ): { sx: number; sy: number; sw: number; sh: number } {
     const { gl } = this;
-    const sw = Math.max(1, Math.min(Math.round(w), MAX_DIM));
-    const sh = Math.max(1, Math.min(Math.round(h), MAX_DIM));
+
+    // Grow first, then clamp — so the clamp below is against the size we
+    // actually just secured rather than a fixed constant. On a board of
+    // preview cards this is a no-op comparison and the canvas stays at
+    // STAGE_MIN_DIM exactly as before.
+    const capacity = this.ensureCapacity(Math.round(w), Math.round(h));
+
+    const sw = Math.max(1, Math.min(Math.round(w), capacity.width));
+    const sh = Math.max(1, Math.min(Math.round(h), capacity.height));
 
     gl.useProgram(compiled.program);
     gl.bindVertexArray(this.vao);

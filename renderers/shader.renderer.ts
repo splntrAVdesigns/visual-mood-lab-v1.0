@@ -1,7 +1,7 @@
 import type { Asset } from '@/types/asset';
 import type { ControlSchema, ParamState, ParamValue, RGBA } from './control-schema';
 import { defaultsOf } from './control-schema';
-import { getGLStage, glUnavailableReason, MAX_DIM, type CompiledProgram, type UniformSetter } from '@/lib/gl/context-pool';
+import { getGLStage, glUnavailableReason, type CompiledProgram, type UniformSetter } from '@/lib/gl/context-pool';
 import { getTextureImage } from '@/lib/gl/texture-source';
 import type { AssetRenderer, CaptureOpts, Quality, RenderContext } from './types';
 
@@ -134,13 +134,36 @@ export class ShaderRenderer implements AssetRenderer {
      * Clamp to the shared canvas BEFORE these values become u_resolution.
      *
      * They previously did not agree: stage.draw() clamped the viewport to
-     * MAX_DIM internally while u_resolution kept the unclamped size, so on a
-     * retina display the enlarged view told shaders the screen was 1800px
-     * wide while only 900px were actually drawn. Every centred shader
-     * shifted into a corner — which is exactly what SDF Sphere was doing.
+     * the stage's ceiling internally while u_resolution kept the unclamped
+     * size, so on a retina display the enlarged view told shaders the
+     * screen was 1800px wide while only 900px were actually drawn. Every
+     * centred shader shifted into a corner — which is exactly what SDF
+     * Sphere was doing. That agreement is preserved below.
+     *
+     * WHAT CHANGED: the clamp is now UNIFORM rather than per-axis, and it
+     * clamps against the stage's live ceiling rather than a fixed
+     * constant.
+     *
+     * Per-axis clamping quietly destroyed the aspect ratio of any
+     * non-square region whose long edge exceeded the ceiling. A 3840x2160
+     * fullscreen surface became a 900x900 SQUARE buffer, which was then
+     * drawImage'd into a 16:9 canvas below — a 1.78x horizontal stretch on
+     * every shader in fullscreen on a widescreen display, with
+     * u_resolution additionally telling the shader its surface was square
+     * so anything doing its own aspect correction compensated the wrong
+     * way. Invisible in the enlarged panel (aspect-ratio: 1, so the region
+     * is genuinely square there) and invisible on the card grid (nowhere
+     * near the ceiling), which is why it survived this long.
+     *
+     * Scaling both axes by the same factor keeps the region's shape
+     * whatever its size, and keeps u_resolution honest about it.
      */
-    const w = Math.max(1, Math.min(Math.round(ctx.width * scale), MAX_DIM));
-    const h = Math.max(1, Math.min(Math.round(ctx.height * scale), MAX_DIM));
+    const stageMax = stage.maxDimension;
+    const rawW = Math.max(1, Math.round(ctx.width * scale));
+    const rawH = Math.max(1, Math.round(ctx.height * scale));
+    const fit = Math.min(1, stageMax / Math.max(rawW, rawH));
+    const w = Math.max(1, Math.round(rawW * fit));
+    const h = Math.max(1, Math.round(rawH * fit));
 
     if (this.canvas.width !== w || this.canvas.height !== h) {
       this.canvas.width = w;
