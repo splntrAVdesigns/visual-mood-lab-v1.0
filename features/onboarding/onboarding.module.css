@@ -235,11 +235,24 @@
 .sheetBody {
   padding: 4px 18px 0 18px;
   overflow-y: auto;
-  flex: 1;
+  /* NOT flex:1 — that shorthand sets flex-basis:0%, which forces this to
+     split remaining space 50/50 with .sheetSpacer below regardless of
+     actual content height. A short card (e.g. Step 1) would then get
+     squeezed into half the space it needs, triggering this element's own
+     overflow-y:auto on content that would otherwise fit — a scrollbar and
+     a sliver of visible content, with the "missing" other half showing up
+     as dead space in .sheetSpacer instead. flex: 0 1 auto sizes this to
+     its content first (up to the space available) and only shrinks if it
+     must; overflow-y:auto remains purely a safety net for a card whose
+     content is taller than the sheet, not the normal case. */
+  flex: 0 1 auto;
 }
 
 .sheetSpacer {
-  flex: 1;
+  /* The only element that should actually grow — absorbs whatever's left
+     after the topbar/body/progress/footer take what they need, pushing
+     progress+footer to the bottom on short-content cards. */
+  flex: 1 1 auto;
   min-height: 4px;
 }
 
@@ -752,30 +765,12 @@
   border-bottom-color: var(--accent);
 }
 
-.headerCtaBtn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: var(--step--1);
-}
-
-.headerCtaDot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
-  animation: headerCtaPulse 2.2s ease-in-out infinite;
-}
-
-@keyframes headerCtaPulse {
-  0%,
-  100% {
-    opacity: 0.4;
-  }
-  50% {
-    opacity: 1;
-  }
-}
+/*
+ * The onboarding header CTA's styling now lives in features.module.css
+ * (.onboardingCta / .onboardingCtaDot), alongside the other header rules
+ * it needs to share a media-query block with — see that file's 720px
+ * section for why. Nothing to duplicate here.
+ */
 
 .mGridLabel {
   composes: gridLabel;

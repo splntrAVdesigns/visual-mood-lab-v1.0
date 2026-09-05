@@ -78,6 +78,35 @@
   opacity: 0.8;
 }
 
+/* Onboarding guide entry point — desktop only; the drawer's "Start here"
+   item (see .navAbout below) is mobile's way in. Ghost-variant Button, not
+   an IconButton, since this is a discovery affordance earning its label
+   text, not a repeat-use icon control like its neighbors. */
+.onboardingCta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--step--1);
+}
+
+.onboardingCtaDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: onboardingCtaPulse 2.2s ease-in-out infinite;
+}
+
+@keyframes onboardingCtaPulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .search {
   display: flex;
   align-items: center;
@@ -131,6 +160,14 @@
      between the two rules and reintroducing the same bug; !important is
      the version that can't regress that way. */
   .wordmark {
+    display: none !important;
+  }
+
+  /* Same reasoning and same !important requirement as .wordmark just
+     above — this lives in the same media block specifically so there's
+     no cross-file source-order question at all, matching the gotcha
+     documented on .wordmark. */
+  .onboardingCta {
     display: none !important;
   }
 

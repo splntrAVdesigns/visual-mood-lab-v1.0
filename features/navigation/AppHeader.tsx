@@ -15,7 +15,6 @@ import {
 } from '@/components/ui';
 import { useBoardStore, useInspectorStore, usePlaybackStore } from '@/stores';
 import { useOnboardingStore } from '@/features/onboarding/onboardingStore';
-import onboardingStyles from '@/features/onboarding/onboarding.module.css';
 import { LiveIndicator } from './LiveIndicator';
 import { SeedButton } from './SeedButton';
 import s from '../features.module.css';
@@ -122,20 +121,13 @@ export function AppHeader({ onOpenSettings, needsSeed = false }: AppHeaderProps)
           {/*
             Onboarding entry point #2 (drawer item is #1 — see NavDrawer).
             Desktop-only per the design brief; mobile relies on the drawer
-            item alone. Plain Button (ghost variant), not an IconButton —
-            this one earns its label text since it's a discovery affordance,
-            not a repeat-use control like the icons around it. Styled from
-            onboarding.module.css, not features.module.css — that file
-            wasn't available when this was built, so this avoids editing a
-            shared stylesheet blind. Worth moving the class over once
-            someone with the file can place it properly.
+            item alone. Hiding is handled in features.module.css's own
+            720px header media block (alongside .wordmark/.accountMenu),
+            not here — see that file for why cross-file source order would
+            otherwise be a real risk for this exact kind of rule.
           */}
-          <Button
-            variant="ghost"
-            onClick={() => openGuide()}
-            className={onboardingStyles.headerCtaBtn}
-          >
-            <span className={onboardingStyles.headerCtaDot} aria-hidden="true" />
+          <Button variant="ghost" onClick={() => openGuide()} className={s.onboardingCta}>
+            <span className={s.onboardingCtaDot} aria-hidden="true" />
             New here? Start here.
           </Button>
         </>
