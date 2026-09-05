@@ -7,6 +7,10 @@ import s from './onboarding.module.css';
 
 interface OnboardingSheetShellProps {
   open: boolean;
+  /** True only when the viewport currently matches this shell (mobile
+      here, desktop in OnboardingCardShell). See OnboardingCardShell.tsx's
+      doc comment for the double-mount body-scroll-lock bug this fixes. */
+  isActiveViewport: boolean;
   step: number;
   onClose: () => void;
   onBack: () => void;
@@ -18,6 +22,7 @@ interface OnboardingSheetShellProps {
 
 export function OnboardingSheetShell({
   open,
+  isActiveViewport,
   step,
   onClose,
   onBack,
@@ -27,7 +32,7 @@ export function OnboardingSheetShell({
   children,
 }: OnboardingSheetShellProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  useDismissable(open, onClose, panelRef, true);
+  useDismissable(open && isActiveViewport, onClose, panelRef, true);
 
   return (
     <div className={s.mobileRoot} data-open={open ? 'true' : 'false'}>

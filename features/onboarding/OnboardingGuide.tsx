@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useOnboardingStore } from './onboardingStore';
 import { OnboardingCardShell } from './OnboardingCardShell';
 import { OnboardingSheetShell } from './OnboardingSheetShell';
@@ -22,6 +23,26 @@ import { Step5ModulationMobile } from './steps/Step5ModulationMobile';
 import { Step6SoundVfxMobile } from './steps/Step6SoundVfxMobile';
 import { Step7FeaturesMobile } from './steps/Step7FeaturesMobile';
 import { Step8ClosingMobile } from './steps/Step8ClosingMobile';
+
+/**
+ * Reports whether the current viewport matches the mobile breakpoint,
+ * updating live on resize. Deliberately only used to gate *side effects*
+ * (see isActiveViewport below), never to decide what to render — render
+ * output must stay identical between server and client, but an effect
+ * that only runs after mount carries no hydration risk no matter what it
+ * reads.
+ */
+function useIsMobileViewport(): boolean {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 820px)');
+    setIsMobile(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return isMobile;
+}
 
 const DESKTOP_STEPS: Record<number, React.ComponentType> = {
   1: Step1Welcome,
@@ -51,7 +72,13 @@ const MOBILE_STEPS: Record<number, React.ComponentType> = {
  * and a mobile sheet at all times; onboarding.module.css hides whichever
  * doesn't match the current breakpoint. This mirrors FocusedAssetOverlay /
  * MobileFocusedView rather than picking a variant in JS, so there's no
- * viewport-detection hydration mismatch to guard against.
+ * viewport-detection hydration mismatch for the *rendered output*.
+ *
+ * The one thing that genuinely can't be duplicated is dismissal side
+ * effects — see isActiveViewport below and the fix note in
+ * OnboardingCardShell.tsx. Only the shell matching the live viewport gets
+ * `isActiveViewport=true`, so only one of the two ever actually runs
+ * useDismissable's scroll-lock/focus-trap/Escape handling at a time.
  */
 export function OnboardingGuide() {
   const isOpen = useOnboardingStore((st) => st.isOpen);
@@ -62,6 +89,7 @@ export function OnboardingGuide() {
   const skip = useOnboardingStore((st) => st.skip);
 
   const isLastStep = step === TOTAL_STEPS;
+  const isMobileViewport = useIsMobileViewport();
   const DesktopStep = DESKTOP_STEPS[step] ?? Step1Welcome;
   const MobileStep = MOBILE_STEPS[step] ?? Step1WelcomeMobile;
 
@@ -69,6 +97,7 @@ export function OnboardingGuide() {
     <>
       <OnboardingCardShell
         open={isOpen}
+        isActiveViewport={!isMobileViewport}
         step={step}
         onClose={close}
         onBack={back}
@@ -81,6 +110,7 @@ export function OnboardingGuide() {
 
       <OnboardingSheetShell
         open={isOpen}
+        isActiveViewport={isMobileViewport}
         step={step}
         onClose={close}
         onBack={back}

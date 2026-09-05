@@ -7,6 +7,9 @@ import s from './onboarding.module.css';
 
 interface OnboardingCardShellProps {
   open: boolean;
+  /** True only when the viewport currently matches this shell (desktop
+      here, mobile in OnboardingSheetShell) — see the fix note below. */
+  isActiveViewport: boolean;
   step: number;
   onClose: () => void;
   onBack: () => void;
@@ -18,19 +21,36 @@ interface OnboardingCardShellProps {
 }
 
 /**
- * Note on double-mount: both this shell and OnboardingSheetShell call
- * useDismissable with the same `open` state, and both are always mounted
- * (see OnboardingGuide's doc comment for why). This is safe, not just
- * expedient: the CSS-hidden shell's panel has no `offsetParent`, so
- * useDismissable's own focus-steal and tab-trap logic silently no-op
- * against it (browsers don't move focus into display:none subtrees, and
- * the tab-trap filters on offsetParent !== null). The Escape handler and
- * body-scroll-lock in the hidden shell are redundant with the visible
- * one's but harmless — same onClose either way, same overflow value
- * either way.
+ * Fixed bug, worth keeping the history: this comment originally argued
+ * the double-mount (this shell + OnboardingSheetShell, both always
+ * rendered, CSS hides one) was safe for useDismissable's body-scroll-lock
+ * too, on the theory that both effects lock/unlock the same value so it
+ * doesn't matter that both run. That reasoning was wrong. In practice:
+ * whichever shell's effect runs SECOND captures `document.body.style.
+ * overflow` as already `'hidden'` (the first shell's effect just set it),
+ * not the true original value. On close, the first shell's cleanup
+ * correctly restores the real original — but the second shell's cleanup
+ * then runs and sets it back to `'hidden'` again, since that's the
+ * (wrong) "previous" value *it* captured. Net effect: scroll stays locked
+ * after closing the guide. This reproduced reliably on mobile (confirmed
+ * against real device testing) because the board there relies on native
+ * body/window scroll, so a stuck `overflow:hidden` is immediately
+ * visible; it was very likely present on desktop too, just harder to
+ * notice.
+ *
+ * Fix: only the shell matching the live viewport (`isActiveViewport`,
+ * computed once in OnboardingGuide via a `matchMedia` effect — safe
+ * because it only gates a side effect, never render output) passes a real
+ * `open` value into useDismissable. The other always passes `false`, so
+ * its useDismissable is a no-op — no lock, no focus-trap, no Escape
+ * handler — regardless of the guide's true open state. `data-open` below
+ * still reflects the real `open` prop unconditionally, since that's what
+ * drives this shell's own CSS visibility and must stay correct at both
+ * viewport sizes.
  */
 export function OnboardingCardShell({
   open,
+  isActiveViewport,
   step,
   onClose,
   onBack,
@@ -40,7 +60,7 @@ export function OnboardingCardShell({
   children,
 }: OnboardingCardShellProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  useDismissable(open, onClose, panelRef, true);
+  useDismissable(open && isActiveViewport, onClose, panelRef, true);
 
   return (
     <div
