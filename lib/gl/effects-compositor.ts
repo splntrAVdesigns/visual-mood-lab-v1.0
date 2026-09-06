@@ -226,7 +226,20 @@ function compositeEffectsUnsafe(
   // this frame's passes run — it holds LAST frame's trail; updated with
   // THIS frame's result only after the loop below, so a pass never reads
   // its own not-yet-produced output.
-  const usesEcho = active.some((i) => i.effectType === 'dark-strobe' && typeof i.params.echo === 'number' && i.params.echo > 0);
+  // Generalized (Tier 1+2 batch) beyond the original dark-strobe-only
+  // check — see EffectDefinition.usesEcho's own doc for the reasoning.
+  // Dark Strobe keeps its exact original opt-in behavior (echo must be
+  // both declared AND above 0); any other effect declaring usesEcho is
+  // active whenever the instance itself is, since the buffer is
+  // load-bearing to those effects rather than an optional dial.
+  const usesEcho = active.some((i) => {
+    const def = getEffectDefinition(i.effectType);
+    if (!def?.usesEcho) return false;
+    if (i.effectType === 'dark-strobe') {
+      return typeof i.params.echo === 'number' && i.params.echo > 0;
+    }
+    return true;
+  });
   let echoTex: WebGLTexture | null = null;
   if (usesEcho) {
     const { canvas: echoCanvas } = getEcho(input.cardId, w, h);
@@ -333,6 +346,24 @@ function applyEffectParams(
     if (control.kind === 'color') {
       const c = value as RGBA;
       set(binding.name, binding.glslType === 'vec4' ? [c.r, c.g, c.b, c.a] : [c.r, c.g, c.b]);
+    } else if (control.kind === 'select') {
+      // BUGFIX (VFX diagnostic pass): a select-kind control's ParamState
+      // value is always a string (coerce()'s 'select' case, matching
+      // SelectControl.default: string / SelectOption.value: string) —
+      // never a number, even when valueType is 'number'. The typeof
+      // check below only ever matched number/boolean/array, so a
+      // uniform-bound select (e.g. Math Warp's `mode`) silently never
+      // received a value and sat at WebGL's uninitialized-uniform
+      // default of 0 forever — "Swirl" was unreachable regardless of
+      // what was selected. Same parse-at-binding-time contract
+      // SelectControl.valueType's own doc comment already promises
+      // ("the renderer parses option values with Number() before
+      // writing them to the binding") and the exact pattern
+      // ShaderRenderer.applyParams already uses for tile-level
+      // @select-annotated uniforms (renderers/shader.renderer.ts) —
+      // mirrored here so both binding paths agree.
+      const raw = typeof value === 'string' ? value : control.default;
+      set(binding.name, control.valueType === 'number' ? Number(raw) : 0);
     } else if (typeof value === 'number' || typeof value === 'boolean' || Array.isArray(value)) {
       set(binding.name, value as number | boolean | number[]);
     }

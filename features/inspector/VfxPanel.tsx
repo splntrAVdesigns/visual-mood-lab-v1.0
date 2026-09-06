@@ -14,17 +14,23 @@ import s from '../features.module.css';
 
 /** Fixed display order + label for each family — matches the order the
     catalog was originally scoped in (strobe shipped first, then the
-    mirror set, then warp, then color; slice is future/post-beta and has
-    no members yet, kept here so it's ready the moment one ships). Not
-    derived from the manifest's own array order, since JSON entry order
-    isn't a reliable place to encode this and could silently drift if the
-    manifest gets reordered for an unrelated reason later. */
+    mirror set, then warp, then color), with the Tier 1+2 batch's three
+    new families slotted in: `slice` (previously reserved, empty, now
+    populated by Graphic Slice), `texture` (Grain, CRT), and `feedback`
+    (Turbulent Feedback) — placed after `warp` since all three are still
+    "reshape/perturb the frame" territory before `color`, which changes
+    grading rather than geometry. Not derived from the manifest's own
+    array order, since JSON entry order isn't a reliable place to encode
+    this and could silently drift if the manifest gets reordered for an
+    unrelated reason later. */
 const FAMILY_ORDER: { key: EffectFamily; label: string }[] = [
   { key: 'strobe', label: 'Strobe' },
   { key: 'mirror', label: 'Mirror' },
   { key: 'warp', label: 'Warp' },
-  { key: 'color', label: 'Color' },
   { key: 'slice', label: 'Slice' },
+  { key: 'texture', label: 'Texture' },
+  { key: 'feedback', label: 'Feedback' },
+  { key: 'color', label: 'Color' },
 ];
 
 function groupByFamily(definitions: EffectDefinition[]): { key: EffectFamily; label: string; items: EffectDefinition[] }[] {

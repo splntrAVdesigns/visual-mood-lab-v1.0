@@ -122,6 +122,13 @@ export const params = {
     kind: 'slider', label: 'Spin speed', group: 'motion',
     min: -2, max: 2, step: 0.01, default: 0.25,
     modulatable: true,
+    hint: 'Turntable spin — the table stays flat and rotates around its vertical axis, like a lazy susan.',
+  },
+  horizontalSpin: {
+    kind: 'slider', label: 'Horizontal spin', group: 'motion',
+    min: -2, max: 2, step: 0.01, default: 0,
+    modulatable: true,
+    hint: 'A second, independent rotation around a horizontal axis — tips/rolls the table rather than turning it flat. Combine with Spin speed for a tumbling motion.',
   },
   tilt: {
     kind: 'slider', label: 'Tilt', group: 'motion',
@@ -149,24 +156,55 @@ export default function sketch(p, get) {
   let simAccumulator = 0;
   let rainTimer = 0;
   let lastW = -1, lastH = -1;
+  let energyHistory = [0, 0, 0, 0, 0, 0, 0, 0]; // rolling window for a local baseline
+  let energyHistoryIdx = 0;
+  let transientCooldown = 0;
 
-  // Audio tap — HIGHEST-UNCERTAINTY piece of this file, flagged in
-  // PLACEMENT.md. Guarded defensively so a missing/renamed bridge
-  // function no-ops instead of crashing the sketch (which would trip
-  // the sandbox's heartbeat watchdog and tear the tile down). Confirm
-  // the real p.getAudioWaveform() contract against public/sandbox/
-  // index.html before relying on this.
+  // Audio tap — CONFIRMED against the real public/sandbox/index.html
+  // source (was a flagged guess before; verified correct, no change
+  // needed to the bridge call itself). What DID need to change is how
+  // this value gets used: the original version continuously scaled
+  // rainRate/dropStrength/rippleHeight every frame, which is why it
+  // didn't feel "synced" despite visibly moving in the Inspector — those
+  // params scale an ALREADY-SMOOTH, already-simulated wave field with
+  // real temporal inertia (ripplePersistence 0.985 means seconds of
+  // decay), so a bass hit just made the existing slow-moving waves
+  // taller for a moment rather than creating a new, snappy event. A
+  // continuous multiplier can't produce a percussive response no matter
+  // how it's tuned — the fix is a discrete trigger instead.
+  //
+  // This detects a RISING EDGE against a short rolling baseline (not a
+  // fixed threshold, since "loud" is relative to the track) and stamps
+  // an EXTRA drop the instant a transient crosses it — layered on top of
+  // the regular timed rain, not replacing it. That's what makes a splash
+  // read as "on the beat" rather than "the water looks different now."
   function readAudioEnergy() {
     if (typeof p.getAudioWaveform !== 'function') return 0;
     const wf = p.getAudioWaveform();
     if (!wf || !wf.length) return 0;
     let sum = 0;
     for (let i = 0; i < wf.length; i++) sum += Math.abs(wf[i]);
-    return sum / wf.length; // rough RMS-ish energy, 0..~1
+    return sum / wf.length;
+  }
+
+  function detectTransient(energy) {
+    let baseline = 0;
+    for (let i = 0; i < energyHistory.length; i++) baseline += energyHistory[i];
+    baseline /= energyHistory.length;
+
+    energyHistory[energyHistoryIdx] = energy;
+    energyHistoryIdx = (energyHistoryIdx + 1) % energyHistory.length;
+
+    // Rising edge: meaningfully above its own recent baseline, not just
+    // "loud" in absolute terms (a quiet passage's transients should
+    // still register; a loud passage's steady-state shouldn't re-trigger
+    // every frame). Cooldown prevents a single hit from firing repeatedly
+    // across consecutive frames while the energy is still elevated.
+    return energy > baseline * 1.4 && energy > 0.05;
   }
 
   function rebuildSceneBuffers(w, h) {
-    const opts = { width: w, height: h, textureFiltering: p.NEAREST, density: 1 };
+    const opts = { width: w, height: h, textureFiltering: p.LINEAR, density: 1 };
     freshScene = p.createFramebuffer(opts);
     accumA = p.createFramebuffer(opts);
     accumB = p.createFramebuffer(opts);
@@ -175,16 +213,66 @@ export default function sketch(p, get) {
   }
 
   p.setup = () => {
-    const cnv = p.createCanvas(p.width || 400, p.height || 400, p.WEBGL);
-    p.pixelDensity(1);
+    // p.width/p.height are still 0 at this point — p5 hasn't created a
+    // canvas yet, so it has nothing to report. windowWidth/windowHeight
+    // reflect the actual containing iframe's size at load time, which is
+    // what a card-embedded sketch needs. The previous `p.width || 400`
+    // fallback ALWAYS hit the 400 branch (0 is falsy), producing a fixed
+    // 400x400 canvas that never matched the real card size and then
+    // never resized afterward, since no windowResized() was defined —
+    // p5 does not auto-resize the canvas on its own; that's the sketch's
+    // job. Confirmed as the real bug from a live report: canvas rendered
+    // pinned to the top-left corner, unaffected by the Zoom control,
+    // identical on desktop and mobile — exactly what a wrong-and-frozen
+    // canvas size looks like, since zoom only moves the camera inside an
+    // already-wrong-sized canvas.
+    const cnv = p.createCanvas(p.windowWidth, p.windowHeight, p.WEBGL);
+    // NOT calling p.pixelDensity() here — the sandbox manages this itself
+    // via the 'quality' message (public/sandbox/index.html calls
+    // instance.pixelDensity(densityFor(quality, ...)) on every quality
+    // change). A fixed pixelDensity(1) call here would silently override
+    // that and disable the sandbox's own preview/full cost management —
+    // found by reading the sandbox source directly, not something this
+    // sketch should second-guess.
 
+    initGL();
+
+    // Best-effort WebGL context-loss handling — flagged as a PLAUSIBLE
+    // mitigation for reported "flashing artifacts" / erratic rendering,
+    // NOT a confirmed fix. This sketch is genuinely GPU-heavy (three
+    // height framebuffers plus three scene framebuffers, three custom
+    // shaders, a real-time simulation), which raises the odds of a
+    // context-loss event under sustained use, especially on lower-power
+    // or mobile GPUs. WebGL does not throw on a stale handle after a
+    // context loss — it silently no-ops or returns garbage — which
+    // matches "erratic/glitching" better than a hard crash would.
+    // preventDefault() on the loss event is required for
+    // 'webglcontextrestored' to fire at all; without it the context
+    // stays dead permanently. If glitching persists after this, it's
+    // most likely NOT context loss and needs a different diagnosis —
+    // browser/GPU details and whether the browser console shows any
+    // WebGL warnings at the moment it happens would help narrow it down.
+    const rawCanvas = cnv.canvas || cnv.elt;
+    if (rawCanvas) {
+      rawCanvas.addEventListener('webglcontextlost', (e) => {
+        e.preventDefault();
+      }, false);
+      rawCanvas.addEventListener('webglcontextrestored', () => {
+        initGL();
+      }, false);
+    }
+  };
+
+  // Pulled out of setup() so the context-restored handler above can
+  // re-run exactly the same initialization without duplicating it.
+  function initGL() {
     simShader = p.createShader(SIM_VERT, SIM_FRAG);
     tableShader = p.createShader(TABLE_VERT, TABLE_FRAG);
     blurShader = p.createShader(SIM_VERT, BLUR_FRAG);
 
     const heightOpts = {
       width: SIM_RES, height: SIM_RES,
-      textureFiltering: p.NEAREST, density: 1, format: p.FLOAT,
+      textureFiltering: p.LINEAR, density: 1, format: p.FLOAT,
     };
     heightCur = p.createFramebuffer(heightOpts);
     heightPrev = p.createFramebuffer(heightOpts);
@@ -194,6 +282,18 @@ export default function sketch(p, get) {
     });
 
     rebuildSceneBuffers(p.width, p.height);
+  }
+
+  // Primary resize path — p5 does not resize its own canvas on a host
+  // resize unless the sketch does it explicitly. This is what actually
+  // fixes the "stuck in the corner" bug; the poll-and-rebuild in draw()
+  // below is a secondary backstop for the one case this project has
+  // already documented windowResized NOT reliably firing for (the
+  // Fullscreen transition, per the known Glyph Swarm/Wound Thread/
+  // Chorus of Eyes issue) — kept as belt-and-suspenders, not a
+  // replacement for this.
+  p.windowResized = () => {
+    p.resizeCanvas(p.windowWidth, p.windowHeight);
   };
 
   function stepSim(damp) {
@@ -248,27 +348,39 @@ export default function sketch(p, get) {
     const warp = get('patternWarp');
     const blurAmt = get('motionBlur');
     const spinSpeed = get('spinSpeed');
+    const horizontalSpin = get('horizontalSpin');
     const tiltDeg = get('tilt');
     const zoomFactor = get('zoom');
     const camDist = TABLE_SIZE * 2.4 / Math.max(zoomFactor, 0.01);
 
-    // ---- audio-reactive rain (schema-level @mod is the primary path —
-    // right-click Rain rate / Drop strength / Ripple height / Pattern
-    // warp / Spin speed / Zoom / Highlight color in the Inspector to
-    // assign mic, track, or LFO. This is a SECOND, direct tap for a more
-    // immediate "splash on transient" feel layered on top. ----
-    const audioEnergy = readAudioEnergy();
-    const effectiveRainRate = audioEnergy > 0
-      ? rainRate * p.constrain(1 - audioEnergy * 0.8, 0.15, 1)
-      : rainRate;
-    const effectiveDropStrength = dropStrength * (1 + audioEnergy * 0.6);
-
+    // ---- regular timed rain (unaffected by audio — see the transient
+    // trigger below for the actual audio-reactive splash) ----
     rainTimer += p.deltaTime;
-    if (rainTimer >= effectiveRainRate) {
+    if (rainTimer >= rainRate) {
       rainTimer = 0;
       stampDrop(
         p.random(0.15, 0.85), p.random(0.15, 0.85),
-        effectiveDropStrength * p.random(0.6, 1.0), dropSize,
+        dropStrength * p.random(0.6, 1.0), dropSize,
+      );
+    }
+
+    // ---- audio-reactive splash: a genuine transient trigger, not a
+    // continuous scale. Schema-level @mod (right-click Rain rate / Drop
+    // strength / Ripple height / Pattern warp / Spin speed / Zoom /
+    // Highlight color in the Inspector) is still the primary, general
+    // modulation path and is unaffected by this. This is specifically
+    // for the "feels synced to the beat" ask — a new drop lands the
+    // instant a transient is detected, independent of the regular rain
+    // timer, so the visual response tracks the actual audio event
+    // instead of waiting up to a full rain-rate interval. ----
+    if (transientCooldown > 0) transientCooldown -= p.deltaTime;
+    const audioEnergy = readAudioEnergy();
+    if (transientCooldown <= 0 && detectTransient(audioEnergy)) {
+      transientCooldown = 120; // ms — prevents one hit re-triggering across a few frames
+      stampDrop(
+        p.random(0.25, 0.75), p.random(0.25, 0.75),
+        dropStrength * p.constrain(1 + audioEnergy * 1.5, 0.8, 2.2),
+        dropSize * 1.3, // slightly larger than ambient rain — reads as a distinct "hit"
       );
     }
 
@@ -293,8 +405,25 @@ export default function sketch(p, get) {
     // pointLight() here — see file header. All lighting is authored
     // directly in TABLE_FRAG.
     p.rotateX(p.radians(90));
-    p.rotateY(p.frameCount * 0.002 * spinSpeed);
-    p.rotateX(p.radians(tiltDeg * 0.3));
+    // rotateZ, not rotateY, for Spin speed — verified by matrix derivation,
+    // not assumed. After rotateX(90) flattens the table, a SUBSEQUENT
+    // rotate operates in the frame AS ALREADY TRANSFORMED: the local Y
+    // axis at that point maps to world Z (a horizontal, in-plane axis),
+    // and the local Z axis maps to world -Y (vertical). The old
+    // rotateY(spin) call was therefore spinning around a horizontal axis
+    // — tipping the table end-over-end, exactly the "flips on itself"
+    // bug report. rotateZ(spin) here rotates around the vertical axis
+    // instead, the correct flat "turntable" spin.
+    p.rotateZ(p.frameCount * 0.002 * spinSpeed);
+    // Horizontal spin is a SEPARATE, independent control — deliberately
+    // reusing what rotateY does at this point in the transform stack
+    // (rotation around the horizontal, in-plane axis) as an intentional
+    // second axis, not the accidental one Spin speed used to be.
+    p.rotateY(p.frameCount * 0.002 * horizontalSpin);
+    // *0.6, not the old *0.3 — doubles the effective tilt range per the
+    // "increase tilt ability by 1x more" ask, without changing the
+    // slider's own displayed 0-30 range.
+    p.rotateX(p.radians(tiltDeg * 0.6));
 
     p.shader(tableShader);
     tableShader.setUniform('uHeight', heightCur);
@@ -475,7 +604,14 @@ float patternValue(vec2 uv, float warpPhase) {
     float r = length(c) * 30.0 - uTime * 1.2 + warpPhase;
     return smoothstep(0.4, 0.6, fract(r));
   }
-  return 0.5;
+  // Solid: 0.0, not 0.5. The old 0.5 permanently mixed table and
+  // highlight 50/50 across the ENTIRE surface regardless of wave
+  // activity — table color never actually showed as a distinct base,
+  // which is exactly the "colors blending instead of having distinct
+  // jobs" complaint. 0.0 makes table color the true, undiluted base;
+  // highlight now only enters via crestMix below, tied to real height/
+  // gradient — i.e. only where a wave actually is.
+  return 0.0;
 }
 
 void main() {
@@ -485,18 +621,51 @@ void main() {
 
   float diffuse = max(dot(N, -L1), 0.0);
   vec3 H = normalize(-L1 + V);
-  float spec = pow(max(dot(N, H), 0.0), 48.0);
+  // Dual specular ("clearcoat" trick) — a tight, bright glint plus a
+  // broader, softer sheen underneath it. A single narrow specular term
+  // (the old pow(...,48.0) alone) reads as a hard plastic dot rather
+  // than a wet/glassy surface; layering a second, wide, low-intensity
+  // lobe under it is the standard cheap way to fake the clearcoat look
+  // the original reference material was going for (MeshPhysicalMaterial
+  // clearcoat: 1.0) without an actual second render pass.
+  float specTight = pow(max(dot(N, H), 0.0), 64.0);
+  float specWide = pow(max(dot(N, H), 0.0), 6.0) * 0.25;
+  float spec = specTight + specWide;
 
-  float ao = clamp(0.75 + vHeight * 0.6, 0.4, 1.15);
+  // Fresnel rim — view-dependent edge brightening, tied to the highlight
+  // color specifically. This gives highlight color a SECOND distinct
+  // job (rim/edge accent, on top of "wave crest" below) reinforcing that
+  // the two colors do different things rather than reading as one
+  // blended surface color.
+  float fresnel = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+
+  // Wider AO range for real light/shadow separation — the old
+  // 0.4..1.15 range read flat under most lighting angles. Troughs now
+  // go noticeably darker, crests noticeably brighter.
+  float ao = clamp(0.55 + vHeight * 0.9, 0.22, 1.3);
 
   float warpPhase = vHeight * uWarp * 6.0 + vGradMag * uWarp * 10.0;
   float pat = patternValue(vUv, warpPhase);
 
   vec3 base = mix(uColorTable, uColorHighlight, pat);
-  float crestMix = clamp(vHeight * 1.5 + vGradMag * 3.0, 0.0, 1.0);
-  base = mix(base, uColorHighlight, crestMix * 0.6);
+  // smoothstep, not a raw linear clamp — the old version had a visible
+  // "seam" where the ramp hit its 0/1 ceiling abruptly. smoothstep's
+  // S-curve eases into and out of the transition instead of clipping,
+  // which is what "not fluidly blending / smooth gradient meshing" was
+  // actually describing.
+  float crestMixRaw = clamp(vHeight * 1.5 + vGradMag * 3.0, 0.0, 1.0);
+  float crestMix = smoothstep(0.0, 1.0, crestMixRaw);
+  base = mix(base, uColorHighlight, crestMix * 0.85);
 
-  vec3 lit = base * (0.25 + diffuse * 0.9) * ao + vec3(spec) * 0.6;
+  // Specular tinted toward highlight color rather than raw white — pure
+  // vec3(spec) reads as a hard plastic/CG artifact ("you're placing
+  // white in there"); a real wet surface's highlight picks up some of
+  // the surrounding color instead of being colorless.
+  vec3 specColor = mix(vec3(1.0), uColorHighlight, 0.45);
+
+  vec3 lit = base * (0.25 + diffuse * 0.9) * ao
+    + specColor * spec * 0.7
+    + uColorHighlight * fresnel * 0.18;
   vec3 toned = acesApprox(lit * 1.4);
   vec3 gammaCorrected = pow(toned, vec3(1.0 / 2.2));
 

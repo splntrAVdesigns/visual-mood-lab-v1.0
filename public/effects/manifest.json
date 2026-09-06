@@ -6,7 +6,7 @@
       "title": "Dark Strobe",
       "family": "strobe",
       "file": "dark-strobe.frag",
-      "hint": "Black-flicker strobe, driven by rate and duty cycle. The only Beta-tier effect that's temporal rather than spatial — see IMPLEMENTATION_PLAN.md §7 Phase 4.96 for why it shipped first in Part 1.",
+      "hint": "Black-flicker strobe, driven by rate and duty cycle. The only Beta-tier effect that's temporal rather than spatial \u2014 see IMPLEMENTATION_PLAN.md \u00a77 Phase 4.96 for why it shipped first in Part 1.",
       "params": [
         {
           "id": "rate",
@@ -67,7 +67,7 @@
           "kind": "slider",
           "label": "Echo",
           "group": "params",
-          "hint": "Fading trail of recent frames, ghosting through the strobe's dark gaps. 0 disables it entirely — no extra cost when off.",
+          "hint": "Fading trail of recent frames, ghosting through the strobe's dark gaps. 0 disables it entirely \u2014 no extra cost when off.",
           "default": 0,
           "min": 0,
           "max": 1,
@@ -80,7 +80,8 @@
             "glslType": "float"
           }
         }
-      ]
+      ],
+      "usesEcho": true
     },
     {
       "id": "linear-mirror",
@@ -99,7 +100,7 @@
           "min": 0,
           "max": 360,
           "step": 1,
-          "unit": "°",
+          "unit": "\u00b0",
           "order": 0,
           "modulatable": true,
           "binding": {
@@ -134,7 +135,7 @@
       "title": "Quad Mirror",
       "family": "mirror",
       "file": "quad-mirror.frag",
-      "hint": "Folds all four quadrants around an adjustable center point into one — the classic 4-way mirror.",
+      "hint": "Folds all four quadrants around an adjustable center point into one \u2014 the classic 4-way mirror.",
       "params": [
         {
           "id": "centerX",
@@ -178,7 +179,7 @@
       "title": "Invert",
       "family": "mirror",
       "file": "invert.frag",
-      "hint": "Point reflection through an adjustable center — completes the Linear/Quad/Invert mirror family.",
+      "hint": "Point reflection through an adjustable center \u2014 completes the Linear/Quad/Invert mirror family.",
       "params": [
         {
           "id": "centerX",
@@ -222,7 +223,7 @@
       "title": "Math Warp",
       "family": "warp",
       "file": "math-warp.frag",
-      "hint": "Parametric domain warps — Quadratic is the T(x,y) = [x+y, x²−y²] transform; Swirl a vortex fold. More formulas can be added later without growing this list.",
+      "hint": "Parametric domain warps \u2014 Quadratic is the T(x,y) = [x+y, x\u00b2\u2212y\u00b2] transform; Swirl a vortex fold. More formulas can be added later without growing this list.",
       "params": [
         {
           "id": "mode",
@@ -271,7 +272,7 @@
           "kind": "slider",
           "label": "Scale",
           "group": "params",
-          "hint": "Zoom of the warp field — smaller values pull the formula's detail wider across the frame.",
+          "hint": "Zoom of the warp field \u2014 smaller values pull the formula's detail wider across the frame.",
           "default": 1.5,
           "min": 0.2,
           "max": 4,
@@ -292,7 +293,7 @@
       "title": "Hue Shift LUT",
       "family": "color",
       "file": "hue-shift.frag",
-      "hint": "HSV hue/saturation/brightness grade. Shader-based, not a texture LUT yet — see the shader's own doc for the scoping note.",
+      "hint": "HSV hue/saturation/brightness grade. Shader-based, not a texture LUT yet \u2014 see the shader's own doc for the scoping note.",
       "params": [
         {
           "id": "hue",
@@ -303,7 +304,7 @@
           "min": 0,
           "max": 360,
           "step": 1,
-          "unit": "°",
+          "unit": "\u00b0",
           "order": 0,
           "modulatable": true,
           "binding": {
@@ -348,6 +349,490 @@
         }
       ],
       "accentColor": "#FF5C9E"
+    },
+    {
+      "id": "white-strobe",
+      "title": "White Strobe",
+      "family": "strobe",
+      "file": "dark-strobe.frag",
+      "hint": "Same engine as Dark Strobe, flashing to white instead of black. Echo isn't offered here yet \u2014 see the shader's own doc note.",
+      "params": [
+        {
+          "id": "rate",
+          "kind": "slider",
+          "label": "Rate",
+          "group": "params",
+          "default": 8,
+          "min": 0.5,
+          "max": 30,
+          "step": 0.1,
+          "unit": "Hz",
+          "order": 0,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_strobeRate",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "duty",
+          "kind": "slider",
+          "label": "Duty cycle",
+          "group": "params",
+          "hint": "Fraction of each cycle held white. Higher = more white, less visible frame.",
+          "default": 0.5,
+          "min": 0.05,
+          "max": 0.95,
+          "step": 0.01,
+          "order": 1,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_strobeDuty",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "hardness",
+          "kind": "slider",
+          "label": "Edge hardness",
+          "group": "params",
+          "hint": "0 = smooth crossfade between lit and white. 1 = a hard on/off cut.",
+          "default": 1,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "order": 2,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_strobeHardness",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "flashColor",
+          "kind": "color",
+          "label": "Flash color",
+          "group": "params",
+          "default": {
+            "r": 1,
+            "g": 1,
+            "b": 1,
+            "a": 1
+          },
+          "order": 3,
+          "modulatable": false,
+          "binding": {
+            "target": "uniform",
+            "name": "u_flashColor",
+            "glslType": "vec3"
+          }
+        }
+      ]
+    },
+    {
+      "id": "grain",
+      "title": "Grain",
+      "family": "texture",
+      "file": "grain.frag",
+      "hint": "Per-pixel film-grain noise. Stateless and cheap \u2014 no feedback buffer, one hash function.",
+      "params": [
+        {
+          "id": "intensity",
+          "kind": "slider",
+          "label": "Intensity",
+          "group": "params",
+          "default": 0.15,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "order": 0,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_grainIntensity",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "size",
+          "kind": "slider",
+          "label": "Grain size",
+          "group": "params",
+          "hint": "Grain cell size in source pixels \u2014 higher reads as coarser, more analog grain.",
+          "default": 1.5,
+          "min": 1,
+          "max": 8,
+          "step": 0.1,
+          "order": 1,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_grainSize",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "colored",
+          "kind": "toggle",
+          "label": "Colored grain",
+          "group": "params",
+          "hint": "Off = monochrome grain. On = independent per-channel noise, a punchier/dirtier look.",
+          "default": false,
+          "order": 2,
+          "binding": {
+            "target": "uniform",
+            "name": "u_grainColored",
+            "glslType": "bool"
+          }
+        }
+      ],
+      "accentColor": "#C9A66B"
+    },
+    {
+      "id": "crt",
+      "title": "CRT",
+      "family": "texture",
+      "file": "crt.frag",
+      "hint": "Barrel curvature, scanlines, RGB subpixel mask, and edge vignette \u2014 the classic tube-monitor look. Density controls scanline spacing; raise it if scanlines are beating against a tile's own motion.",
+      "params": [
+        {
+          "id": "curvature",
+          "kind": "slider",
+          "label": "Curvature",
+          "group": "params",
+          "default": 0.15,
+          "min": 0,
+          "max": 0.5,
+          "step": 0.01,
+          "order": 0,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_curvature",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "scanlines",
+          "kind": "slider",
+          "label": "Scanlines",
+          "group": "params",
+          "default": 0.4,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "order": 1,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_scanlineIntensity",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "density",
+          "kind": "slider",
+          "label": "Density",
+          "group": "params",
+          "hint": "Vertical pixels per scanline pair. Higher = fewer, thicker lines and less aliasing against a moving tile.",
+          "default": 3,
+          "min": 1.5,
+          "max": 8,
+          "step": 0.1,
+          "order": 2,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_scanlineDensity",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "vignette",
+          "kind": "slider",
+          "label": "Vignette",
+          "group": "params",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "order": 3,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_vignette",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "mask",
+          "kind": "slider",
+          "label": "RGB mask",
+          "group": "params",
+          "default": 0.3,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "order": 4,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_maskStrength",
+            "glslType": "float"
+          }
+        }
+      ],
+      "accentColor": "#5CFF7A"
+    },
+    {
+      "id": "noise-displace",
+      "title": "Noise Displacement",
+      "family": "warp",
+      "file": "noise-displace.frag",
+      "hint": "Smooth value-noise UV warp \u2014 a continuously drifting distortion, distinct from Math Warp's closed-form transforms and Graphic Slice's discrete band cuts.",
+      "params": [
+        {
+          "id": "amount",
+          "kind": "slider",
+          "label": "Amount",
+          "group": "params",
+          "default": 0.05,
+          "min": 0,
+          "max": 0.5,
+          "step": 0.005,
+          "order": 0,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_amount",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "scale",
+          "kind": "slider",
+          "label": "Scale",
+          "group": "params",
+          "default": 2,
+          "min": 0.5,
+          "max": 8,
+          "step": 0.1,
+          "order": 1,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_scale",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "speed",
+          "kind": "slider",
+          "label": "Speed",
+          "group": "params",
+          "default": 0.3,
+          "min": 0,
+          "max": 2,
+          "step": 0.01,
+          "order": 2,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_speed",
+            "glslType": "float"
+          }
+        }
+      ],
+      "accentColor": "#FFD24A"
+    },
+    {
+      "id": "graphic-slice",
+      "title": "Graphic Slice",
+      "family": "slice",
+      "file": "slice.frag",
+      "hint": "Row-banded glitch displacement \u2014 bands re-randomize on a stepped clock rather than drifting, for discrete cuts instead of a smooth wobble.",
+      "params": [
+        {
+          "id": "bands",
+          "kind": "slider",
+          "label": "Bands",
+          "group": "params",
+          "default": 16,
+          "min": 2,
+          "max": 64,
+          "step": 1,
+          "order": 0,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_bandCount",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "amount",
+          "kind": "slider",
+          "label": "Amount",
+          "group": "params",
+          "default": 0.08,
+          "min": 0,
+          "max": 0.3,
+          "step": 0.005,
+          "order": 1,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_amount",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "rate",
+          "kind": "slider",
+          "label": "Rate",
+          "group": "params",
+          "default": 6,
+          "min": 0.5,
+          "max": 30,
+          "step": 0.1,
+          "unit": "Hz",
+          "order": 2,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_rate",
+            "glslType": "float"
+          }
+        }
+      ],
+      "accentColor": "#FF4A6A"
+    },
+    {
+      "id": "turbulent-feedback",
+      "title": "Turbulent Feedback",
+      "family": "feedback",
+      "file": "turbulent-feedback.frag",
+      "hint": "The accumulated trail is resampled through turbulent noise before blending back over the live frame, so the trail itself churns rather than just fading. Reuses Dark Strobe's echo-buffer mechanism.",
+      "usesEcho": true,
+      "params": [
+        {
+          "id": "turbulence",
+          "kind": "slider",
+          "label": "Turbulence",
+          "group": "params",
+          "default": 0.2,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "order": 0,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_turbulence",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "decay",
+          "kind": "slider",
+          "label": "Decay",
+          "group": "params",
+          "default": 0.6,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "order": 1,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_decay",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "scale",
+          "kind": "slider",
+          "label": "Scale",
+          "group": "params",
+          "default": 1.5,
+          "min": 0.5,
+          "max": 8,
+          "step": 0.1,
+          "order": 2,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_scale",
+            "glslType": "float"
+          }
+        }
+      ],
+      "accentColor": "#B8FF4A"
+    },
+    {
+      "id": "broke-tv",
+      "title": "BrokeTV",
+      "family": "texture",
+      "file": "broke-tv.frag",
+      "hint": "Static vertical color-bar bands, like a mistracking analog signal. Static by default (Roll speed = 0) so it never competes with a tile's own motion; dial Roll speed up for an intentional horizontal drift.",
+      "params": [
+        {
+          "id": "intensity",
+          "kind": "slider",
+          "label": "Intensity",
+          "group": "params",
+          "default": 0.5,
+          "min": 0,
+          "max": 1,
+          "step": 0.01,
+          "order": 0,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_intensity",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "bandWidth",
+          "kind": "slider",
+          "label": "Band width",
+          "group": "params",
+          "default": 2,
+          "min": 1,
+          "max": 8,
+          "step": 0.1,
+          "order": 1,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_bandWidth",
+            "glslType": "float"
+          }
+        },
+        {
+          "id": "rollSpeed",
+          "kind": "slider",
+          "label": "Roll speed",
+          "group": "params",
+          "hint": "0 = fully static. Above 0, the band pattern drifts horizontally at this many pixels/sec.",
+          "default": 0,
+          "min": 0,
+          "max": 200,
+          "step": 1,
+          "order": 2,
+          "modulatable": true,
+          "binding": {
+            "target": "uniform",
+            "name": "u_rollSpeed",
+            "glslType": "float"
+          }
+        }
+      ],
+      "accentColor": "#FF8CDB"
     }
   ]
 }

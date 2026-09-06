@@ -40,11 +40,26 @@ float valueNoise(vec2 p){
    total, with each higher octave's weight fading in smoothly and
    continuously as complexity increases, so every point on the slider
    changes something. */
+/* PERF (turbulent-flow perf pass): the loop below always ran all 5 octaves
+   before this change, even when an octave's weight had already clamped to
+   0.0 — the GPU still executed valueNoise() and multiplied the result by
+   zero, since `complexity` is a uniform, not a compile-time constant, so
+   the compiler could never prove that branch dead on its own.
+   The weight sequence is monotonic non-increasing once it first hits 0.0
+   for a given complexity (verified numerically, not assumed — see
+   scripts/verify-turbulent-flow-fbm.py in the delivery notes), so once w
+   hits 0 every remaining octave is also 0 and can be skipped outright.
+   This is a pure compute optimization: output is bit-identical to the
+   original for every value of `complexity` in its [0.4, 2.2] range. It
+   costs nothing at complexity ≈ 2.2 (all 5 octaves are genuinely needed
+   there) and saves up to 80% of this function's cost at complexity ≈ 0.4,
+   ~40% at the default of 1.0. */
 float fbm(vec2 p, float complexity){
   float total = 0.0, amp = 0.5, freq = 1.0;
   float cNorm = clamp((complexity - 0.4) / (2.2 - 0.4), 0.0, 1.0) * 5.0;
   for(int o = 0; o < 5; o++){
     float w = (o == 0) ? 1.0 : clamp(cNorm - float(o - 1), 0.0, 1.0);
+    if(o > 0 && w <= 0.0) break;
     total += valueNoise(p * freq) * amp * w;
     amp *= 0.5; freq *= 2.0;
   }
@@ -138,14 +153,29 @@ void main(){
     vec2 warp = morphWarp(sp * 0.5, morphT, u_turbulence * 1.3, u_complexity);
     vec2 curlP = sp + warp;
     float eps = 0.02;
-    float n1 = fbm(curlP + vec2(0.0, eps), u_complexity), n2 = fbm(curlP - vec2(0.0, eps), u_complexity);
-    float n3 = fbm(curlP + vec2(eps, 0.0), u_complexity), n4 = fbm(curlP - vec2(eps, 0.0), u_complexity);
-    vec2 curl = vec2((n1 - n2) / (2.0 * eps), -(n3 - n4) / (2.0 * eps));
+    // PERF: was a central difference (4 fbm evals: +-x, +-y). Switched to a
+    // forward difference (3 evals: base, +x, +y), which is the standard
+    // cheaper curl-noise formulation — the accuracy difference is a fixed
+    // half-step bias in a field that's already noise-driven and constantly
+    // animating, and isn't visually distinguishable from central difference
+    // here. Cuts this section's fbm() calls by 25% at every complexity
+    // setting (not just at low complexity, where the fbm early-exit above
+    // already helps).
+    float n0 = fbm(curlP, u_complexity);
+    float n1 = fbm(curlP + vec2(0.0, eps), u_complexity);
+    float n3 = fbm(curlP + vec2(eps, 0.0), u_complexity);
+    vec2 curl = vec2((n1 - n0) / eps, -(n3 - n0) / eps);
     float curlLen = length(curl) + 1e-5;
     vec2 dir = curl / curlLen;
 
     float licSum = 0.0, licWeight = 0.0;
-    const int TAPS = 14;
+    // PERF: was 14 (29 unrolled taps/pixel). 9 (19 taps) keeps the streak
+    // silhouette intact — weight still falls off linearly to the ends of
+    // the kernel — while cutting the dominant cost of this mode by ~34%,
+    // independent of complexity/turbulence settings. If the streaks read as
+    // noticeably thinner or noisier on a real screen, raise this back
+    // toward 11–12 as a middle ground; it's the single number to tune.
+    const int TAPS = 9;
     for(int i = -TAPS; i <= TAPS; i++){
       float fi = float(i);
       float w = 1.0 - abs(fi) / float(TAPS + 1);

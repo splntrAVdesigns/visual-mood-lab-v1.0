@@ -31,10 +31,11 @@ const typedManifest = manifest as EffectsManifest;
 
 /** The base control every effect gets for free — see EffectInstance's doc
     in types.ts for why this lives here rather than on each definition.
-    `id` is namespaced with `fx:` at the point an instance's controls are
-    resolved for the Modulate panel (see toModulationControls below), not
-    here — this schema fragment is reused verbatim for every instance of
-    the same effectType, so it can't bake in a specific instance id. */
+    Per-instance modulation routing is resolved directly against
+    `${cardId}:fx:${instanceId}:${controlId}` mod-bus keys in
+    lib/render/pool.ts's resolveEffectsForFrame — this schema fragment is
+    reused verbatim for every instance of the same effectType and never
+    bakes in a specific instance id itself. */
 const MIX_CONTROL: Control = {
   id: 'mix', kind: 'slider', label: 'Mix', group: 'params',
   default: 1, min: 0, max: 1, step: 0.01, order: -1,
@@ -101,26 +102,14 @@ export async function getEffectShaderSource(effectType: string): Promise<string 
   return source;
 }
 
-/**
- * Namespaces an effect instance's modulatable controls (mix + any params
- * flagged `modulatable: true`) with `fx:<instanceId>:` prefixed ids, so
- * they can be concatenated onto an asset's own schema.controls and handed
- * to the EXISTING ModulationPanel unchanged — see IMPLEMENTATION_PLAN.md
- * §7 Phase 4.96's "one modulation system, not two" decision. The
- * instance id embedded in the control id (not chain position) is what
- * makes a routing survive a reorder — coerce()/applyModulation() only
- * ever see the id as an opaque string key, so this is a pure UI-layer
- * convention, not something either of those functions need to know about.
- */
-export function toModulationControls(effectType: string, instanceId: string): Control[] {
-  const schema = getEffectSchema(effectType);
-  if (!schema) return [];
-  const def = definitions.get(effectType);
-  return schema.controls
-    .filter((c) => c.modulatable)
-    .map((c) => ({
-      ...c,
-      id: `fx:${instanceId}:${c.id}`,
-      label: `${def?.title ?? effectType} — ${c.label}`,
-    }));
-}
+// NOTE (VFX diagnostic pass): an earlier draft of this file had a
+// `toModulationControls()` export here, documented as namespacing an
+// effect instance's modulatable controls onto the asset's own schema for
+// the existing ModulationPanel. That approach was superseded before
+// shipping — VfxPanel.tsx renders its own per-effect ModRow directly
+// instead, and pool.ts's resolveEffectsForFrame keys the mod bus off
+// `${cardId}:fx:${instanceId}:${controlId}` without needing a
+// concatenated control list at all (see resolveEffectsForFrame's own doc
+// comment for the real mechanism). The function was dead code — zero
+// call sites — and its doc described a design that was never actually
+// wired up, so it's removed rather than left to mislead the next read.

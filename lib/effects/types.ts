@@ -19,7 +19,11 @@ import type { Control, ModState, ParamState } from '@/renderers/control-schema';
     management before real usage data justifies raising it. */
 export const MAX_EFFECTS_PER_CHAIN = 3;
 
-export type EffectFamily = 'strobe' | 'color' | 'mirror' | 'warp' | 'slice';
+// 'texture' and 'feedback' added for the Tier 1+2 batch (Grain, CRT;
+// Turbulent Feedback respectively). 'slice' was already reserved — see
+// its own FAMILY_ORDER comment in VfxPanel.tsx — and now has its first
+// member, Graphic Slice.
+export type EffectFamily = 'strobe' | 'color' | 'mirror' | 'warp' | 'slice' | 'texture' | 'feedback';
 
 /**
  * A registry entry — shared, global, loaded once from effects/manifest.json.
@@ -52,6 +56,21 @@ export interface EffectDefinition {
    * rule the rest of the UI depends on, not just add color.
    */
   accentColor?: string;
+  /**
+   * Whether this effect treats the shared echo/feedback buffer
+   * (lib/gl/effects-compositor.ts's echoCanvases + u_echoBuffer) as
+   * something it needs maintained while active. Added for the Tier 1+2
+   * batch alongside Turbulent Feedback, the buffer's second consumer —
+   * see compositeEffectsUnsafe's `usesEcho` computation for exactly how
+   * this is read. Dark Strobe is a special case kept for backward
+   * compatibility: it declares `usesEcho: true` here but is ADDITIONALLY
+   * gated on its own `echo` param being above 0, so switching Echo to 0
+   * still costs nothing extra, same as before this field existed. Any
+   * other effect that sets this true is treated as needing the buffer
+   * whenever the instance itself is enabled — the buffer isn't an
+   * optional bonus knob for those effects, it's load-bearing to the look.
+   */
+  usesEcho?: boolean;
   /**
    * Effect-specific params, in Control shape. The base `mix` control is
    * NOT declared here — every effect gets it for free, added by the
