@@ -1013,6 +1013,13 @@
         "seamless",
         "tiling"
       ]
-    }
+    },
+{
+  "slug": "rippling-table",
+  "type": "p5",
+  "file": "sketches/rippling-table.js",
+  "title": "Rippling Table",
+  "tags": ["3d", "water", "audio-reactive", "shader", "interactive"]
+}
   ]
 }
