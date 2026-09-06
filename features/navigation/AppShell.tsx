@@ -11,6 +11,7 @@ import { useInspectorStore, usePlaybackStore } from '@/stores';
 import type { Asset } from '@/types/asset';
 import type { User } from '@/lib/auth';
 import { attachAudioLifecycleListeners } from '@/lib/sound/context';
+import { attachTrackVisibilityLifecycle } from '@/lib/sound/track';
 import { AppChrome } from './AppChrome';
 import s from '../features.module.css';
 
@@ -77,6 +78,18 @@ export function AppShell({ assets, needsSeed = false, focusItemId, user = null }
   // track.ts/mic.ts's isAudioUnlocked() gate is the other half.
   useEffect(() => {
     return attachAudioLifecycleListeners();
+  }, []);
+
+  // Mobile audio bugfix (2026-09), part 2 — auto-pause every playing
+  // track the moment the tab/app is hidden, so the Play/Pause icon
+  // always reflects reality on return instead of staying stuck on
+  // Pause for a track that's actually gone silent. See
+  // lib/sound/track.ts's attachTrackVisibilityLifecycle() doc for the
+  // full reasoning — kept as its own effect/listener pair rather than
+  // folded into the one above, since this owns track-level playback
+  // state, not the shared context itself.
+  useEffect(() => {
+    return attachTrackVisibilityLifecycle();
   }, []);
 
   return (

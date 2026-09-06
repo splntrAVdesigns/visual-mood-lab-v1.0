@@ -49,7 +49,13 @@
  * Location: lib/sound/track.ts
  */
 
-import { getAudioContext, getMasterGain, isAudioUnlocked, unlockAudio } from './context';
+import {
+  getAudioContext,
+  getMasterGain,
+  isAudioUnlocked,
+  resetAudioContextForRecovery,
+  unlockAudio,
+} from './context';
 import { BandAutoGain } from './autoGain';
 
 /* ------------------------------------------------------------------ *
@@ -480,27 +486,51 @@ export function getTrackMeta(cardId: string): TrackMeta | null {
 /** Builds and starts a fresh AudioBufferSourceNode at `offset` — the node
     is one-shot per the Web Audio spec (start() can only be called once),
     so "resume" always means "make a new node," never reuse the old one. */
-function startSourceAt(cardId: string, handle: TrackHandle, offset: number): void {
-  // Modulation diagnostic (2026-09), fix #1 — drop the auto-gain baseline
-  // every time playback (re)starts, not just once per loadTrack(). Without
-  // this, getTrackBand()'s BandAutoGain instance keeps converging its
-  // baseline toward silence (raw = 0) the whole time the track is loaded
-  // but paused — nothing stops it, since bus.ts's rawSignal() reads
-  // audio.* every frame a control is routed to it, play state or not.
-  // The instant Play fires, raw jumps to real program level while the
-  // baseline is still sitting near 0, producing a near-maximal deviation
-  // (see autoGain.ts's DEVIATION_GAIN) that reaches the shaped output
-  // within ~150ms (ATTACK_PER_SECOND) — read by a person as a hard snap
-  // on whatever control Audio happens to be routed to. Resetting here
-  // means the very next apply() call reseeds the baseline directly from
-  // real signal (BandAutoGain.apply()'s own first-call dt=0 case sets
-  // baseline = raw with zero deviation), instead of from a stale silence
-  // reading. Also fires on seekTrack()'s resume path, which calls this
-  // same function — a scrub is exactly the same kind of content
-  // discontinuity as a fresh Play and deserves the same treatment.
-  handle.bandGain.reset();
+/** Rebuilds a track's per-node audio subgraph (gain/tapGain/both
+    analysers) against a NEW AudioContext, mutating `handle` in place and
+    reconnecting everything exactly as loadTrack() originally did against
+    the old one. `handle.buffer` is untouched — a decoded AudioBuffer
+    isn't tied to any particular BaseAudioContext, so it's the one part
+    of loadTrack()'s original work that survives a context rebuild for
+    free; everything else here was, and would otherwise stay silently
+    orphaned on a context nothing can reach anymore. Only ever called
+    from startSourceAt()'s recovery path below — the normal loadTrack()
+    path keeps its own inline construction, so an ordinary fresh upload
+    is untouched by this. */
+function rewireTrackGraph(ctx: AudioContext, handle: TrackHandle): void {
+  const gain = ctx.createGain();
+  gain.gain.value = handle.mutedPlayback ? 0 : handle.volume;
+  gain.connect(getMasterGain());
 
-  const ctx = getAudioContext();
+  const tapGain = ctx.createGain();
+  tapGain.gain.value = 1;
+
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 128;
+  analyser.smoothingTimeConstant = 0.4;
+  tapGain.connect(analyser);
+
+  const waveAnalyser = ctx.createAnalyser();
+  waveAnalyser.fftSize = 256;
+  tapGain.connect(waveAnalyser);
+
+  handle.gain = gain;
+  handle.tapGain = tapGain;
+  handle.analyser = analyser;
+  handle.freqData = new Float32Array(analyser.frequencyBinCount) as Float32Array<ArrayBuffer>;
+  handle.waveAnalyser = waveAnalyser;
+  handle.waveBuffer = new Float32Array(waveAnalyser.fftSize) as Float32Array<ArrayBuffer>;
+}
+
+/** The actual "build a node, wire it, start it" work — pulled out of
+    startSourceAt() so the recovery path below can retry it verbatim
+    against a freshly rebuilt context, instead of duplicating it. */
+function buildAndStart(
+  ctx: AudioContext,
+  cardId: string,
+  handle: TrackHandle,
+  offset: number,
+): void {
   const source = ctx.createBufferSource();
   source.buffer = handle.buffer;
   source.loop = handle.loop;
@@ -541,6 +571,54 @@ function startSourceAt(cardId: string, handle: TrackHandle, offset: number): voi
   handle.startedAt = ctx.currentTime - offset;
 }
 
+function startSourceAt(cardId: string, handle: TrackHandle, offset: number): void {
+  // Modulation diagnostic (2026-09), fix #1 — drop the auto-gain baseline
+  // every time playback (re)starts, not just once per loadTrack(). Without
+  // this, getTrackBand()'s BandAutoGain instance keeps converging its
+  // baseline toward silence (raw = 0) the whole time the track is loaded
+  // but paused — nothing stops it, since bus.ts's rawSignal() reads
+  // audio.* every frame a control is routed to it, play state or not.
+  // The instant Play fires, raw jumps to real program level while the
+  // baseline is still sitting near 0, producing a near-maximal deviation
+  // (see autoGain.ts's DEVIATION_GAIN) that reaches the shaped output
+  // within ~150ms (ATTACK_PER_SECOND) — read by a person as a hard snap
+  // on whatever control Audio happens to be routed to. Resetting here
+  // means the very next apply() call reseeds the baseline directly from
+  // real signal (BandAutoGain.apply()'s own first-call dt=0 case sets
+  // baseline = raw with zero deviation), instead of from a stale silence
+  // reading. Also fires on seekTrack()'s resume path, which calls this
+  // same function — a scrub is exactly the same kind of content
+  // discontinuity as a fresh Play and deserves the same treatment.
+  handle.bandGain.reset();
+
+  try {
+    buildAndStart(getAudioContext(), cardId, handle, offset);
+  } catch {
+    // Mobile bugfix (2026-09), part 2 — this is the actual "tapped Play,
+    // the time counter moved, but nothing came out of the speakers"
+    // failure: after a second (or later) background/foreground cycle,
+    // the shared context — or this handle's own gain/tapGain/analyser
+    // nodes, built against whatever context existed at loadTrack() time
+    // — can end up unusable in a way that doesn't necessarily surface as
+    // `ctx.state === 'closed'` first (see context.ts's
+    // resetAudioContextForRecovery() doc). createBufferSource()/start()
+    // throwing here is the first hard signal something's actually wrong,
+    // not just suspended.
+    //
+    // Recovery: force a genuinely fresh AudioContext, rebuild THIS
+    // handle's own subgraph against it (handle.buffer itself is
+    // untouched — a decoded AudioBuffer isn't tied to any particular
+    // context), and retry exactly once. A second failure here means
+    // something other than a stale context/graph is wrong, and is
+    // allowed to propagate rather than retrying forever or failing
+    // silently a second time.
+    resetAudioContextForRecovery();
+    const freshCtx = getAudioContext();
+    rewireTrackGraph(freshCtx, handle);
+    buildAndStart(freshCtx, cardId, handle, offset);
+  }
+}
+
 export function playTrack(cardId: string): void {
   const handle = tracks.get(cardId);
   if (!handle || handle.playing) return;
@@ -561,6 +639,83 @@ export function pauseTrack(cardId: string): void {
   handle.source = null;
   handle.playing = false;
   emitTrack(cardId, handle);
+}
+
+/* ------------------------------------------------------------------ *
+ * Lifecycle — auto-pause on tab/app leave.
+ *
+ * Mobile bugfix (2026-09): a track that was `playing` when the phone
+ * slept or the tab was backgrounded stayed marked `playing` for as long
+ * as the person was away — the Play/Pause icon kept showing Pause the
+ * whole time, even though nothing was actually reaching the speakers.
+ * On return, `attachAudioLifecycleListeners()` (context.ts) resumes the
+ * shared context if it can, so a SHORT trip away (a few seconds) picks
+ * back up transparently and audibly, matching what was already observed
+ * to work. But treating "was playing before" as "should still be
+ * playing now" gets less true the longer the gap is, and is never true
+ * at all if the underlying context/graph didn't survive the gap (see
+ * startSourceAt()'s recovery path above) — the person's own report of a
+ * stuck Pause icon with silent, still-counting time on a second sleep
+ * cycle is exactly that case surfacing in the UI.
+ *
+ * Explicitly pausing on hide, every time, sidesteps the ambiguity
+ * entirely: the icon always reflects reality the moment the tab is
+ * hidden, and coming back always requires the same fresh, deliberate
+ * Play tap that real playback always needed anyway — which is also
+ * precisely what gives startSourceAt() a genuine user gesture to
+ * recover from if the context needs rebuilding. This does mean a very
+ * brief tab-switch now pauses playback where it previously kept going —
+ * a deliberate trade, since "playback survives a backgrounded tab" was
+ * never fully reliable to begin with (that's the whole reason this fix
+ * exists), and an honest, consistent pause reads better than a resume
+ * that sometimes silently doesn't work.
+ * ------------------------------------------------------------------ */
+
+let trackLifecycleAttached = false;
+
+function pauseAllTracksForBackground(): void {
+  // Iterated as entries (not just values()) since pauseTrack() needs the
+  // cardId to look the handle back up — this keeps the actual stop/
+  // offset/emit logic in exactly one place (pauseTrack itself) rather
+  // than duplicating it here for a marginal iteration saving.
+  for (const [cardId, handle] of tracks) {
+    if (handle.playing) pauseTrack(cardId);
+  }
+}
+
+/**
+ * Wires the auto-pause-on-hide behavior described above. Meant to be
+ * called once from a top-level, always-mounted component (AppShell) —
+ * mirrors context.ts's attachAudioLifecycleListeners() in shape and
+ * mount point, kept as a separate function/listener pair rather than
+ * folded into that one: context.ts owns "is the shared hardware audio
+ * path alive," this owns "what should track-level playback/UI state do
+ * when the page goes away" — two different concerns that happen to
+ * share a triggering event, not one concern split arbitrarily across
+ * files.
+ */
+export function attachTrackVisibilityLifecycle(): () => void {
+  if (typeof document === 'undefined') return () => {};
+  if (trackLifecycleAttached) return () => {};
+  trackLifecycleAttached = true;
+
+  const onVisibilityChange = () => {
+    if (document.visibilityState === 'hidden') pauseAllTracksForBackground();
+  };
+  // pagehide fires on more genuine "leaving" transitions than
+  // visibilitychange alone catches on some mobile browsers (navigating
+  // away entirely, some app-switch paths) — belt and suspenders, same
+  // reasoning as context.ts's own pageshow listener for the resume side.
+  const onPageHide = () => pauseAllTracksForBackground();
+
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener('pagehide', onPageHide);
+
+  return () => {
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('pagehide', onPageHide);
+    trackLifecycleAttached = false;
+  };
 }
 
 export function seekTrack(cardId: string, seconds: number): void {

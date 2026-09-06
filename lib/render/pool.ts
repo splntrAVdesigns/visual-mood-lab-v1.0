@@ -2,7 +2,7 @@ import type { Asset, CardState } from '@/types/asset';
 import type { AssetRenderer, RenderContext } from '@/renderers/types';
 import { createRenderer } from '@/renderers/registry';
 import { getModBus } from '@/lib/modulation/bus';
-import { applyModulation, type ModState, type ParamState, type SoundState } from '@/renderers/control-schema';
+import { applyModulation, defaultsOf, type ModState, type ParamState, type SoundState } from '@/renderers/control-schema';
 import { MAX_LIVE_RENDERERS } from '@/stores/playbackStore';
 import { normalizeSoundState } from '@/lib/sound/types';
 import { startTileAudio, stopTileAudio, stopAllTileAudio, updateTileAudio, isTileAudioActive, retriggerTileAudio } from '@/lib/sound/engine';
@@ -227,7 +227,40 @@ class RendererPool {
       promotedAt: now,
       mounted: false,
       failure: null,
-      baseParams: { ...(asset.params ?? {}) },
+      // Modulation diagnostic (2026-09) — the actual root cause behind
+      // "Morph Speed doesn't seem to be modulating" on Turbulent Flow,
+      // and a systemic gap, not a tile-specific one:
+      //
+      // Every renderer's OWN internal params correctly hydrate against
+      // schema defaults before falling back to the saved value — see
+      // shader.renderer.ts/p5.renderer.ts/media.renderer.ts's identical
+      // `{ ...defaultsOf(this.schema), ...(asset.params ?? {}) }` line in
+      // each of their mount()s. This baseParams copy — a SEPARATE object,
+      // used specifically as the "value to offset from" by
+      // applyModulation() below and sampleModulated() further down — was
+      // built from `asset.params` ALONE, with no equivalent merge. Any
+      // control added (or newly given a default) to a schema AFTER an
+      // asset's params were last saved has no key in the stored
+      // `asset.params` at all, so `entry.baseParams[controlId]` reads as
+      // `undefined` — and applyModulation()'s own `if (base === undefined)
+      // continue` (a few lines down) then silently, permanently skips
+      // that one routing, while every other control on the same tile
+      // continues to modulate normally, since THEIR keys do exist in the
+      // saved params. Exactly the "modulation works across the board,
+      // just not for this one control" signature.
+      //
+      // `setBaseParams()` (called whenever the Inspector opens and hands
+      // over its own already-hydrated ParamState) papers over this for
+      // the rest of a session once it fires — which is why this doesn't
+      // reproduce on every tile, every time, only ones whose modulation
+      // is observed before the base Inspector panel has been opened in
+      // that session. `asset.schema` is already synchronously available
+      // here (cached at ingest — see the Asset type's own doc), so there
+      // is no need to wait for renderer.mount(); this can hydrate exactly
+      // the same way every renderer already does for itself.
+      baseParams: asset.schema
+        ? { ...defaultsOf(asset.schema), ...(asset.params ?? {}) }
+        : { ...(asset.params ?? {}) },
       modState: { ...(asset.mod ?? {}) },
       // normalizeSoundState rather than a bare spread: `sound` is a JSONB
       // column, so a row written before the note rack landed still has

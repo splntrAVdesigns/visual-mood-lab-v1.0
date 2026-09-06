@@ -19,6 +19,20 @@ let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 
 function ensure(): { ctx: AudioContext; master: GainNode } {
+  // Mobile bugfix (2026-09), part 2 — a `closed` context used to be
+  // treated as "already have one" (this only ever checked `!ctx`, and a
+  // closed AudioContext object is still non-null), so every subsequent
+  // call kept handing back the same dead object. `createBufferSource()`
+  // on a closed context throws synchronously, which is one concrete way
+  // "tapped Play, time counter moved, no sound" could happen — the throw
+  // needs somewhere to actually get caught (see track.ts's
+  // startSourceAt()), but this is the fix that makes recovery possible
+  // at all: treat `closed` exactly like "no context yet" and rebuild.
+  if (ctx && ctx.state === 'closed') {
+    ctx = null;
+    master = null;
+  }
+
   if (!ctx) {
     ctx = new AudioContext();
     master = ctx.createGain();
@@ -94,6 +108,39 @@ export function setMasterVolume(volume: number): void {
 
 export function isAudioUnlocked(): boolean {
   return ctx !== null && ctx.state === 'running';
+}
+
+/**
+ * Mobile bugfix (2026-09), part 2 — last-resort recovery for a context
+ * that reports itself as fine (not `closed`, per ensure()'s own check
+ * above) but genuinely isn't producing audio, which the Web Audio API
+ * gives no reliable way to detect ahead of time. Forces the NEXT
+ * getAudioContext()/ensure() call to build a fresh AudioContext (and
+ * fresh master/limiter chain) from scratch, rather than trying to keep
+ * reusing whatever the current one silently is.
+ *
+ * Deliberately closes the old context first when possible — leaving a
+ * still-open-but-abandoned AudioContext running costs real resources
+ * (some platforms cap how many can exist concurrently) — but never lets
+ * a failure to close block the rebuild; a caller reaching for this is
+ * already in a "something's gone wrong, get back to a known-good state"
+ * path, not one where a second failure should compound the first.
+ *
+ * Callers are expected to rebuild whatever they need (a fresh
+ * AudioBufferSourceNode, a fresh MediaStreamSource, etc.) against the
+ * new context immediately after — this only clears the slate, it
+ * doesn't restart anything on its own.
+ */
+export function resetAudioContextForRecovery(): void {
+  const stale = ctx;
+  ctx = null;
+  master = null;
+  if (stale && stale.state !== 'closed') {
+    void stale.close().catch(() => {
+      // Already unusable, which is exactly the state we're recovering
+      // from — nothing further to do.
+    });
+  }
 }
 
 /** Full stop — every connected tile subgraph should have already
