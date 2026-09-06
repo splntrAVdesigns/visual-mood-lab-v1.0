@@ -14,7 +14,7 @@
  * Location: lib/sound/meter.ts
  */
 
-import { getAudioContext } from './context';
+import { getAudioContext, isAudioUnlocked } from './context';
 
 interface MeterHandle {
   analyser: AnalyserNode;
@@ -67,16 +67,30 @@ export function getMeterLevel(cardId: string): number {
 
   if (!handle) return 0;
 
+  // Mobile bugfix (2026-09): while the shared AudioContext is suspended
+  // (backgrounded tab, OS-level interruption — see context.ts's lifecycle
+  // doc), Web Audio processing halts entirely and this analyser's buffer
+  // just freezes at whatever it last held, rather than reporting silence.
+  // Reading it as if it were live silently reported "still playing" with
+  // no actual sound reaching the speakers. Treating "not running" as
+  // "no new peak this frame" and falling through to the existing decay
+  // path makes the meter fade to 0 exactly like real silence would,
+  // instead of holding a stale non-zero reading indefinitely.
+  const peak = isAudioUnlocked() ? readPeak(handle) : 0;
+
+  const decayed = handle.level * Math.max(0, 1 - DECAY_PER_SECOND * dt);
+  handle.level = Math.min(1, Math.max(peak, decayed));
+  return handle.level;
+}
+
+function readPeak(handle: MeterHandle): number {
   handle.analyser.getFloatTimeDomainData(handle.buffer);
   let peak = 0;
   for (let i = 0; i < handle.buffer.length; i++) {
     const abs = Math.abs(handle.buffer[i]);
     if (abs > peak) peak = abs;
   }
-
-  const decayed = handle.level * Math.max(0, 1 - DECAY_PER_SECOND * dt);
-  handle.level = Math.min(1, Math.max(peak, decayed));
-  return handle.level;
+  return peak;
 }
 
 export function isMeterActive(cardId: string): boolean {

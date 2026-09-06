@@ -102,3 +102,90 @@ export function isAudioUnlocked(): boolean {
 export function suspendAudio(): Promise<void> | void {
   return ctx?.suspend();
 }
+
+/* ------------------------------------------------------------------ *
+ * Lifecycle — resume on tab/app return.
+ *
+ * Mobile bugfix (2026-09): the browser can suspend the AudioContext out
+ * from under the app — phone locked, tab backgrounded, another app/call
+ * takes the audio session — and nothing in this codebase ever asked for
+ * it back. `unlockAudio()` above only ever fires from inside a click
+ * handler (Play, Sound toggle, a fresh track load); none of those happen
+ * automatically just because the tab became visible again. A track whose
+ * `playing` flag was already `true` before backgrounding stays marked
+ * that way, its source node still technically scheduled, but the shared
+ * context sits suspended and nothing is actually reaching the speakers —
+ * while getTrackLevel()/getMicLevel()/getMeterLevel() keep reporting
+ * whatever the (frozen — Web Audio processing halts while suspended)
+ * analyser buffer last held, reading as "still playing" when nothing is
+ * audible. See meter.ts/track.ts/mic.ts's isAudioUnlocked() gate for the
+ * other half of that fix; this half is what gives the context a chance
+ * to actually be running again by the time those get read.
+ * ------------------------------------------------------------------ */
+
+let lifecycleAttached = false;
+
+/**
+ * Wires a resume-on-return listener for the shared AudioContext. Meant to
+ * be called exactly once, from a top-level, always-mounted component
+ * (AppShell) — see that file's own useEffect. Idempotent regardless: a
+ * second call is a no-op rather than double-registering listeners, so
+ * callers don't need to carefully guard against React StrictMode's
+ * double-invoke or a future second mount site.
+ *
+ * Listens on two different signals rather than just `visibilitychange`:
+ *   - `visibilitychange` catches the common case (switch tabs, switch
+ *     apps, screen lock) on every browser.
+ *   - `pageshow` catches bfcache restores specifically — iOS Safari can
+ *     restore a page from the back/forward cache without necessarily
+ *     running through the same visibility transition every other browser
+ *     does, and `event.persisted` is the documented signal for "this
+ *     page came back from bfcache," which is exactly the scenario most
+ *     likely to have left the AudioContext behind in a suspended (or, in
+ *     rarer OS-level interruption cases, unrecoverable) state.
+ *
+ * Doesn't attempt to resurrect a `closed` context — that only happens in
+ * genuinely unrecoverable cases (the OS tore down the audio session
+ * entirely) and would require rebuilding the whole shared graph, which
+ * is real scope beyond this fix; resume() is a no-op on a closed context
+ * regardless, so this stays a safe, silent no-op rather than throwing.
+ */
+export function attachAudioLifecycleListeners(): () => void {
+  if (typeof document === 'undefined') return () => {};
+  if (lifecycleAttached) return () => {};
+  lifecycleAttached = true;
+
+  const tryResume = () => {
+    // Reads the module-level `ctx` directly rather than via ensure() —
+    // this must never CREATE a context (a background tab regaining
+    // visibility is not a user gesture, and creating-then-immediately-
+    // resuming an AudioContext outside a gesture is exactly the pattern
+    // browsers block), only resume one that already exists and has
+    // simply been suspended.
+    if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      void ctx.resume().catch(() => {
+        // Nothing to do — most likely no valid gesture to resume from
+        // yet. The next real tap (Play, Sound toggle) still unlocks it
+        // via unlockAudio() as before; this listener gets another
+        // chance on the next visibility/pageshow event regardless.
+      });
+    }
+  };
+
+  const onVisibilityChange = () => {
+    if (document.visibilityState === 'visible') tryResume();
+  };
+  const onPageShow = (e: PageTransitionEvent) => {
+    if (e.persisted) tryResume();
+  };
+
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener('pageshow', onPageShow);
+
+  return () => {
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('pageshow', onPageShow);
+    lifecycleAttached = false;
+  };
+}

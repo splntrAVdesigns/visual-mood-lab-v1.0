@@ -49,7 +49,7 @@
  * Location: lib/sound/track.ts
  */
 
-import { getAudioContext, getMasterGain, unlockAudio } from './context';
+import { getAudioContext, getMasterGain, isAudioUnlocked, unlockAudio } from './context';
 import { BandAutoGain } from './autoGain';
 
 /* ------------------------------------------------------------------ *
@@ -481,6 +481,25 @@ export function getTrackMeta(cardId: string): TrackMeta | null {
     is one-shot per the Web Audio spec (start() can only be called once),
     so "resume" always means "make a new node," never reuse the old one. */
 function startSourceAt(cardId: string, handle: TrackHandle, offset: number): void {
+  // Modulation diagnostic (2026-09), fix #1 — drop the auto-gain baseline
+  // every time playback (re)starts, not just once per loadTrack(). Without
+  // this, getTrackBand()'s BandAutoGain instance keeps converging its
+  // baseline toward silence (raw = 0) the whole time the track is loaded
+  // but paused — nothing stops it, since bus.ts's rawSignal() reads
+  // audio.* every frame a control is routed to it, play state or not.
+  // The instant Play fires, raw jumps to real program level while the
+  // baseline is still sitting near 0, producing a near-maximal deviation
+  // (see autoGain.ts's DEVIATION_GAIN) that reaches the shaped output
+  // within ~150ms (ATTACK_PER_SECOND) — read by a person as a hard snap
+  // on whatever control Audio happens to be routed to. Resetting here
+  // means the very next apply() call reseeds the baseline directly from
+  // real signal (BandAutoGain.apply()'s own first-call dt=0 case sets
+  // baseline = raw with zero deviation), instead of from a stale silence
+  // reading. Also fires on seekTrack()'s resume path, which calls this
+  // same function — a scrub is exactly the same kind of content
+  // discontinuity as a fresh Play and deserves the same treatment.
+  handle.bandGain.reset();
+
   const ctx = getAudioContext();
   const source = ctx.createBufferSource();
   source.buffer = handle.buffer;
@@ -718,14 +737,29 @@ export function getTrackLevel(cardId: string): number {
 
   if (!handle) return 0;
 
+  // Mobile bugfix (2026-09) — this is the meter directly implicated in
+  // the "meter shows it's playing, nothing audible" report: Track is
+  // SoundMeter.tsx's top-priority source. Same fix as meter.ts's
+  // getMeterLevel() and mic.ts's getMicLevel(): while the shared
+  // AudioContext is suspended, waveAnalyser's buffer freezes rather than
+  // going silent, so it must not be trusted as a live read. See
+  // context.ts's lifecycle doc for the other half of this fix (resuming
+  // the context on tab/app return) — this half is what stops the meter
+  // from lying in the window before that resume completes, or in the
+  // rarer case it can't complete at all.
+  const peak = isAudioUnlocked() ? readTrackPeak(handle) : 0;
+
+  const decayed = handle.level * Math.max(0, 1 - LEVEL_DECAY_PER_SECOND * dt);
+  handle.level = Math.min(1, Math.max(peak, decayed));
+  return handle.level;
+}
+
+function readTrackPeak(handle: TrackHandle): number {
   handle.waveAnalyser.getFloatTimeDomainData(handle.waveBuffer);
   let peak = 0;
   for (let i = 0; i < handle.waveBuffer.length; i++) {
     const abs = Math.abs(handle.waveBuffer[i]);
     if (abs > peak) peak = abs;
   }
-
-  const decayed = handle.level * Math.max(0, 1 - LEVEL_DECAY_PER_SECOND * dt);
-  handle.level = Math.min(1, Math.max(peak, decayed));
-  return handle.level;
+  return peak;
 }

@@ -7,6 +7,7 @@ import { unlockAudio } from '@/lib/sound/context';
 import { enableMic, disableMic } from '@/lib/sound/mic';
 import { getCompatiblePresets } from '@/lib/sound/presets';
 import { WAVE_SHAPE_CONTROL_ID, lfoShapeToWaveShapeValue } from '@/lib/sound/types';
+import { defaultAmountFor, defaultSmoothingFor, pickSafestModulationTarget } from '@/lib/modulation/bus';
 import { SoundMeter } from './SoundMeter';
 import { TrackSection } from './TrackSection';
 import { NoteRack } from './controls/NoteRack';
@@ -102,11 +103,14 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
   // THAT one's source to Mic gives the most immediately obvious "I can
   // hear you" feedback — it's already visibly animating something, so
   // the change reads as "this now reacts to you" rather than as a new,
-  // unexplained motion appearing from nowhere. Falls back to the first
-  // modulatable control when nothing has an LFO yet, so this still does
-  // something useful on every eligible tile, not just ones that already
-  // had a routing — "across the spectrum of asset tiles," not a special
-  // case for a handful of them.
+  // unexplained motion appearing from nowhere. Falls back to
+  // pickSafestModulationTarget() (modulation diagnostic, 2026-09, fix
+  // #6 — the narrowest-range eligible control, not just whichever one
+  // happened to be declared first in the schema) when nothing has an
+  // LFO yet, so this still does something useful, and something gentle,
+  // on every eligible tile, not just ones that already had a routing —
+  // "across the spectrum of asset tiles," not a special case for a
+  // handful of them.
   const autoAssignMicModulation = () => {
     const alreadyRouted = Object.values(mod).some((m) => m.source.startsWith('mic.'));
     if (alreadyRouted) return;
@@ -124,34 +128,46 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
     if (modulatableControls.length === 0) return;
 
     const lfoControl = modulatableControls.find((c) => mod[c.id]?.source.startsWith('lfo.'));
-    const target = lfoControl ?? modulatableControls[0];
+    // Modulation diagnostic fix #6 — the old fallback was simply
+    // modulatableControls[0], whatever happened to be first in the
+    // schema's declared order (which is how a wide-range control like
+    // Scale could end up on the receiving end of Mic's own reactive
+    // shaping). pickSafestModulationTarget() picks the narrowest-range
+    // eligible control instead, when nothing already-LFO'd exists to
+    // prefer. See lib/modulation/bus.ts's own doc for the full reasoning.
+    const target = lfoControl ?? pickSafestModulationTarget(modulatableControls);
+    if (!target) return;
     const current = mod[target.id];
 
     setModulation(target.id, {
       source: 'mic.rms',
-      amount: current?.amount ?? 0.3,
-      smoothing: current?.smoothing ?? 0,
+      // Fix #5 — span-aware default amount instead of a flat 0.3
+      // regardless of the target control's range.
+      amount: current?.amount ?? defaultAmountFor(target),
+      // Fix #4 — Mic now gets a real default (was explicitly 0 before),
+      // via the same shared policy Track uses below.
+      smoothing: current?.smoothing ?? defaultSmoothingFor('mic.rms'),
     });
   };
 
   // Same idea as autoAssignMicModulation above, triggered by a track
   // finishing its load instead of Mic being enabled — see
   // TrackSection.tsx's onTrackLoaded prop. Diverges from the mic version
-  // in two deliberate ways:
+  // in one deliberate way: prefers `waveAmplitude` specifically when the
+  // schema has it, rather than an LFO-having control — a waveform
+  // display's own amplitude reacting is the single most direct "this is
+  // now driven by the music" signal, more so than swapping the source on
+  // whatever happened to already be animating. Falls back to the same
+  // LFO-preferring heuristic, then pickSafestModulationTarget(), for
+  // sketches that don't have a waveAmplitude-shaped control at all.
   //
-  // 1. Prefers `waveAmplitude` specifically when the schema has it,
-  //    rather than an LFO-having control — a waveform display's own
-  //    amplitude reacting is the single most direct "this is now driven
-  //    by the music" signal, more so than swapping the source on
-  //    whatever happened to already be animating. Falls back to the
-  //    same LFO-preferring heuristic, then the first modulatable
-  //    control, for sketches that don't have a waveAmplitude-shaped
-  //    control at all.
-  // 2. Defaults `smoothing` to 0.25, not 0 — a track's Audio — Level
-  //    swings hard and fast on its own; landing with zero smoothing on
-  //    a freshly-auto-assigned route is exactly what read as "erratic
-  //    the moment audio starts." Mic's own 0 default stays as-is here;
-  //    that's a separate control surface this fix wasn't asked to touch.
+  // Amount and smoothing defaults (modulation diagnostic, 2026-09, fixes
+  // #4/#5) now come from the same shared policy Mic uses — see
+  // lib/modulation/bus.ts's defaultAmountFor()/defaultSmoothingFor() —
+  // rather than being separate hardcoded literals here. Track and Mic
+  // each still get their OWN default smoothing value (0.25 vs 0.3) from
+  // that shared function, reflecting that a live mic signal is honestly
+  // noisier than a mixed/mastered track, not two copies of one number.
   const autoAssignTrackModulation = () => {
     const alreadyRouted = Object.values(mod).some((m) => m.source.startsWith('audio.'));
     if (alreadyRouted) return;
@@ -163,13 +179,22 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
 
     const preferred = modulatableControls.find((c) => c.id === 'waveAmplitude');
     const lfoControl = modulatableControls.find((c) => mod[c.id]?.source.startsWith('lfo.'));
-    const target = preferred ?? lfoControl ?? modulatableControls[0];
+    // Fix #6 — same reasoning as autoAssignMicModulation above: fall back
+    // to the narrowest-range eligible control, not schema.controls[0].
+    // waveAmplitude and an existing LFO routing still take priority when
+    // present — this only changes the LAST-resort case, which is
+    // precisely the case that was landing on Scale.
+    const target = preferred ?? lfoControl ?? pickSafestModulationTarget(modulatableControls);
+    if (!target) return;
     const current = mod[target.id];
 
     setModulation(target.id, {
       source: 'audio.rms',
-      amount: current?.amount ?? 0.35,
-      smoothing: current?.smoothing ?? 0.25,
+      // Fix #5 — span-aware default amount, replacing the flat 0.35.
+      amount: current?.amount ?? defaultAmountFor(target),
+      // Fix #4 — now sourced from the same shared policy Mic uses above,
+      // instead of a literal 0.25 that only ever lived here.
+      smoothing: current?.smoothing ?? defaultSmoothingFor('audio.rms'),
     });
   };
 

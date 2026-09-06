@@ -1,4 +1,4 @@
-import type { Modulation, ModSource } from '@/renderers/control-schema';
+import type { Control, Modulation, ModSource } from '@/renderers/control-schema';
 import { getTrackBand, type TrackBand } from '@/lib/sound/track';
 import { getMicBand, type MicBand } from '@/lib/sound/mic';
 
@@ -49,12 +49,36 @@ export interface ModContext {
   pointer: { x: number; y: number };
 }
 
+/** How long a freshly-active routing takes to reach its full configured
+    depth, in ms — see ModulationBus.applyEngageRamp()'s doc. 350ms reads
+    as an intentional, smooth fade-in rather than a perceptible delay;
+    short enough that a person adjusting Amount in real time still feels
+    immediate, long enough to fully absorb autoGain's ~150ms attack (see
+    autoGain.ts's ATTACK_PER_SECOND) plus a margin. */
+const ENGAGE_RAMP_MS = 350;
+
+/** Smoothing's "per-frame fraction toward raw" is calibrated against this
+    reference rate so a given Smoothing value reads the same regardless
+    of the device's actual refresh rate — see sample()'s doc. */
+const SMOOTHING_REFERENCE_FPS = 60;
+
 class ModulationBus {
   private startedAt = performance.now();
   private pointer = { x: 0.5, y: 0.5 };
 
   /** Smoothed values, keyed per routing, so `smoothing` has somewhere to live. */
   private smoothed = new Map<string, number>();
+  /** Wall-clock time of the last sample() call for a smoothed routing —
+      what makes the one-pole filter below dt-normalized rather than a
+      flat per-call fraction. Only populated for routings that currently
+      have smoothing > 0; see sample()'s else-branch. */
+  private smoothTicks = new Map<string, number>();
+  /** Wall-clock time a routing was FIRST sampled since its last forget()
+      — i.e. since it was last removed/reassigned. Drives the engage-ramp
+      in applyEngageRamp() below. Deliberately a separate map from
+      `smoothed`/`smoothTicks`: the ramp applies to every source (LFO,
+      pointer, audio, mic), not only smoothed ones. */
+  private engaged = new Map<string, number>();
 
   get time(): number {
     return (performance.now() - this.startedAt) / 1000;
@@ -73,19 +97,97 @@ class ModulationBus {
    * — every existing call site already has it in scope as part of `key`
    * (`${cardId}:${controlId}`), so this is a second explicit parameter
    * rather than parsing it back out of the string.
+   *
+   * Two shaping stages happen here, in order:
+   *  1. Optional one-pole smoothing (`mod.smoothing`), now dt-normalized
+   *     — see the fraction-per-second comment below. Previously this was
+   *     a flat `(1 - smoothing)` fraction applied once per call, which
+   *     made a given Smoothing value smooth roughly twice as slowly on a
+   *     30fps device as on 60fps, and twice as fast on 120fps. Every
+   *     other rate-like constant in this codebase (autoGain.ts's
+   *     ATTACK_PER_SECOND/BASELINE_CONVERGE_PER_SECOND, meter.ts's
+   *     DECAY_PER_SECOND) is already expressed as a per-second rate
+   *     scaled by measured `dt` for exactly this reason; this brings
+   *     smoothing in line with that convention instead of being the one
+   *     outlier.
+   *  2. The engage-ramp (applyEngageRamp), which runs unconditionally —
+   *     including when smoothing is 0 — since it fixes a different
+   *     problem: a routing with NO history yet (just assigned, or a
+   *     track that just started playing) jumping straight to its full
+   *     configured Amount on the very first frame it's read, regardless
+   *     of how volatile the underlying source is. See that method's doc.
    */
   sample(key: string, mod: Modulation, cardId: string, time = this.time): number {
     const raw = this.rawSignal(mod, time, cardId);
+    const now = performance.now();
 
     const smoothing = mod.smoothing ?? 0;
-    if (smoothing <= 0) return raw;
+    let shaped = raw;
 
-    // One-pole lowpass. Cheap, stable, and enough to take the edge off a
-    // square wave or sample-and-hold without adding a filter dependency.
-    const prev = this.smoothed.get(key) ?? raw;
-    const next = prev + (raw - prev) * (1 - smoothing);
-    this.smoothed.set(key, next);
-    return next;
+    if (smoothing > 0) {
+      const lastTick = this.smoothTicks.get(key) ?? now;
+      const dt = Math.max(0, (now - lastTick) / 1000);
+      this.smoothTicks.set(key, now);
+
+      // One-pole lowpass. `stepAt60` is the fraction-per-call this used
+      // to move at unconditionally; scaling it into a per-second rate
+      // and re-applying it against measured `dt` reproduces the exact
+      // same feel at 60fps while correctly tracking real time at any
+      // other refresh rate.
+      const prev = this.smoothed.get(key) ?? raw;
+      const stepAt60 = 1 - smoothing;
+      const ratePerSecond = stepAt60 * SMOOTHING_REFERENCE_FPS;
+      const frac = Math.min(1, ratePerSecond * dt);
+      shaped = prev + (raw - prev) * frac;
+      this.smoothed.set(key, shaped);
+    } else {
+      // Not smoothing this routing right now — drop any stale filter
+      // state so a routing that had smoothing turned off, then back on
+      // later, doesn't resume from a long-cold `prev` value as if no
+      // time had passed.
+      this.smoothed.delete(key);
+      this.smoothTicks.delete(key);
+    }
+
+    return this.applyEngageRamp(key, shaped, now);
+  }
+
+  /**
+   * Fades a routing in from neutral (0.5 — "no modulation") up to its
+   * full shaped value over ENGAGE_RAMP_MS, starting from the first
+   * sample() call this routing has had since it was last forget()'d.
+   *
+   * This is the general fix for "toggling a source on causes a visible
+   * jump," not an audio-specific patch: the same zero-ramp-time gap
+   * exists for a brand new LFO assignment landing mid-cycle, a pointer
+   * routing whose first read happens far from center, etc. — audio/mic
+   * sources just make it most visible, because autoGain.ts's own attack
+   * (already fast, ~150ms) had nothing above it absorbing the very first
+   * moment of a signal existing at all. Ramping the DEVIATION from 0.5
+   * (rather than fading `raw` itself toward some target) is deliberate:
+   * a source could start already off-center, and this still guarantees
+   * zero net motion on the control at t=0, opening smoothly to whatever
+   * the real signal is doing by ENGAGE_RAMP_MS in.
+   *
+   * Engagement state is per-key and cleared by forget()/reset(), so
+   * removing a routing and reassigning it later re-runs the ramp rather
+   * than resuming as if it had been active the whole time.
+   */
+  private applyEngageRamp(key: string, signal: number, now: number): number {
+    let startedAt = this.engaged.get(key);
+    if (startedAt === undefined) {
+      startedAt = now;
+      this.engaged.set(key, now);
+    }
+
+    const t = Math.min(1, (now - startedAt) / ENGAGE_RAMP_MS);
+    if (t >= 1) return signal;
+
+    // Smoothstep rather than linear — eases both into and out of the
+    // ramp, which reads as an intentional fade rather than a ramp with a
+    // visible kink at either end.
+    const eased = t * t * (3 - 2 * t);
+    return 0.5 + (signal - 0.5) * eased;
   }
 
   private rawSignal(mod: Modulation, time: number, cardId: string): number {
@@ -150,14 +252,21 @@ class ModulationBus {
     }
   }
 
-  /** Drops smoothing state for a routing that no longer exists. */
+  /** Drops smoothing AND engage-ramp state for a routing that no longer
+      exists — clearing `engaged` here is what makes reassigning the same
+      control later re-run the fade-in rather than resuming mid-ramp or
+      skipping it entirely. */
   forget(key: string): void {
     this.smoothed.delete(key);
+    this.smoothTicks.delete(key);
+    this.engaged.delete(key);
   }
 
   reset(): void {
     this.startedAt = performance.now();
     this.smoothed.clear();
+    this.smoothTicks.clear();
+    this.engaged.clear();
   }
 }
 
@@ -235,6 +344,115 @@ export const MOD_SOURCES: ModSourceOption[] = [
 
 export function sourceMeta(source: ModSource): ModSourceOption | undefined {
   return MOD_SOURCES.find((s) => s.value === source);
+}
+
+/* ------------------------------------------------------------------ *
+ * Assignment defaults — the sensible-starting-point policy for a
+ * routing, used by both the manual assign path (ModulationPanel's
+ * ModRow) and the auto-assign convenience helpers (SoundPanel's
+ * autoAssignTrackModulation/autoAssignMicModulation). Centralized here
+ * rather than as separate literals in each call site, per the
+ * modulation diagnostic (2026-09), fixes #4–#6: previously each site
+ * hardcoded its own amount/smoothing/target-picking logic, which is how
+ * "manually assigned Audio keeps smoothing=0 unless it goes through
+ * auto-assign" and "auto-assign blindly grabs whatever's first in
+ * schema order, including wide-range controls like Scale" both
+ * happened — two different symptoms of the same root cause: no single
+ * place decided what a sensible default actually was.
+ * ------------------------------------------------------------------ */
+
+/** A slider/stepper's declared range width; effectively infinite (never
+    the "safest" choice) for any other control kind, so callers that
+    compare spans naturally deprioritize non-numeric controls without a
+    separate type check at every call site. */
+function controlSpan(control: Control): number {
+  if (control.kind === 'slider' || control.kind === 'stepper') {
+    return control.max - control.min;
+  }
+  return Infinity;
+}
+
+/** Baseline amount for a brand-new routing on a "typical" 0..1-span
+    control (Opacity, Tint amount, and similar) — matches what DEFAULT_MOD
+    and the pre-fix auto-assign literals already used, so a control this
+    size behaves exactly as it did before this pass. */
+const REFERENCE_SPAN = 1;
+const BASE_DEFAULT_AMOUNT = 0.3;
+/** Default amount is never pushed below/above these regardless of how
+    extreme a control's span is — a hard floor so an enormous-range
+    control still visibly reacts at all, and a ceiling so a tiny-range
+    control's inverse-scaled amount doesn't blow past what the Amount
+    slider's own -1..1 UI range treats as "a lot." */
+const MIN_DEFAULT_AMOUNT = 0.05;
+const MAX_DEFAULT_AMOUNT = 0.5;
+
+/**
+ * Fix #5 (targeted version — see the diagnostic's own note that this is
+ * the lower-risk sibling of rescaling applyModulation()'s core formula):
+ * rather than changing how amount is APPLIED — which would silently
+ * re-scale every already-tuned routing across the whole seed library —
+ * this only changes what amount a FRESH, never-before-configured routing
+ * starts at. A control's default amount scales inversely with its own
+ * range, so "Scale" (min 0.1, max 4 — span 3.9, and log-mapped, which
+ * makes a given linear excursion read as an even bigger relative jump
+ * near the low end) starts out visibly gentler than "Opacity" (span 1)
+ * does for the exact same nominal starting point, instead of both
+ * defaulting to the same flat 0.3-0.35 regardless of how different those
+ * two controls' absolute ranges actually are. Amount is still a fully
+ * user-adjustable dial afterward — this only picks where it starts.
+ */
+export function defaultAmountFor(control: Control): number {
+  const span = controlSpan(control);
+  if (!Number.isFinite(span) || span <= 0) return BASE_DEFAULT_AMOUNT;
+  const scaled = BASE_DEFAULT_AMOUNT * (REFERENCE_SPAN / span);
+  return clampAmount(scaled);
+}
+
+function clampAmount(n: number): number {
+  return n < MIN_DEFAULT_AMOUNT ? MIN_DEFAULT_AMOUNT : n > MAX_DEFAULT_AMOUNT ? MAX_DEFAULT_AMOUNT : n;
+}
+
+/**
+ * Fix #4: a source-aware smoothing default, replacing the two separate
+ * hardcoded values SoundPanel.tsx's auto-assign helpers used to carry
+ * (0.25 for audio.rms, 0 — unchanged — for mic.rms) and the flat 0 every
+ * OTHER assignment path (including a manual Source-dropdown switch) fell
+ * back to regardless of source. LFO/time/pointer sources stay at 0 — see
+ * the per-source audit in the modulation diagnostic: those signals are
+ * already smooth and bounded, so added smoothing would only add latency
+ * with no real benefit. Mic gets a slightly higher default than Track
+ * (0.3 vs 0.25): a live mic feed has no mastering/compression behind it
+ * the way a track typically does, so its raw band values are the
+ * noisier of the two inputs feeding the identical autoGain shaping (see
+ * autoGain.ts) — the smoothing value itself became a much more
+ * meaningful lever once bus.ts's own smoothing filter was made
+ * dt-normalized (fix #3), rather than the ~50ms-at-60fps no-op the flat
+ * 0.25 amounted to before that fix.
+ */
+export function defaultSmoothingFor(source: ModSource): number {
+  if (source.startsWith('mic.')) return 0.3;
+  if (source.startsWith('audio.')) return 0.25;
+  return 0;
+}
+
+/**
+ * Fix #6: replaces "whatever happens to be first in the schema's
+ * declared control order" as the last-resort auto-assign target with
+ * "whichever eligible control has the smallest declared range." A
+ * narrower span is inherently the gentler, safer thing to hand an
+ * always-on reactive source (Audio/Mic) — it's the same underlying
+ * property defaultAmountFor() above compensates for, just used here to
+ * pick a target instead of to scale an amount. Deliberately span-based
+ * rather than a name-based denylist (excluding anything matching
+ * /scale|zoom|position/i or similar): a keyword list only ever covers
+ * the control names someone thought to add to it, and silently misses
+ * the next wide-range control some future tile happens to call
+ * something else. Ties keep the first-encountered control, preserving
+ * existing behavior when every candidate is equally suitable.
+ */
+export function pickSafestModulationTarget(controls: Control[]): Control | undefined {
+  if (controls.length === 0) return undefined;
+  return controls.reduce((safest, c) => (controlSpan(c) < controlSpan(safest) ? c : safest));
 }
 
 /* ------------------------------------------------------------------ */

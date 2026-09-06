@@ -10,6 +10,7 @@ import { openAssetById, closeAsset } from '@/features/board/openAsset';
 import { useInspectorStore, usePlaybackStore } from '@/stores';
 import type { Asset } from '@/types/asset';
 import type { User } from '@/lib/auth';
+import { attachAudioLifecycleListeners } from '@/lib/sound/context';
 import { AppChrome } from './AppChrome';
 import s from '../features.module.css';
 
@@ -64,6 +65,19 @@ export function AppShell({ assets, needsSeed = false, focusItemId, user = null }
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [togglePaused]);
+
+  // Mobile audio bugfix (2026-09) — resume the shared AudioContext when
+  // the tab/app becomes visible again. AppShell is the one component
+  // that's always mounted for the lifetime of the app (same reasoning as
+  // the popstate/keydown listeners above), which makes it the right
+  // place for an app-wide lifecycle concern like this one rather than
+  // something that lives inside any single card or panel. See
+  // lib/sound/context.ts's attachAudioLifecycleListeners() doc for the
+  // full mechanism and why this alone doesn't fully solve it — meter.ts/
+  // track.ts/mic.ts's isAudioUnlocked() gate is the other half.
+  useEffect(() => {
+    return attachAudioLifecycleListeners();
+  }, []);
 
   return (
     <>

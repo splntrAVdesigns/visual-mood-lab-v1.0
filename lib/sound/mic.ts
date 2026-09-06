@@ -63,7 +63,7 @@
  * Location: lib/sound/mic.ts
  */
 
-import { getAudioContext } from './context';
+import { getAudioContext, isAudioUnlocked } from './context';
 import { BandAutoGain } from './autoGain';
 
 export type MicBand = 'rms' | 'bass' | 'mid' | 'high';
@@ -342,19 +342,24 @@ export function getMicLevel(): number {
   const dt = Math.max(0, (now - lastLevelTick) / 1000);
   lastLevelTick = now;
 
-  if (!waveAnalyser || !waveBuffer) {
-    levelPeak = levelPeak * Math.max(0, 1 - LEVEL_DECAY_PER_SECOND * dt);
-    return levelPeak;
-  }
-
-  waveAnalyser.getFloatTimeDomainData(waveBuffer);
-  let peak = 0;
-  for (let i = 0; i < waveBuffer.length; i++) {
-    const abs = Math.abs(waveBuffer[i]);
-    if (abs > peak) peak = abs;
-  }
+  // Mobile bugfix (2026-09) — same fix as track.ts's getTrackLevel() and
+  // meter.ts's getMeterLevel(): a suspended AudioContext freezes
+  // waveAnalyser's buffer instead of going silent, so treat "not
+  // running" the same as "no stream" below rather than reading it.
+  const peak =
+    waveAnalyser && waveBuffer && isAudioUnlocked() ? readMicPeak(waveAnalyser, waveBuffer) : 0;
 
   const decayed = levelPeak * Math.max(0, 1 - LEVEL_DECAY_PER_SECOND * dt);
   levelPeak = Math.min(1, Math.max(peak, decayed));
   return levelPeak;
+}
+
+function readMicPeak(node: AnalyserNode, buffer: Float32Array<ArrayBuffer>): number {
+  node.getFloatTimeDomainData(buffer);
+  let peak = 0;
+  for (let i = 0; i < buffer.length; i++) {
+    const abs = Math.abs(buffer[i]);
+    if (abs > peak) peak = abs;
+  }
+  return peak;
 }

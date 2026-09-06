@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { Button, Field, IconButton, Select, Slider, formatValue } from '@/components/ui';
 import { CloseIcon, ChevronDownIcon, ChevronRightIcon, ResetIcon } from '@/components/ui';
-import { MOD_SOURCES, sourceMeta } from '@/lib/modulation/bus';
+import { MOD_SOURCES, defaultAmountFor, defaultSmoothingFor, sourceMeta } from '@/lib/modulation/bus';
 import { useTrackLoaded, useMicEnabled } from '@/lib/hooks/useTrackState';
 import { RateStrip } from './controls/RateStrip';
 import type { Control, Modulation, ModSource } from '@/renderers/control-schema';
@@ -30,7 +30,15 @@ interface ModulationPanelProps {
   embedded?: boolean;
 }
 
-const DEFAULT_MOD: Modulation = { source: 'lfo.sine', amount: 0.3, rate: 0.4, smoothing: 0 };
+/** Shape of a routing before anything's been chosen for this control —
+    `amount` used to be a flat 0.3 here regardless of the control it was
+    about to be attached to. Amount is now computed per-control at the
+    ModRow call site (defaultAmountFor(control), modulation diagnostic
+    2026-09 fix #5) since a fixed default constant can't know a
+    particular control's range; everything else about a not-yet-assigned
+    routing (source, rate, smoothing) is still genuinely control-
+    independent, so those stay here. */
+const DEFAULT_MOD_BASE: Omit<Modulation, 'amount'> = { source: 'lfo.sine', rate: 0.4, smoothing: 0 };
 
 /**
  * Every modulatable control on the open asset, in one place, each with its
@@ -159,7 +167,11 @@ export function ModRow({
       usage exactly as before. */
   hideHeader?: boolean;
 }) {
-  const current = active ?? DEFAULT_MOD;
+  // Modulation diagnostic (2026-09), fix #5 — the fallback default is
+  // now sized against THIS control's own range (defaultAmountFor), not
+  // a flat constant every control used to share regardless of how wide
+  // or narrow its own span was.
+  const current = active ?? { ...DEFAULT_MOD_BASE, amount: defaultAmountFor(control) };
   const meta = sourceMeta(current.source);
 
   const update = (patch: Partial<Modulation>) => {
@@ -203,7 +215,26 @@ export function ModRow({
                   (opt?.requiresMic && !micEnabled)
                 )
                   return;
-                update({ source: v as ModSource });
+
+                const nextSource = v as ModSource;
+                // Modulation diagnostic (2026-09), fix #4 — switching
+                // manually into Audio/Mic used to leave smoothing at
+                // whatever it already was (0, for any routing that
+                // hadn't been through SoundPanel's auto-assign path),
+                // which is how a hand-assigned Audio/Mic routing stayed
+                // just as jump-prone as the bug this whole pass fixes.
+                // Only applies when the current value is still exactly
+                // 0 — i.e. nobody has deliberately dialed in their own
+                // smoothing for this routing yet — so this never
+                // overwrites a real, considered choice; it only fills
+                // in a sensible starting point the first time a source
+                // switch makes one newly relevant.
+                const smoothing =
+                  current.smoothing === 0 || current.smoothing === undefined
+                    ? defaultSmoothingFor(nextSource)
+                    : current.smoothing;
+
+                update({ source: nextSource, smoothing });
               }}
             />
           </Field>
