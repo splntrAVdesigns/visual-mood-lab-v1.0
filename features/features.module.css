@@ -2724,6 +2724,25 @@
   flex-direction: column;
 }
 
+/* Sound's mobile-embedded body (the "Sounds" tab) — deliberately its own
+   class rather than reusing .modPanelListEmbedded above. Base rule is
+   identical on purpose; the mobile-breakpoint padding added below is
+   NOT, and must not land on .modPanelListEmbedded itself, since that
+   class is shared with ModulationPanel. Modulate's top-level rows are
+   just label+dot+chevron (.modPanelRow / .modPanelRowHead) — its actual
+   sliders only ever appear inside .modPanelBody, once a row expands,
+   which already carries its own second padding layer (see that rule's
+   BUGFIX comment). Padding .modPanelListEmbedded itself would triple-pad
+   Modulate's expanded rows and shift its summary rows for no reason.
+   Sound has no equivalent expand step — its Fields (Preset, Notes,
+   Scale, Octave, Volume) render straight into this list — so it needs
+   the second padding layer at this outer level instead. See the
+   mobile-breakpoint rule below for the actual fix. */
+.soundPanelListEmbedded {
+  display: flex;
+  flex-direction: column;
+}
+
 /* ---- mobile board ------------------------------------------------ */
 
 @media (max-width: 820px) {
@@ -2755,6 +2774,23 @@
   .controlRow:last-child {
     border-bottom: none;
     padding-bottom: 0;
+  }
+
+  /* Same "hugs the edge" symptom and same fix as .controlRow directly
+     above, for the Sound tab's Fields (Preset select, Notes, Scale,
+     Octave, Volume) — reported directly: sliders/dropdowns spanning the
+     full mobile width made it hard to drag a value all the way to 0 or
+     100 since the thumb sits flush against the screen edge at either
+     extreme. .soundPanelListEmbedded (unlike .modPanelListEmbedded,
+     shared with Modulate — see that class's own comment above) only
+     ever had .mobileSheet's single outer padding layer, since Sound's
+     Fields render directly into this list rather than through a second,
+     already-padded wrapper the way Modulate's expanded .modPanelBody
+     rows do. No divider added here (unlike .controlRow) — Sound's Field
+     rows already carry their own vertical rhythm via .field's padding;
+     this only adds the missing horizontal inset. */
+  .soundPanelListEmbedded {
+    padding-inline: var(--space-4);
   }
 
   /* Touch targets: 44px is the long-standing floor for a comfortable tap,

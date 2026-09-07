@@ -101,6 +101,11 @@ class RendererPool {
   private fpsAt = 0;
   fps = 0;
 
+  /** Card ids that have already logged a getTrackFrequencyData() failure
+      — see safeGetTrackFrequencyData()'s doc. Keeps a stuck failure from
+      flooding the console at 60fps while still surfacing it once. */
+  private trackAudioWarned = new Set<string>();
+
   /* ---------------------------------------------------------------- *
    * Public control
    * ---------------------------------------------------------------- */
@@ -662,6 +667,44 @@ class RendererPool {
     updateTileAudio(entry.cardId, schema, effective);
   }
 
+  /**
+   * Defensive wrapper around getTrackFrequencyData() — flagged since rev
+   * 10, fixed here per rev 11 (§0/§7 Phase 4.9/§12). track.ts's refresh()
+   * calls straight into a live AnalyserNode's getByteFrequencyData(); that
+   * node can go momentarily stale during the audio-lifecycle recovery
+   * path (context.ts's resetAudioContextForRecovery() racing against this
+   * loop's own rAF tick — see track.ts's rewireTrackGraph()), which can
+   * throw. Called unwrapped, that throw propagated straight out of tick()'s
+   * `for` loop ahead of every entry's own per-card try/catch below — an
+   * uncaught throw here on entry N would skip rendering entries N+1..end
+   * for that frame, not just fail this one card's audio. §7 Phase 4.97
+   * explicitly calls this pattern out as the one to avoid for the new
+   * MIDI/gamepad poll loop, so it's worth actually fixing here rather
+   * than only documenting.
+   *
+   * Caught and treated exactly like "no track data this frame" (null),
+   * which the existing `?? isMicEnabled(...) ?? this.audio` fallback
+   * chain in tick() already handles correctly — the card keeps
+   * rendering, just without track-audio modulation for that one frame.
+   * Deliberately NOT routed through the render()/demote() catch below:
+   * demoting a card over a transient audio-analysis hiccup would kill
+   * its visual rendering for a failure that has nothing to do with the
+   * renderer itself. Logged once per card, not every frame, so a
+   * genuinely stuck failure is still visible without console-spamming
+   * at 60fps.
+   */
+  private safeGetTrackFrequencyData(cardId: string): Float32Array<ArrayBuffer> | null {
+    try {
+      return getTrackFrequencyData(cardId);
+    } catch (err) {
+      if (!this.trackAudioWarned.has(cardId)) {
+        this.trackAudioWarned.add(cardId);
+        console.error(`[render-pool] getTrackFrequencyData failed for ${cardId}, falling back to no track audio:`, err);
+      }
+      return null;
+    }
+  }
+
   private startLoop(): void {
     if (this.rafId !== null || this.paused || this.entries.size === 0) return;
     this.lastFrameAt = performance.now();
@@ -753,7 +796,7 @@ class RendererPool {
         // null today — nothing calls setAudio() yet) so a card with none
         // of the three behaves exactly as before any of this existed.
         audio:
-          getTrackFrequencyData(entry.cardId) ??
+          this.safeGetTrackFrequencyData(entry.cardId) ??
           (isMicEnabled(entry.cardId) ? getMicFrequencyData() : null) ??
           this.audio,
       };

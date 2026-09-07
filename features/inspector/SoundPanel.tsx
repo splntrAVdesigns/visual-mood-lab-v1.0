@@ -518,7 +518,7 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
   );
 
   const body = (
-    <div className={embedded ? s.modPanelListEmbedded : s.modPanelList}>
+    <div className={embedded ? s.soundPanelListEmbedded : s.modPanelList}>
       {hasModulatableControls && (
         <TrackSection itemId={itemId} schema={schema} onTrackLoaded={autoAssignTrackModulation} />
       )}
