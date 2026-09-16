@@ -678,6 +678,18 @@
   border-radius: var(--radius-lg);
   overflow: hidden;
   transition: width var(--dur-drawer) var(--ease);
+  /* Header-button-overflow fix (2026-09): the header's available width
+     is this panel's rendered width, not the viewport's — the panel
+     shrinks to min(48vw, 70vh, 620px) whenever Code is open (see
+     .focusScrim[data-code='true'] .focusPanel below), independent of
+     screen size. A viewport-only @media breakpoint can't see that
+     second shrink at all, so it would pass on a wide monitor with Code
+     closed and still overlap the moment Code opens on that same
+     monitor. Making this a query container lets .focusHeader respond
+     to its REAL available width in both cases with one rule instead of
+     two breakpoints that can drift out of sync with each other. */
+  container-type: inline-size;
+  container-name: focus-panel;
 }
 
 /* :fullscreen sizing is entirely the browser's own reflow, not this
@@ -703,6 +715,15 @@
 
 .focusTitle {
   flex: 1;
+  /* Header-button-overflow fix (2026-09): without this, the ellipsis
+     rules below can never actually fire. Flex items default to
+     min-width: auto, meaning a flex:1 item refuses to shrink below its
+     OWN CONTENT's intrinsic width no matter how little room is left —
+     so a long asset title held its full width, stole space the button
+     row needed, and (since .focusHeader is position:absolute with no
+     wrap/scroll fallback) that showed up as literal overlap instead of
+     the ellipsis this rule already claimed to provide. */
+  min-width: 0;
   font-size: var(--step-0);
   color: var(--text);
   overflow: hidden;
@@ -715,6 +736,110 @@
   display: flex;
   position: relative;
   min-height: 0;
+}
+
+/* ---- header responsive collapse (2026-09) ------------------------- *
+ * .focusHeader (above) is position:absolute across .focusPanel with no
+ * wrap/overflow fallback, and a shader tile's header can carry up to
+ * seven actions (Code, VFX, Modulate, Sound, VCapture, Record, Save
+ * snapshot) plus title/badge/fullscreen/close. Below the threshold,
+ * lower-frequency actions collapse into a single "More" trigger
+ * (HeaderOverflowMenu.tsx) instead of wrapping to a second row — a
+ * second row would eat vertical space from the artwork itself, which
+ * fights the "artwork carries every bit of colour on screen" design
+ * discipline (tokens.css).
+ *
+ * Driven by @container, not a viewport @media query, because
+ * .focusPanel's own width already responds to more than just the
+ * viewport (see its container-type comment above) — a container query
+ * on .focusPanel is the one place that sees every case that can
+ * actually shrink the header's real available width.
+ *
+ * Kept inline, always, regardless of width: Code / VFX / Modulate
+ * (highest-frequency, per product priority), Fullscreen / Close (core
+ * dialog chrome), and both Delete paths (destructive actions on
+ * irreplaceable user content — a saved VCapture export or an uploaded
+ * file — stay visible rather than hidden behind a menu; see
+ * FocusedAssetOverlay.tsx for how removeSnapshot/removeUpload's Delete
+ * buttons are kept outside .focusHeaderOverflowGroup for this reason).
+ *
+ * Collapsed into the "More" menu below 680px of PANEL width: Sound,
+ * VCapture (the settings-picker button — RecordButton is a distinct
+ * always-actionable control and collapses alongside it), Save
+ * snapshot/Download, and the transient savedNote status text.
+ *
+ * 680px is an estimate sized against this row's real button widths
+ * (title minimum + badge + Code + VFX + Modulate + Fullscreen + Close +
+ * Delete + the More trigger itself, plus gaps/padding) — verify against
+ * the Playwright resize sweep and retune this one number if the real
+ * rendered row disagrees.
+ */
+.focusHeaderOverflowGroup {
+  display: contents;
+}
+
+.focusHeaderMoreTrigger {
+  display: none;
+  position: relative;
+}
+
+@container focus-panel (max-width: 680px) {
+  .focusHeaderOverflowGroup {
+    display: none;
+  }
+  .focusHeaderMoreTrigger {
+    display: inline-flex;
+  }
+}
+
+.headerOverflowPanel {
+  position: fixed;
+  z-index: var(--z-dialog, 60);
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+  gap: 2px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.headerOverflowItem {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  font-family: var(--font-ui);
+  font-size: var(--step-0);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.headerOverflowItem:hover,
+.headerOverflowItem:focus-visible {
+  background: var(--bg-raised);
+  color: var(--accent);
+}
+
+.headerOverflowItem:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.headerOverflowItem[data-danger='true'] {
+  color: var(--danger);
+}
+
+.headerOverflowItem[disabled] {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
 }
 
 @media (max-width: 640px) {
