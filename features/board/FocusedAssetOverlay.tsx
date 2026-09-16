@@ -18,6 +18,7 @@ import { RendererStage } from './RendererStage';
 import { CodePanel } from './CodePanel';
 import { CapturePanel } from './CapturePanel';
 import { RecordButton } from './RecordButton';
+import { HeaderOverflowMenu, type OverflowMenuItem } from './HeaderOverflowMenu';
 import { ModulationPanel } from '../inspector/ModulationPanel';
 import { SoundPanel } from '../inspector/SoundPanel';
 import { VfxPanel } from '../inspector/VfxPanel';
@@ -305,6 +306,59 @@ export function FocusedAssetOverlay() {
     !asset.isSnapshot && (asset.type === 'image' || asset.type === 'svg' || asset.type === 'video');
 
   /**
+   * Menu-item mirror of the same actions the inline header buttons
+   * already render — see .focusHeaderOverflowGroup / .focusHeaderMoreTrigger
+   * in features.module.css for which tier shows which representation.
+   * Built from the exact same handlers (saveSnapshot, downloadSnapshot,
+   * the setShow* toggles) rather than new ones, so behavior can never
+   * drift between the inline and collapsed forms of the same action.
+   *
+   * RecordButton and both Delete paths are deliberately NOT in this
+   * list — RecordButton owns its own live recording-state visual
+   * (icon/pulse) that a static text menu item can't represent, and
+   * Delete stays inline-always per product decision (irreplaceable
+   * content shouldn't hide behind a menu) — both are rendered outside
+   * .focusHeaderOverflowGroup in the JSX below instead.
+   */
+  const overflowItems: OverflowMenuItem[] = [];
+  if (canSound) {
+    overflowItems.push({
+      id: 'sound',
+      label: showSound ? 'Hide Sound' : 'Sound',
+      onClick: () => {
+        setShowSound((v) => !v);
+        setShowCode(false);
+      },
+    });
+  }
+  if (canCapture) {
+    overflowItems.push({
+      id: 'vcapture',
+      label: showCapture ? 'Hide VCapture' : 'VCapture',
+      onClick: () => {
+        setShowCapture((v) => !v);
+        setShowCode(false);
+      },
+    });
+  }
+  if (!asset.isSnapshot) {
+    overflowItems.push({
+      id: 'save-snapshot',
+      label: saving ? 'Saving…' : 'Save snapshot',
+      onClick: () => void saveSnapshot(),
+      disabled: saving,
+    });
+  }
+  if (asset.isSnapshot) {
+    overflowItems.push({
+      id: 'download-snapshot',
+      label: downloadingSnapshot ? 'Downloading…' : 'Download',
+      onClick: () => void downloadSnapshot(),
+      disabled: downloadingSnapshot,
+    });
+  }
+
+  /**
    * Downloads the raw uploaded/captured file itself — distinct from
    * downloadSnapshot above, which re-fetches a snapshot's rendered PNG
    * poster. Gated on the same isDeletableUpload check that already scopes
@@ -452,21 +506,31 @@ export function FocusedAssetOverlay() {
                 </Button>
               )}
 
-              {canSound && (
-                <Button
-                  variant="ghost"
-                  active={showSound}
-                  onClick={() => {
-                    setShowSound((v) => !v);
-                    setShowCode(false);
-                  }}
-                >
-                  Sound
-                </Button>
-              )}
+              {/*
+                Header-button-overflow fix (2026-09): everything in this
+                group is `display: contents` (participates directly in
+                .focusHeader's flex row, unchanged) above 680px of PANEL
+                width, and `display: none` at/below it — see
+                .focusHeaderOverflowGroup in features.module.css. The
+                same actions are also available via the HeaderOverflowMenu
+                below at every width, through overflowItems built above;
+                only one representation is ever visually shown at once.
+              */}
+              <div className={s.focusHeaderOverflowGroup}>
+                {canSound && (
+                  <Button
+                    variant="ghost"
+                    active={showSound}
+                    onClick={() => {
+                      setShowSound((v) => !v);
+                      setShowCode(false);
+                    }}
+                  >
+                    Sound
+                  </Button>
+                )}
 
-              {canCapture && (
-                <>
+                {canCapture && (
                   <Tooltip content="Set export format and duration">
                     <Button
                       variant="ghost"
@@ -480,30 +544,43 @@ export function FocusedAssetOverlay() {
                       VCapture
                     </Button>
                   </Tooltip>
-                  <RecordButton
-                    asset={asset}
-                    canCapture={canCapture}
-                    format={captureFormat}
-                    durationSec={captureDuration}
-                  />
-                </>
+                )}
+
+                {!asset.isSnapshot && (
+                  <Tooltip content="Save these settings as a snapshot and export a PNG">
+                    <Button variant="ghost" onClick={saveSnapshot} disabled={saving}>
+                      {saving ? 'Saving…' : 'Save snapshot'}
+                    </Button>
+                  </Tooltip>
+                )}
+
+                {asset.isSnapshot && (
+                  <Tooltip content="Download this snapshot's image again">
+                    <Button variant="ghost" onClick={downloadSnapshot} disabled={downloadingSnapshot}>
+                      {downloadingSnapshot ? 'Downloading…' : 'Download'}
+                    </Button>
+                  </Tooltip>
+                )}
+              </div>
+
+              {/*
+                Kept OUTSIDE the collapse group, always visible: a live
+                recording's icon/pulse state is exactly the kind of thing
+                that shouldn't disappear into a menu, and the app's own
+                live-performance direction (Phase 4.97 planning) makes
+                that more true here than for almost any other action in
+                this header.
+              */}
+              {canCapture && (
+                <RecordButton
+                  asset={asset}
+                  canCapture={canCapture}
+                  format={captureFormat}
+                  durationSec={captureDuration}
+                />
               )}
 
-              {!asset.isSnapshot && (
-                <Tooltip content="Save these settings as a snapshot and export a PNG">
-                  <Button variant="ghost" onClick={saveSnapshot} disabled={saving}>
-                    {saving ? 'Saving…' : 'Save snapshot'}
-                  </Button>
-                </Tooltip>
-              )}
-
-              {asset.isSnapshot && (
-                <Tooltip content="Download this snapshot's image again">
-                  <Button variant="ghost" onClick={downloadSnapshot} disabled={downloadingSnapshot}>
-                    {downloadingSnapshot ? 'Downloading…' : 'Download'}
-                  </Button>
-                </Tooltip>
-              )}
+              <HeaderOverflowMenu items={overflowItems} />
 
               {isDeletableUpload && (
                 <Tooltip content="Download this file">
@@ -567,4 +644,3 @@ export function FocusedAssetOverlay() {
     </div>
   );
 }
-
