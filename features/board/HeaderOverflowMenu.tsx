@@ -149,9 +149,9 @@ export function HeaderOverflowMenu({ items, label = 'More actions' }: HeaderOver
  * Inline fallback so this component compiles standalone without a
  * confirmed `MoreIcon`/`EllipsisIcon` export from `@/components/ui`.
  * Swap this for the real icon from that library — given how complete
- * that set already is (Close/Code/Download/Fullscreen/VCapture/Chevron*/
- * Reset all exist), it's very likely already there under some name;
- * this just avoids blocking on confirming which one before shipping the
+ * that set already is (Close, Code, Download, Fullscreen, VCapture,
+ * Chevron, Reset all exist), it's very likely already there under some
+ * name; this just avoids blocking on confirming which one before shipping the
  * rest of the fix. See PLACEMENT.md.
  */
 function MoreIconFallback() {
