@@ -65,13 +65,41 @@ export function controllerTargetState(
 ): ControllerTargetState {
   if (!itemId) return emptyState();
 
-  const domain = effectInstanceId ? 'effect' as const : 'parameter' as const;
-  const focused: TargetRef = domain === 'effect'
-    ? { scope: 'focused', domain, effectInstanceId, controlId }
-    : { scope: 'focused', domain, controlId };
-  const pinned: TargetRef = domain === 'effect'
-    ? { scope: 'pinned', cardId: itemId, domain, effectInstanceId, controlId }
-    : { scope: 'pinned', cardId: itemId, domain, controlId };
+  // Build the discriminated TargetRef branches explicitly. Using a separate
+  // `domain` variable does not narrow the optional effectInstanceId for
+  // TypeScript, so the previous conditional produced
+  // `effectInstanceId: string | undefined` for an EffectTargetRef and failed
+  // the production type check even though the runtime branch was correct.
+  let focused: TargetRef;
+  let pinned: TargetRef;
+
+  if (effectInstanceId) {
+    focused = {
+      scope: 'focused',
+      domain: 'effect',
+      effectInstanceId,
+      controlId,
+    };
+    pinned = {
+      scope: 'pinned',
+      cardId: itemId,
+      domain: 'effect',
+      effectInstanceId,
+      controlId,
+    };
+  } else {
+    focused = {
+      scope: 'focused',
+      domain: 'parameter',
+      controlId,
+    };
+    pinned = {
+      scope: 'pinned',
+      cardId: itemId,
+      domain: 'parameter',
+      controlId,
+    };
+  }
 
   const rows = [...bindingsForTarget(document, focused), ...bindingsForTarget(document, pinned)]
     .filter(({ binding }) => binding.enabled !== false);
