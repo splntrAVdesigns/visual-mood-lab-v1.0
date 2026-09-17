@@ -5,36 +5,25 @@ import { Button, Dialog, Field, Select, Slider, Toggle, useTooltipsEnabled } fro
 import { useBoardStore, useInspectorStore, usePlaybackStore, MAX_LIVE_RENDERERS } from '@/stores';
 import type { Asset } from '@/types/asset';
 import type { User } from '@/lib/auth';
+import {
+  getMidiControlSurface,
+  requestMidiControlSurfaceAccess,
+  type MidiRuntimeSnapshot,
+} from '@/lib/control-surface';
 import { AppHeader } from './AppHeader';
 import { NavDrawer } from './NavDrawer';
 import { AccountDialog } from './AccountDialog';
 import { CommandPalette } from './CommandPalette';
 import { OnboardingGuide } from '@/features/onboarding/OnboardingGuide';
 import s from '../features.module.css';
+import midiStyles from './MidiSettingsSection.module.css';
 
 interface AppChromeProps {
   assets: Asset[];
-  /** True when the database has no tables yet — a fresh, unseeded install. */
   needsSeed?: boolean;
-  /** Signed-in user, threaded down to AppHeader/NavDrawer/AccountDialog. */
   user?: User | null;
 }
 
-/**
- * The app-wide chrome — header, nav drawer, command palette, settings and
- * account dialogs, footer credit — factored out of AppShell so any route
- * can mount it, not just the board. Board-only concerns (Hero, BoardGrid,
- * the inspector, the focused-asset overlays, deep-link/popstate handling,
- * the Space-bar pause shortcut) stay in AppShell; they don't apply outside
- * a board view.
- *
- * Hydrates the board store synchronously on first render (a lazy useState
- * initializer, not an effect) so SSR and the client agree before anything
- * that reads assets — NavDrawer's counts, the command palette, the search
- * box — renders. Whichever route mounts this owns fetching `assets`; each
- * route already fetches its own `user` the same way (see app/page.tsx and
- * app/about/page.tsx).
- */
 export function AppChrome({ assets, needsSeed = false, user = null }: AppChromeProps) {
   const [hydrated] = useState(() => {
     useBoardStore.setState({ assets });
@@ -56,8 +45,6 @@ export function AppChrome({ assets, needsSeed = false, user = null }: AppChromeP
     return () => mq.removeEventListener('change', onChange);
   }, [setReducedMotion]);
 
-  // '[' toggles the nav drawer everywhere it's mounted. Space (pause all)
-  // stays board-only, in AppShell's own listener — nothing to pause here.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
@@ -73,32 +60,14 @@ export function AppChrome({ assets, needsSeed = false, user = null }: AppChromeP
       <AppHeader onOpenSettings={() => setSettingsOpen(true)} needsSeed={needsSeed} />
       <NavDrawer user={user} onOpenAccount={() => setAccountOpen(true)} />
       <CommandPalette />
-
-      {/*
-        Onboarding guide — reads its own open/step state from
-        useOnboardingStore, triggered by AppHeader's CTA and NavDrawer's
-        "Start here" item. Mounted here (not AppShell) so it's available
-        on every route that mounts AppChrome, same reasoning as everything
-        else in this file.
-      */}
       <OnboardingGuide />
-
       <FooterCredit />
-
       <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <AccountDialog open={accountOpen} onClose={() => setAccountOpen(false)} />
     </>
   );
 }
 
-/**
- * Small credit line, fixed to the bottom-left corner.
- *
- * Deliberately NOT positioned relative to the round "N" badge that sits in
- * this same corner during `next dev` — that badge is Next.js's own dev-mode
- * build indicator and does not exist in a production build. Anchoring to it
- * would put this in the wrong place the moment it's deployed.
- */
 function FooterCredit() {
   return (
     <a
@@ -122,6 +91,20 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
   const setMasterVolume = usePlaybackStore((st) => st.setMasterVolume);
   const muted = usePlaybackStore((st) => st.muted);
   const [tooltipsEnabled, setTooltipsEnabled] = useTooltipsEnabled();
+  const [midiSnapshot, setMidiSnapshot] = useState<MidiRuntimeSnapshot | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const runtime = getMidiControlSurface();
+    return runtime.subscribe(setMidiSnapshot);
+  }, [open]);
+
+  const enableMidi = async () => {
+    setMidiSnapshot(await requestMidiControlSurfaceAccess());
+  };
+
+  const connectedMidi = midiSnapshot?.devices.filter((device) => device.state === 'connected') ?? [];
+  const midiReady = midiSnapshot?.accessStatus === 'granted';
 
   return (
     <Dialog
@@ -188,6 +171,53 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
         <Toggle label="Tooltips" checked={tooltipsEnabled} onChange={setTooltipsEnabled} />
       </Field>
 
+      <section className={midiStyles.section} aria-label="MIDI session">
+        <div className={midiStyles.header}>
+          <div className={midiStyles.titleWrap}>
+            <span className={midiStyles.title}>MIDI</span>
+            <span className={midiStyles.sub}>Current browser session and connected inputs.</span>
+          </div>
+          <span className={midiStyles.status} data-ready={midiReady ? 'true' : undefined}>
+            {midiSettingsStatus(midiSnapshot)}
+          </span>
+        </div>
+
+        {!midiReady && (
+          <Button
+            variant="outline"
+            block
+            disabled={midiSnapshot?.accessStatus === 'requesting' || midiSnapshot?.supported === false}
+            onClick={() => void enableMidi()}
+          >
+            {midiSnapshot?.accessStatus === 'requesting' ? 'Enabling MIDI…' : 'Enable MIDI for this session'}
+          </Button>
+        )}
+
+        {midiReady && connectedMidi.length === 0 && (
+          <div className={midiStyles.empty}>
+            MIDI is ready. Connect or power on a MIDI device and it will appear here automatically.
+          </div>
+        )}
+
+        {connectedMidi.length > 0 && (
+          <div className={midiStyles.deviceList}>
+            {connectedMidi.map((device) => (
+              <div key={device.id} className={midiStyles.device}>
+                <div className={midiStyles.deviceName}>
+                  <strong>{device.name || 'MIDI input'}</strong>
+                  <span>{device.manufacturer || 'Manufacturer not reported'}</span>
+                </div>
+                <span className={midiStyles.deviceMeta}>
+                  {device.connection === 'open' ? 'open' : device.connection} · {device.profileMatch.status === 'matched' ? 'mapped' : 'unmapped'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {midiSnapshot?.error && <div className={midiStyles.error}>{midiSnapshot.error}</div>}
+      </section>
+
       <div style={{ marginTop: 'var(--space-4)' }}>
         <span className={s.snapshotLabel}>
           Keyboard{' '}
@@ -226,4 +256,17 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
       </p>
     </Dialog>
   );
+}
+
+function midiSettingsStatus(snapshot: MidiRuntimeSnapshot | null): string {
+  if (!snapshot) return 'off';
+  switch (snapshot.accessStatus) {
+    case 'granted': return 'ready';
+    case 'requesting': return 'connecting';
+    case 'denied': return 'denied';
+    case 'unsupported': return 'unsupported';
+    case 'insecure-context': return 'https required';
+    case 'error': return 'error';
+    default: return 'off';
+  }
 }

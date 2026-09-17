@@ -29,9 +29,8 @@ interface ControllerPanelProps {
 }
 
 /**
- * Phase 4.97F transport-neutral controller workspace. The per-parameter CTRL
- * pill remains the fastest Learn path; this view manages the reusable layer:
- * device profiles, 8-control banks, presets, and JSON portability.
+ * Transport-neutral controller workspace. Per-parameter MIDI pills remain the
+ * quickest Learn entry point; this view manages profiles, banks and mappings.
  */
 export function ControllerPanel({ itemId }: ControllerPanelProps) {
   const [document, setDocument] = useState<ControlSurfaceDocument>(() => loadControlSurfaceDocument().document);
@@ -133,7 +132,7 @@ export function ControllerPanel({ itemId }: ControllerPanelProps) {
 
       {document.profiles.length === 0 && (
         <div className={s.empty}>
-          No controller profile yet. Use the <strong>CTRL</strong> button beside any parameter or VFX value, then move a MIDI or gamepad control.
+          No controller profile yet. Use the <strong>MIDI</strong> button beside any parameter or VFX value, then move a MIDI or gamepad control.
         </div>
       )}
 

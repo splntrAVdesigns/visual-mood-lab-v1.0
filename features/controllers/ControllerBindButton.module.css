@@ -4,43 +4,52 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  min-width: 42px;
-  height: 22px;
-  padding: 0 7px;
+  gap: 4px;
+  min-width: 34px;
+  height: 18px;
+  padding: 0 6px;
   flex: none;
-  border: 1px solid rgba(255,255,255,.13);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: rgba(10,15,19,.88);
-  color: rgba(235,245,249,.56);
-  font: 700 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: .04em;
+  background: var(--bg-canvas);
+  color: var(--text-mute);
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: var(--tracking-wide);
   cursor: pointer;
-  opacity: .72;
+  opacity: .8;
   white-space: nowrap;
-  transition: opacity .15s ease, border-color .15s ease, color .15s ease, background .15s ease;
+  transition:
+    opacity var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
 }
+
 .bindButton:hover,
 .bindButton:focus-visible,
 .bindButton[data-bound='true'] {
   opacity: 1;
+  border-color: var(--border-hi);
+  color: var(--text-dim);
 }
+
 .bindButton[data-bound='true'] {
-  border-color: rgba(4,217,255,.55);
-  color: #9cefff;
-  background: rgba(4,217,255,.08);
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  background: var(--accent-faint);
 }
+
 .bindButton:focus-visible {
-  outline: 2px solid rgba(4,217,255,.55);
+  outline: 1px solid var(--accent);
   outline-offset: 2px;
 }
+
 .bindDot {
-  width: 5px;
-  height: 5px;
+  width: 4px;
+  height: 4px;
   flex: none;
   border-radius: 50%;
   background: currentColor;
-  box-shadow: 0 0 8px currentColor;
 }
 
 .dialogStack {
@@ -49,7 +58,9 @@
   width: 100%;
   min-width: 0;
   overflow-x: hidden;
+  color: var(--text-dim);
 }
+
 .statusRow,
 .bindingTop {
   display: flex;
@@ -58,135 +69,183 @@
   gap: 10px;
   min-width: 0;
 }
+
 .statusLabel,
 .sectionTitle {
-  color: rgba(236,244,247,.74);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: .08em;
+  color: var(--text-dim);
+  font-size: var(--step--2);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
 }
+
 .statusValue {
-  color: rgba(236,244,247,.5);
-  font-size: 10px;
+  color: var(--text-mute);
+  font-size: var(--step--2);
   white-space: nowrap;
 }
-.statusValue[data-ok='true'] { color: #77e9ff; }
+
+.statusValue[data-ok='true'] {
+  color: var(--accent);
+}
+
 .deviceLine,
 .notice,
 .fanoutHint {
-  color: rgba(236,244,247,.58);
-  font-size: 10px;
-  line-height: 1.4;
+  color: var(--text-mute);
+  font-size: var(--step--2);
+  line-height: var(--leading-normal);
 }
+
 .notice {
-  padding: 8px 9px;
-  border: 1px solid rgba(4,217,255,.18);
-  border-radius: 7px;
-  background: rgba(4,217,255,.05);
-  color: rgba(205,244,252,.82);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text-dim);
 }
+
 .deviceBlock {
   display: grid;
   gap: 7px;
   min-width: 0;
+  padding-bottom: 2px;
 }
+
 .twoCol {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   min-width: 0;
 }
+
 .field {
   display: grid;
   gap: 5px;
   min-width: 0;
-  color: rgba(236,244,247,.55);
-  font-size: 9px;
+  color: var(--text-mute);
+  font-size: var(--step--2);
   text-transform: uppercase;
-  letter-spacing: .06em;
+  letter-spacing: var(--tracking-wide);
 }
+
 .field select,
 .bindingSettings select {
   width: 100%;
   min-width: 0;
   height: 30px;
   padding: 0 8px;
-  border: 1px solid rgba(255,255,255,.11);
-  border-radius: 6px;
-  background: #11171b;
-  color: rgba(239,247,250,.86);
-  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: 500 var(--step--1)/1 var(--font-ui);
 }
+
+.field select:focus,
+.bindingSettings select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .primaryButton,
 .learnButton,
 .removeButton {
-  border: 1px solid rgba(255,255,255,.12);
-  border-radius: 7px;
-  background: rgba(255,255,255,.045);
-  color: rgba(241,248,250,.82);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text-dim);
   cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
 }
+
 .primaryButton,
 .learnButton {
-  min-height: 34px;
+  min-height: 32px;
   padding: 0 11px;
 }
+
+.primaryButton:hover,
+.learnButton:hover {
+  border-color: var(--border-hi);
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
 .learnButton {
-  border-color: rgba(4,217,255,.34);
-  background: rgba(4,217,255,.085);
-  color: #9cefff;
-  font-weight: 700;
+  border-color: var(--accent-dim);
+  background: var(--accent-faint);
+  color: var(--accent);
+  font-weight: 600;
 }
+
 .learnButton[data-learning='true'] {
-  box-shadow: inset 0 0 0 1px rgba(4,217,255,.18), 0 0 14px rgba(4,217,255,.08);
+  border-color: var(--accent);
+  background: var(--accent-faint);
 }
+
 .boundSection {
   display: grid;
   gap: 8px;
   padding-top: 8px;
-  border-top: 1px solid rgba(255,255,255,.07);
+  border-top: 1px solid var(--border);
 }
+
 .bindingCard {
   display: grid;
   gap: 8px;
   min-width: 0;
   padding: 9px;
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 8px;
-  background: rgba(255,255,255,.025);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
 }
+
 .bindingTop > div {
   display: grid;
   gap: 3px;
   min-width: 0;
 }
+
 .bindingTop strong {
-  color: rgba(239,247,250,.9);
-  font-size: 11px;
+  color: var(--text);
+  font-size: var(--step--1);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .bindingTop span {
-  color: rgba(236,244,247,.48);
-  font-size: 9px;
+  color: var(--text-mute);
+  font-size: var(--step--2);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .removeButton {
   flex: none;
   padding: 5px 7px;
-  color: rgba(255,160,160,.76);
-  border-color: rgba(255,100,100,.18);
-  font-size: 9px;
+  color: var(--danger);
+  border-color: var(--border);
+  font-size: var(--step--2);
+  background: transparent;
 }
+
+.removeButton:hover {
+  border-color: var(--danger);
+  background: var(--danger-dim);
+}
+
 .bindingSettings {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 7px;
 }
+
 .modLearnBlock,
 .bindingModSettings,
 .calibrationBlock {
@@ -194,64 +253,78 @@
   gap: 8px;
   min-width: 0;
   padding: 9px;
-  border: 1px solid rgba(4,217,255,.14);
-  border-radius: 8px;
-  background: rgba(4,217,255,.035);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-canvas);
 }
-.bindingModSettings,
-.calibrationBlock {
-  border-color: rgba(255,255,255,.075);
-  background: rgba(255,255,255,.018);
-}
+
 .invertLine {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   min-height: 26px;
-  color: rgba(236,244,247,.58);
-  font-size: 9px;
-  letter-spacing: .04em;
+  color: var(--text-mute);
+  font-size: var(--step--2);
+  letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
 }
+
 .transportTabs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  padding: 3px;
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 8px;
-  background: rgba(0,0,0,.18);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg-canvas);
 }
+
 .transportTab {
   min-height: 30px;
   border: 0;
-  border-radius: 6px;
+  border-right: 1px solid var(--border);
   background: transparent;
-  color: rgba(236,244,247,.48);
-  font: 700 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: .08em;
+  color: var(--text-mute);
+  font: 600 var(--step--2)/1 var(--font-mono);
+  letter-spacing: var(--tracking-wide);
   cursor: pointer;
 }
-.transportTab[data-active='true'] {
-  background: rgba(4,217,255,.09);
-  color: #99efff;
-  box-shadow: inset 0 0 0 1px rgba(4,217,255,.22);
+
+.transportTab:last-child {
+  border-right: 0;
 }
+
+.transportTab:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.transportTab[data-active='true'] {
+  color: var(--accent);
+  background: var(--accent-faint);
+  box-shadow: inset 0 -1px 0 var(--accent);
+}
+
 .advancedBlock {
   min-width: 0;
   padding: 7px 9px;
-  border: 1px solid rgba(255,255,255,.075);
-  border-radius: 7px;
-  background: rgba(255,255,255,.018);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-canvas);
 }
+
 .advancedBlock summary {
-  color: rgba(236,244,247,.56);
-  font: 700 9px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
-  letter-spacing: .06em;
+  color: var(--text-mute);
+  font: 600 var(--step--2)/1.4 var(--font-mono);
+  letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
   cursor: pointer;
 }
-.advancedBlock[open] summary { margin-bottom: 8px; }
+
+.advancedBlock[open] summary {
+  margin-bottom: 8px;
+  color: var(--text-dim);
+}
 
 @media (max-width: 640px) {
   .bindButton {
@@ -259,12 +332,22 @@
     height: 30px;
     padding: 0 8px;
     font-size: 10px;
-    opacity: .82;
+    opacity: .86;
   }
-  .dialogStack { min-width: 0; }
+
+  .bindDot {
+    width: 5px;
+    height: 5px;
+  }
+
+  .dialogStack {
+    min-width: 0;
+  }
 }
 
 @media (max-width: 420px) {
   .twoCol,
-  .bindingSettings { grid-template-columns: 1fr; }
+  .bindingSettings {
+    grid-template-columns: 1fr;
+  }
 }

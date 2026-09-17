@@ -36,16 +36,18 @@ import s from './ControllerBindButton.module.css';
 interface ControllerBindButtonProps {
   control: Control;
   itemId: string;
-  /** When present, bind against one VFX effect instance instead of the tile's
-   * top-level parameter. Phase 4.97F exposes the runtime support added in D. */
   effectInstanceId?: string;
-  /** Optional context shown in the compact dialog title, e.g. "Noise · Mix". */
   targetLabel?: string;
 }
 
 type ScopeChoice = 'focused' | 'pinned';
 type ContinuousPathChoice = 'direct' | 'modulation';
 
+/**
+ * Compact hardware binding affordance shared by tile parameters and VFX.
+ * The visible pill is intentionally labelled MIDI per product UI language,
+ * while the dialog still supports MIDI and Gamepad from the same entry point.
+ */
 export function ControllerBindButton({
   control,
   itemId,
@@ -270,17 +272,15 @@ export function ControllerBindButton({
           setDocument(loadControlSurfaceDocument().document);
           setOpen(true);
         }}
-        aria-label={`Controller bind ${displayLabel}`}
+        aria-label={`MIDI and controller binding for ${displayLabel}`}
         title={allBindings.length
-          ? `${allBindings.length} controller binding${allBindings.length === 1 ? '' : 's'}`
-          : `Bind controller to ${displayLabel}`}
+          ? `${allBindings.length} hardware binding${allBindings.length === 1 ? '' : 's'} · open MIDI / gamepad setup`
+          : `Bind MIDI or gamepad to ${displayLabel}`}
       >
         <span className={s.bindDot} />
-        {allBindings.length > 0 ? `C${allBindings.length}` : 'CTRL'}
+        MIDI
       </button>
 
-      {/* Do not inherit the inspector Field action into Fields inside this
-          dialog; otherwise the CTRL button would recursively reproduce itself. */}
       <FieldActionProvider value={null}>
         <Dialog compact open={open} title={`Controller · ${displayLabel}`} onClose={close}>
           <div className={s.dialogStack}>
