@@ -148,17 +148,18 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
 
   private shouldSlew(binding: ControllerBinding, signal: ControlSignal): boolean {
     if (signal.kind !== 'absolute' && signal.kind !== 'bipolar') return false;
-    if (binding.target.domain === 'action') return false;
+    const target = binding.target;
+    if (target.domain === 'action') return false;
     if (typeof requestAnimationFrame !== 'function') return false;
 
-    const cardId = resolveTargetCardId(binding.target, useBoardStore.getState().selectedId);
+    const cardId = resolveTargetCardId(target, useBoardStore.getState().selectedId);
     if (!cardId) return false;
 
-    if (binding.target.domain === 'parameter') {
+    if (target.domain === 'parameter') {
       const control = getPool()
         .get(cardId)
         ?.getControlSchema()
-        ?.controls.find((candidate) => candidate.id === binding.target.controlId);
+        ?.controls.find((candidate) => candidate.id === target.controlId);
       return control?.kind === 'slider' || control?.kind === 'stepper';
     }
 
@@ -166,9 +167,9 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
     const effects = inspector.itemId === cardId
       ? inspector.effects
       : useBoardStore.getState().assets.find((candidate) => candidate.itemId === cardId)?.effects ?? [];
-    const instance = effects.find((candidate) => candidate.id === binding.target.effectInstanceId);
+    const instance = effects.find((candidate) => candidate.id === target.effectInstanceId);
     const control = instance
-      ? getEffectSchema(instance.effectType)?.controls.find((candidate) => candidate.id === binding.target.controlId)
+      ? getEffectSchema(instance.effectType)?.controls.find((candidate) => candidate.id === target.controlId)
       : undefined;
     return control?.kind === 'slider' || control?.kind === 'stepper';
   }
