@@ -10,7 +10,7 @@ export { Dialog } from './Dialog';
 export { Tooltip } from './Tooltip';
 export { Toast } from './Toast';
 export { useTooltipsEnabled } from './useTooltipsEnabled';
-export { Field } from './Field';
+export { Field, FieldActionProvider } from './Field';
 export { Badge, SectionLabel, Divider } from './Badge';
 export { HudMicroCluster } from './HudMicroCluster';
 export * from './Icon';

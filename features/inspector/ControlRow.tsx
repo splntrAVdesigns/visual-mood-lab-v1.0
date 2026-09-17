@@ -3,6 +3,7 @@
 import type { Control, ParamValue } from '@/renderers/control-schema';
 import { useInspectorStore } from '@/stores';
 import { ControllerBindButton } from '@/features/controllers/ControllerBindButton';
+import { FieldActionProvider } from '@/components/ui';
 import s from '../features.module.css';
 import { SliderControlRow } from './controls/SliderControl';
 import { StepperControlRow } from './controls/StepperControl';
@@ -23,22 +24,14 @@ interface ControlRowProps {
   dirty: boolean;
   onChange: (value: ParamValue) => void;
   onReset: () => void;
-  /**
-   * Computed by the caller via isDisabledByState(control, params), same
-   * as isVisible(control, params) already is for filtering which rows
-   * render at all — this component never receives the full ParamState
-   * itself (only its own control's value), so a disabledIf predicate
-   * that reads a SIBLING control can't be evaluated in here.
-   */
   forceDisabled?: boolean;
 }
 
 /**
- * Dispatches to one component per ControlKind. Phase 4.97C adds one generic
- * controller affordance at THIS schema boundary rather than teaching every
- * individual slider/toggle/select implementation about MIDI. That preserves
- * the Inspector's renderer-agnostic contract: any eligible control on any
- * tile gets Learn automatically.
+ * Dispatches to one component per ControlKind. Phase 4.97F routes the
+ * controller affordance through FieldActionProvider so the CTRL pill takes a
+ * real slot in Field's header row, immediately left of the value indicator,
+ * instead of floating over/behind the value with absolute positioning.
  */
 export function ControlRow({ control, value, dirty, onChange, onReset, forceDisabled }: ControlRowProps) {
   const modulated = useInspectorStore((st) => Boolean(st.mod[control.id]));
@@ -52,14 +45,13 @@ export function ControlRow({ control, value, dirty, onChange, onReset, forceDisa
     );
   }
 
+  const controllerAction = itemId ? <ControllerBindButton control={control} itemId={itemId} /> : null;
+
   return (
-    <div
-      className={s.controlRow}
-      data-modulated={modulated ? 'true' : undefined}
-      style={{ position: 'relative' }}
-    >
-      <ControlBody control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />
-      {itemId && <ControllerBindButton control={control} itemId={itemId} />}
+    <div className={s.controlRow} data-modulated={modulated ? 'true' : undefined}>
+      <FieldActionProvider value={controllerAction}>
+        <ControlBody control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />
+      </FieldActionProvider>
     </div>
   );
 }

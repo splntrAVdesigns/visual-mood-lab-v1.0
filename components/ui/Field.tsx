@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { createContext, useContext, type ReactNode } from 'react';
 import { ResetIcon } from './Icon';
 import { IconButton } from './Button';
 import { Badge } from './Badge';
@@ -17,11 +17,23 @@ interface FieldProps {
   /** Shows the accent dot and enables the reset affordance. */
   dirty?: boolean;
   onReset?: () => void;
-  /** Small badge rendered right after the label — currently just "Future
-      feature" for a control that's schema-present but not yet implemented
-      (see Control.disabled in control-schema.ts). */
+  /** Small badge rendered right after the label. */
   badge?: string;
   children: ReactNode;
+}
+
+/**
+ * Optional header action shared by every Field inside a control row.
+ * Phase 4.97F uses this for the compact CTRL pill so it sits immediately
+ * LEFT of the numeric value/readout instead of being absolutely positioned
+ * over it. The provider is deliberately generic so future per-control tools
+ * can use the same clean layout contract without teaching every control
+ * component about them individually.
+ */
+const FieldActionContext = createContext<ReactNode>(null);
+
+export function FieldActionProvider({ value, children }: { value: ReactNode; children: ReactNode }) {
+  return <FieldActionContext.Provider value={value}>{children}</FieldActionContext.Provider>;
 }
 
 /**
@@ -30,6 +42,8 @@ interface FieldProps {
  * same product.
  */
 export function Field({ label, value, valueNode, hint, dirty, onReset, badge, children }: FieldProps) {
+  const action = useContext(FieldActionContext);
+
   return (
     <div className={s.field}>
       <div className={s.fieldHead}>
@@ -40,6 +54,7 @@ export function Field({ label, value, valueNode, hint, dirty, onReset, badge, ch
           {badge && <Badge>{badge}</Badge>}
         </span>
         <span className={s.fieldRow}>
+          {action}
           {valueNode ?? (value !== undefined && <span className={s.fieldValue}>{value}</span>)}
           {dirty && onReset && (
             <IconButton

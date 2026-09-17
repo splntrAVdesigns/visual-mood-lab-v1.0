@@ -1,0 +1,51 @@
+.modeTabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  flex: none;
+  margin: var(--space-2) var(--space-4) var(--space-1);
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-canvas);
+}
+.modeTabs button {
+  min-width: 0;
+  min-height: var(--control-h);
+  padding: 0 var(--space-2);
+  border-radius: calc(var(--radius) - 1px);
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  letter-spacing: var(--tracking-wide);
+}
+.modeTabs button[data-active='true'] {
+  color: var(--accent);
+  background: var(--accent-faint);
+  box-shadow: inset 0 0 0 1px var(--accent-dim);
+}
+.desktopBody {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+.embeddedRoot {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.embeddedRoot .modeTabs {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  margin: 0 0 var(--space-3);
+  background: var(--bg-surface);
+}
+
+@media (max-width: 820px) {
+  .modeTabs button {
+    min-height: 38px;
+    font-size: 11px;
+  }
+}
