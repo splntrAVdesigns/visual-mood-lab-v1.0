@@ -1,0 +1,20 @@
+/* Phase 4.97F.3 controller Learn desktop sidecar.
+   Kept separate from ui.module.css because this placement is specific to the
+   controller tool, not a new default for every Dialog in the app. */
+.sidecarHost {
+  display: block;
+  padding: 0 !important;
+  background: transparent !important;
+  pointer-events: none;
+}
+
+.sidecarPanel {
+  position: absolute;
+  top: 50%;
+  right: calc(var(--inspector-w) + var(--space-3));
+  width: 320px !important;
+  max-width: calc(100vw - var(--inspector-w) - 24px);
+  max-height: calc(100dvh - 32px) !important;
+  transform: translateY(-50%);
+  pointer-events: auto;
+}

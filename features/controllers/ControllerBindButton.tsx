@@ -85,16 +85,26 @@ export function ControllerBindButton({
   const canModulate =
     control.modulatable === true && (control.kind === 'slider' || control.kind === 'stepper');
 
+  // Binding visibility still hydrates immediately, but Phase 4.97F.3 stops
+  // every closed MIDI pill from subscribing to high-frequency diagnostic
+  // snapshots. Runtime device activity is only relevant while this tool is
+  // actually open; bound/unbound state comes from the persisted document.
   useEffect(() => {
     if (!eligible) return;
     setDocument(loadControlSurfaceDocument().document);
-    const unsubscribeMidi = getMidiControlSurface().subscribe(setMidiSnapshot);
-    const unsubscribeGamepad = getGamepadControlSurface().subscribe(setGamepadSnapshot);
+  }, [eligible]);
+
+  useEffect(() => {
+    if (!eligible || !open) return;
+    const midi = getMidiControlSurface();
+    const gamepad = getGamepadControlSurface();
+    const unsubscribeMidi = midi.subscribe(setMidiSnapshot);
+    const unsubscribeGamepad = gamepad.subscribe(setGamepadSnapshot);
     return () => {
       unsubscribeMidi();
       unsubscribeGamepad();
     };
-  }, [eligible]);
+  }, [eligible, open]);
 
   useEffect(() => () => cancelLearnRef.current?.(), []);
 
@@ -282,7 +292,7 @@ export function ControllerBindButton({
       </button>
 
       <FieldActionProvider value={null}>
-        <Dialog compact open={open} title={`Controller · ${displayLabel}`} onClose={close}>
+        <Dialog compact desktopSidecar open={open} title={`Controller · ${displayLabel}`} onClose={close}>
           <div className={s.dialogStack}>
             <div className={s.transportTabs} role="tablist" aria-label="Controller transport">
               {(['midi', 'gamepad'] as ControllerTransport[]).map((kind) => (

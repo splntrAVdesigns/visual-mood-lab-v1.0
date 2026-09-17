@@ -18,6 +18,9 @@ import type {
 
 const PICKUP_WINDOW = 0.035;
 const WRITE_SETTLE_MS = 320;
+const MIN_SLEW_MS = 26;
+const MAX_SLEW_MS = 48;
+const SLEW_FULL_DISTANCE = 0.1;
 
 interface DirectGestureState {
   latched: boolean;
@@ -30,6 +33,16 @@ interface PendingWrite {
   binding: ControllerBinding;
   cardId: string;
   value01: number;
+}
+
+interface SlewState {
+  binding: ControllerBinding;
+  signal: ControlSignal;
+  from: number;
+  to: number;
+  current: number;
+  startedAt: number;
+  durationMs: number;
 }
 
 /**
@@ -45,11 +58,21 @@ interface PendingWrite {
  * into the lightweight presentation registry. That lets sliders/readouts track
  * Live-mode hardware without converting every MIDI CC into persisted React
  * state or a database write.
+ *
+ * Phase 4.97F.3 adds a very short rAF-domain slew for continuous absolute
+ * Direct controls. Standard MIDI CC is only 7-bit, so slowly turning a knob can
+ * otherwise expose each discrete step as a tiny visual hitch. The slew stays
+ * completely outside React/persistence and lands the exact endpoint within
+ * roughly 26–48 ms. Relative encoders, gates, triggers, toggles/selects and
+ * action routes remain immediate so response-critical controls gain no delay.
  */
 export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
   private gestures = new Map<string, DirectGestureState>();
   private writeTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private pendingWrites = new Map<string, PendingWrite>();
+  private lastApplied = new Map<string, number>();
+  private slews = new Map<string, SlewState>();
+  private slewRaf: number | null = null;
 
   constructor(private readonly inner: LiveControlSurfaceRuntime = getLiveControlSurfaceRuntime()) {}
 
@@ -63,15 +86,12 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
       return { status: 'ignored', detail: 'Pickup waiting for the hardware control to reach the current value.' };
     }
 
-    const outcome = this.inner.applyDirect(binding, transformed, signal);
-    if (outcome.status === 'applied') {
-      this.publishAppliedValue(binding, transformed);
-      if ((binding.writeMode ?? 'live') === 'write') {
-        const cardId = resolveTargetCardId(binding.target, useBoardStore.getState().selectedId);
-        if (cardId) this.scheduleWrite(binding, cardId, transformed);
-      }
+    if (this.shouldSlew(binding, signal)) {
+      return this.queueSlew(binding, transformed, signal);
     }
-    return outcome;
+
+    this.cancelSlew(binding.id);
+    return this.applyDirectNow(binding, transformed, signal);
   }
 
   applyModulation(
@@ -88,6 +108,8 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
 
   clearBinding(bindingId: string): void {
     this.cancelWrite(bindingId);
+    this.cancelSlew(bindingId);
+    this.lastApplied.delete(bindingId);
     this.gestures.delete(bindingId);
     this.inner.clearBinding(bindingId);
   }
@@ -96,9 +118,139 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
     for (const timer of this.writeTimers.values()) clearTimeout(timer);
     this.writeTimers.clear();
     this.pendingWrites.clear();
+    this.lastApplied.clear();
     this.gestures.clear();
+    this.slews.clear();
+    if (this.slewRaf !== null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(this.slewRaf);
+    }
+    this.slewRaf = null;
     getControllerPresentationRegistry().clear();
     this.inner.panic();
+  }
+
+  private applyDirectNow(
+    binding: ControllerBinding,
+    value01: number,
+    signal: ControlSignal,
+  ): ControllerDispatchOutcome {
+    const outcome = this.inner.applyDirect(binding, value01, signal);
+    if (outcome.status === 'applied') {
+      this.lastApplied.set(binding.id, value01);
+      this.publishAppliedValue(binding, value01);
+      if ((binding.writeMode ?? 'live') === 'write') {
+        const cardId = resolveTargetCardId(binding.target, useBoardStore.getState().selectedId);
+        if (cardId) this.scheduleWrite(binding, cardId, value01);
+      }
+    }
+    return outcome;
+  }
+
+  private shouldSlew(binding: ControllerBinding, signal: ControlSignal): boolean {
+    if (signal.kind !== 'absolute' && signal.kind !== 'bipolar') return false;
+    if (binding.target.domain === 'action') return false;
+    if (typeof requestAnimationFrame !== 'function') return false;
+
+    const cardId = resolveTargetCardId(binding.target, useBoardStore.getState().selectedId);
+    if (!cardId) return false;
+
+    if (binding.target.domain === 'parameter') {
+      const control = getPool()
+        .get(cardId)
+        ?.getControlSchema()
+        ?.controls.find((candidate) => candidate.id === binding.target.controlId);
+      return control?.kind === 'slider' || control?.kind === 'stepper';
+    }
+
+    const inspector = useInspectorStore.getState();
+    const effects = inspector.itemId === cardId
+      ? inspector.effects
+      : useBoardStore.getState().assets.find((candidate) => candidate.itemId === cardId)?.effects ?? [];
+    const instance = effects.find((candidate) => candidate.id === binding.target.effectInstanceId);
+    const control = instance
+      ? getEffectSchema(instance.effectType)?.controls.find((candidate) => candidate.id === binding.target.controlId)
+      : undefined;
+    return control?.kind === 'slider' || control?.kind === 'stepper';
+  }
+
+  private queueSlew(
+    binding: ControllerBinding,
+    target01: number,
+    signal: ControlSignal,
+  ): ControllerDispatchOutcome {
+    const now = this.now();
+    const existing = this.slews.get(binding.id);
+    const from = existing
+      ? this.sampleSlew(existing, now)
+      : (this.lastApplied.get(binding.id) ?? this.readTargetUnit(binding) ?? target01);
+    const distance = Math.abs(target01 - from);
+
+    if (distance <= 0.00001) {
+      this.cancelSlew(binding.id);
+      return this.applyDirectNow(binding, target01, signal);
+    }
+
+    const durationMs = MIN_SLEW_MS +
+      (MAX_SLEW_MS - MIN_SLEW_MS) * Math.min(1, distance / SLEW_FULL_DISTANCE);
+
+    this.slews.set(binding.id, {
+      binding: { ...binding, target: { ...binding.target } },
+      signal: { ...signal },
+      from,
+      to: target01,
+      current: from,
+      startedAt: now,
+      durationMs,
+    });
+    this.ensureSlewLoop();
+
+    return { status: 'applied', detail: 'Continuous controller target queued for frame-smooth runtime interpolation.' };
+  }
+
+  private ensureSlewLoop(): void {
+    if (this.slewRaf !== null || this.slews.size === 0 || typeof requestAnimationFrame !== 'function') return;
+    this.slewRaf = requestAnimationFrame(this.tickSlews);
+  }
+
+  private tickSlews = (now: number): void => {
+    this.slewRaf = null;
+
+    for (const [bindingId, state] of this.slews) {
+      const value = this.sampleSlew(state, now);
+      state.current = value;
+      const outcome = this.applyDirectNow(state.binding, value, state.signal);
+      const done = now - state.startedAt >= state.durationMs;
+
+      if (outcome.status !== 'applied' || done) {
+        if (done && outcome.status === 'applied' && value !== state.to) {
+          this.applyDirectNow(state.binding, state.to, state.signal);
+        }
+        this.slews.delete(bindingId);
+      }
+    }
+
+    this.ensureSlewLoop();
+  };
+
+  private sampleSlew(state: SlewState, now: number): number {
+    const elapsed = Math.max(0, now - state.startedAt);
+    const t = state.durationMs <= 0 ? 1 : Math.min(1, elapsed / state.durationMs);
+    // Ease-out keeps the control feeling immediate while still bridging the
+    // visible gaps between 7-bit CC positions. Endpoint remains exact.
+    const eased = 1 - Math.pow(1 - t, 2);
+    return clamp01(state.from + (state.to - state.from) * eased);
+  }
+
+  private cancelSlew(bindingId: string): void {
+    this.slews.delete(bindingId);
+    if (this.slews.size === 0 && this.slewRaf !== null && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(this.slewRaf);
+      this.slewRaf = null;
+    }
+  }
+
+  private now(): number {
+    return typeof performance !== 'undefined' ? performance.now() : Date.now();
   }
 
   private publishAppliedValue(binding: ControllerBinding, value01: number): void {
@@ -221,6 +373,8 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
     // temporary live override so subsequent rendering comes from that same
     // canonical state. Reset takeover too so the next physical gesture starts
     // from the freshly committed value.
+    this.cancelSlew(binding.id);
+    this.lastApplied.delete(binding.id);
     this.inner.clearBinding(binding.id);
     this.gestures.delete(binding.id);
   }
