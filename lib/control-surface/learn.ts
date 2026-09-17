@@ -21,7 +21,14 @@ export interface LearnBindingRequest {
   writeMode: ControllerWriteMode;
   takeover: TakeoverMode;
   relativeMode?: MidiRelativeMode;
+  /** Modulation path depth, 0..1 in the current UI. */
+  amount?: number;
+  /** Controller-input smoothing, 0 = none, 0.95 = heavy. */
+  smoothing?: number;
+  /** Invert the normalized controller signal before applying modulation. */
+  invert?: boolean;
 }
+
 
 export interface LearnedBindingResult {
   document: ControlSurfaceDocument;
@@ -127,9 +134,10 @@ export function applyMidiLearnBinding(
       enabled: true,
       takeover: request.takeover,
       writeMode: request.writeMode,
-      smoothing: 0,
-      invert: false,
+      smoothing: request.path === 'modulation' ? clampSmoothing(request.smoothing ?? 0.12) : 0,
+      invert: request.path === 'modulation' ? Boolean(request.invert) : false,
       curve: 'linear',
+      amount: request.path === 'modulation' ? clampAmount(request.amount ?? 0.3) : undefined,
       actionMode: request.path === 'action' ? 'trigger' : undefined,
     };
     mapping.bindings.push(binding);
@@ -139,6 +147,9 @@ export function applyMidiLearnBinding(
     binding.enabled = true;
     binding.takeover = request.takeover;
     binding.writeMode = request.writeMode;
+    binding.smoothing = request.path === 'modulation' ? clampSmoothing(request.smoothing ?? 0.12) : 0;
+    binding.invert = request.path === 'modulation' ? Boolean(request.invert) : false;
+    binding.amount = request.path === 'modulation' ? clampAmount(request.amount ?? 0.3) : undefined;
     if (request.path === 'action') binding.actionMode = binding.actionMode ?? 'trigger';
   }
 
@@ -167,17 +178,29 @@ export function removeControllerBinding(
   return document;
 }
 
+export type ControllerBindingPatch = Partial<
+  Pick<
+    ControllerBinding,
+    'takeover' | 'writeMode' | 'amount' | 'smoothing' | 'invert' | 'curve' | 'enabled'
+  >
+>;
+
 export function updateControllerBinding(
   source: ControlSurfaceDocument,
   bindingId: string,
-  patch: Pick<ControllerBinding, 'takeover' | 'writeMode'>,
+  patch: ControllerBindingPatch,
 ): ControlSurfaceDocument {
   const document = cloneDocument(source);
   for (const mapping of document.mappings) {
     const binding = mapping.bindings.find((item) => item.id === bindingId);
     if (!binding) continue;
-    binding.takeover = patch.takeover;
-    binding.writeMode = patch.writeMode;
+    if (patch.takeover !== undefined) binding.takeover = patch.takeover;
+    if (patch.writeMode !== undefined) binding.writeMode = patch.writeMode;
+    if (patch.amount !== undefined) binding.amount = clampAmount(patch.amount);
+    if (patch.smoothing !== undefined) binding.smoothing = clampSmoothing(patch.smoothing);
+    if (patch.invert !== undefined) binding.invert = patch.invert;
+    if (patch.curve !== undefined) binding.curve = patch.curve;
+    if (patch.enabled !== undefined) binding.enabled = patch.enabled;
   }
   return document;
 }
@@ -258,6 +281,17 @@ function normalize(value: string | undefined): string {
 
 function cloneDocument(document: ControlSurfaceDocument): ControlSurfaceDocument {
   return JSON.parse(JSON.stringify(document)) as ControlSurfaceDocument;
+}
+
+
+function clampAmount(value: number): number {
+  if (!Number.isFinite(value)) return 0.3;
+  return value < -1 ? -1 : value > 1 ? 1 : value;
+}
+
+function clampSmoothing(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return value < 0 ? 0 : value > 0.95 ? 0.95 : value;
 }
 
 function createId(prefix: string): string {

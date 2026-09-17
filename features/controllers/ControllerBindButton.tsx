@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Dialog } from '@/components/ui';
+import { Dialog, Field, Slider, Toggle, formatValue } from '@/components/ui';
+import { defaultAmountFor } from '@/lib/modulation/bus';
 import type { Control } from '@/renderers/control-schema';
 import {
   applyMidiLearnBinding,
@@ -14,6 +15,7 @@ import {
   requestMidiControlSurfaceAccess,
   saveControlSurfaceDocument,
   updateControllerBinding,
+  type ControllerBindingPatch,
   type ControllerWriteMode,
   type ControlSurfaceDocument,
   type MidiRelativeMode,
@@ -29,30 +31,42 @@ interface ControllerBindButtonProps {
 }
 
 type ScopeChoice = 'focused' | 'pinned';
+type ContinuousPathChoice = 'direct' | 'modulation';
 
 /**
- * Compact Inspector affordance for Phase 4.97C.
+ * Compact Inspector controller affordance.
  *
- * The device/profile layer stays invisible until it is useful: click MIDI,
- * choose the behavior, hit Learn, move a physical control. If the device has
- * never been seen before, applyMidiLearnBinding creates its reusable profile,
- * first bank and mapping automatically. Learning the same knob against another
- * parameter reuses the virtual control and adds another binding (fan-out).
+ * Phase 4.97C established Direct + Action Learn. Phase 4.97D adds the second
+ * continuous behavior here rather than creating a separate MIDI-only panel:
+ * a numeric modulatable parameter can now choose Direct (hardware owns the
+ * value) or Modulation (hardware moves around the persisted base). The same
+ * physical control/profile/bank model is reused for both paths.
  */
 export function ControllerBindButton({ control, itemId }: ControllerBindButtonProps) {
   const [open, setOpen] = useState(false);
   const [document, setDocument] = useState<ControlSurfaceDocument>(createEmptyControlSurfaceDocument());
   const [snapshot, setSnapshot] = useState<MidiRuntimeSnapshot | null>(null);
   const [scope, setScope] = useState<ScopeChoice>('focused');
+  const [path, setPath] = useState<ContinuousPathChoice>('direct');
   const [writeMode, setWriteMode] = useState<ControllerWriteMode>('live');
   const [takeover, setTakeover] = useState<TakeoverMode>('pickup');
   const [relativeMode, setRelativeMode] = useState<MidiRelativeMode>('absolute');
+  const [amount, setAmount] = useState(() => defaultAmountFor(control));
+  const [smoothing, setSmoothing] = useState(0.12);
+  const [invert, setInvert] = useState(false);
   const [inputId, setInputId] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const cancelLearnRef = useRef<(() => void) | null>(null);
 
   const isTrigger = control.kind === 'trigger';
-  const eligible = isTrigger || control.kind === 'slider' || control.kind === 'stepper' || control.kind === 'toggle' || control.kind === 'select';
+  const eligible =
+    isTrigger ||
+    control.kind === 'slider' ||
+    control.kind === 'stepper' ||
+    control.kind === 'toggle' ||
+    control.kind === 'select';
+  const canModulate =
+    control.modulatable === true && (control.kind === 'slider' || control.kind === 'stepper');
 
   useEffect(() => {
     if (!eligible) return;
@@ -112,6 +126,7 @@ export function ControllerBindButton({ control, itemId }: ControllerBindButtonPr
     cancelLearnRef.current?.();
     const runtime = getMidiControlSurface();
     const target = scope === 'pinned' ? pinnedTarget : focusedTarget;
+    const selectedPath = isTrigger ? 'action' : canModulate ? path : 'direct';
 
     cancelLearnRef.current = runtime.startLearn(
       {
@@ -126,14 +141,18 @@ export function ControllerBindButton({ control, itemId }: ControllerBindButtonPr
         const result = applyMidiLearnBinding(current, candidate, {
           target,
           targetLabel: control.label,
-          path: isTrigger ? 'action' : 'direct',
-          writeMode: isTrigger ? 'live' : writeMode,
-          takeover: isTrigger ? 'jump' : takeover,
+          path: selectedPath,
+          writeMode: selectedPath === 'direct' ? writeMode : 'live',
+          takeover: selectedPath === 'direct' ? takeover : 'jump',
           relativeMode,
+          amount: selectedPath === 'modulation' ? amount : undefined,
+          smoothing: selectedPath === 'modulation' ? smoothing : undefined,
+          invert: selectedPath === 'modulation' ? invert : undefined,
         });
         persist(result.document);
         cancelLearnRef.current = null;
-        setNotice(`${result.profile.alias} · ${result.virtualControl.label} → ${control.label}`);
+        const behavior = selectedPath === 'modulation' ? 'MOD' : selectedPath === 'action' ? 'ACTION' : 'DIRECT';
+        setNotice(`${result.profile.alias} · ${result.virtualControl.label} → ${control.label} · ${behavior}`);
       },
     );
   };
@@ -143,8 +162,8 @@ export function ControllerBindButton({ control, itemId }: ControllerBindButtonPr
     setNotice('Binding removed.');
   };
 
-  const updateBinding = (bindingId: string, nextTakeover: TakeoverMode, nextWriteMode: ControllerWriteMode) => {
-    persist(updateControllerBinding(document, bindingId, { takeover: nextTakeover, writeMode: nextWriteMode }));
+  const patchBinding = (bindingId: string, patch: ControllerBindingPatch) => {
+    persist(updateControllerBinding(document, bindingId, patch));
   };
 
   const connectedDevices = snapshot?.devices.filter((device) => device.state === 'connected') ?? [];
@@ -161,8 +180,8 @@ export function ControllerBindButton({ control, itemId }: ControllerBindButtonPr
           setDocument(loaded.document);
           setOpen(true);
         }}
-        aria-label={`MIDI bind ${control.label}`}
-        title={bindings.length ? `${bindings.length} MIDI binding${bindings.length === 1 ? '' : 's'}` : `MIDI learn ${control.label}`}
+        aria-label={`Controller bind ${control.label}`}
+        title={bindings.length ? `${bindings.length} controller binding${bindings.length === 1 ? '' : 's'}` : `MIDI learn ${control.label}`}
       >
         <span className={s.bindDot} />
         {bindings.length > 0 ? `M${bindings.length}` : 'MIDI'}
@@ -212,7 +231,26 @@ export function ControllerBindButton({ control, itemId }: ControllerBindButtonPr
                   </select>
                 </label>
 
-                {!isTrigger && (
+                {!isTrigger && canModulate ? (
+                  <label className={s.field}>
+                    <span>Behavior</span>
+                    <select value={path} onChange={(event) => setPath(event.target.value as ContinuousPathChoice)}>
+                      <option value="direct">Direct control</option>
+                      <option value="modulation">Modulation</option>
+                    </select>
+                  </label>
+                ) : !isTrigger ? (
+                  <label className={s.field}>
+                    <span>Behavior</span>
+                    <select value="direct" disabled>
+                      <option value="direct">Direct control</option>
+                    </select>
+                  </label>
+                ) : null}
+              </div>
+
+              {!isTrigger && path === 'direct' && (
+                <div className={s.twoCol}>
                   <label className={s.field}>
                     <span>Mode</span>
                     <select value={writeMode} onChange={(event) => setWriteMode(event.target.value as ControllerWriteMode)}>
@@ -220,11 +258,7 @@ export function ControllerBindButton({ control, itemId }: ControllerBindButtonPr
                       <option value="write">Write</option>
                     </select>
                   </label>
-                )}
-              </div>
 
-              {!isTrigger && (
-                <div className={s.twoCol}>
                   <label className={s.field}>
                     <span>Takeover</span>
                     <select value={takeover} onChange={(event) => setTakeover(event.target.value as TakeoverMode)}>
@@ -233,17 +267,52 @@ export function ControllerBindButton({ control, itemId }: ControllerBindButtonPr
                       <option value="scaled">Scaled</option>
                     </select>
                   </label>
-
-                  <label className={s.field}>
-                    <span>CC encoder</span>
-                    <select value={relativeMode} onChange={(event) => setRelativeMode(event.target.value as MidiRelativeMode)}>
-                      <option value="absolute">Absolute</option>
-                      <option value="twos-complement">Two's complement</option>
-                      <option value="binary-offset">Binary offset</option>
-                      <option value="signed-bit">Signed bit</option>
-                    </select>
-                  </label>
                 </div>
+              )}
+
+              {!isTrigger && canModulate && path === 'modulation' && (
+                <div className={s.modLearnBlock}>
+                  <div className={s.modLearnTitle}>Controller modulation</div>
+                  <Field label="Amount" value={formatValue(amount, 0.01)}>
+                    <Slider
+                      label={`${control.label} controller modulation amount`}
+                      value={amount}
+                      min={0}
+                      max={1}
+                      step={0.01}
+                      onChange={setAmount}
+                    />
+                  </Field>
+                  <Field label="Smoothing" value={formatValue(smoothing, 0.01)}>
+                    <Slider
+                      label={`${control.label} controller modulation smoothing`}
+                      value={smoothing}
+                      min={0}
+                      max={0.95}
+                      step={0.01}
+                      onChange={setSmoothing}
+                    />
+                  </Field>
+                  <div className={s.invertLine}>
+                    <span>Invert signal</span>
+                    <Toggle checked={invert} label="Invert controller modulation" onChange={setInvert} />
+                  </div>
+                  <p className={s.modHint}>
+                    Modulation moves around the saved value without writing it. Existing LFO, Audio, or Mic routing can still layer on top.
+                  </p>
+                </div>
+              )}
+
+              {!isTrigger && (
+                <label className={s.field}>
+                  <span>CC encoder</span>
+                  <select value={relativeMode} onChange={(event) => setRelativeMode(event.target.value as MidiRelativeMode)}>
+                    <option value="absolute">Absolute</option>
+                    <option value="twos-complement">Two&apos;s complement</option>
+                    <option value="binary-offset">Binary offset</option>
+                    <option value="signed-bit">Signed bit</option>
+                  </select>
+                </label>
               )}
 
               <button
@@ -267,7 +336,9 @@ export function ControllerBindButton({ control, itemId }: ControllerBindButtonPr
                   <div className={s.bindingTop}>
                     <div>
                       <strong>{virtualControl?.label ?? 'MIDI control'}</strong>
-                      <span>{profile.alias} · {binding.target.scope === 'pinned' ? 'Pinned' : 'Focused'}</span>
+                      <span>
+                        {profile.alias} · {binding.path === 'modulation' ? 'Modulation' : binding.path === 'action' ? 'Action' : 'Direct'} · {binding.target.scope === 'pinned' ? 'Pinned' : 'Focused'}
+                      </span>
                     </div>
                     <button type="button" className={s.removeButton} onClick={() => removeBinding(binding.id)}>
                       Remove
@@ -279,11 +350,7 @@ export function ControllerBindButton({ control, itemId }: ControllerBindButtonPr
                       <select
                         value={binding.takeover ?? 'pickup'}
                         aria-label="Takeover mode"
-                        onChange={(event) => updateBinding(
-                          binding.id,
-                          event.target.value as TakeoverMode,
-                          binding.writeMode ?? 'live',
-                        )}
+                        onChange={(event) => patchBinding(binding.id, { takeover: event.target.value as TakeoverMode })}
                       >
                         <option value="pickup">Pickup</option>
                         <option value="jump">Jump</option>
@@ -292,15 +359,44 @@ export function ControllerBindButton({ control, itemId }: ControllerBindButtonPr
                       <select
                         value={binding.writeMode ?? 'live'}
                         aria-label="Write mode"
-                        onChange={(event) => updateBinding(
-                          binding.id,
-                          binding.takeover ?? 'pickup',
-                          event.target.value as ControllerWriteMode,
-                        )}
+                        onChange={(event) => patchBinding(binding.id, { writeMode: event.target.value as ControllerWriteMode })}
                       >
                         <option value="live">Live</option>
                         <option value="write">Write</option>
                       </select>
+                    </div>
+                  )}
+
+                  {binding.path === 'modulation' && (
+                    <div className={s.bindingModSettings}>
+                      <Field label="Amount" value={formatValue(binding.amount ?? 0.3, 0.01)}>
+                        <Slider
+                          label={`${control.label} binding amount`}
+                          value={binding.amount ?? 0.3}
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          onChange={(value) => patchBinding(binding.id, { amount: value })}
+                        />
+                      </Field>
+                      <Field label="Smoothing" value={formatValue(binding.smoothing ?? 0, 0.01)}>
+                        <Slider
+                          label={`${control.label} binding smoothing`}
+                          value={binding.smoothing ?? 0}
+                          min={0}
+                          max={0.95}
+                          step={0.01}
+                          onChange={(value) => patchBinding(binding.id, { smoothing: value })}
+                        />
+                      </Field>
+                      <div className={s.invertLine}>
+                        <span>Invert signal</span>
+                        <Toggle
+                          checked={Boolean(binding.invert)}
+                          label={`Invert ${control.label} controller modulation`}
+                          onChange={(value) => patchBinding(binding.id, { invert: value })}
+                        />
+                      </div>
                     </div>
                   )}
                 </div>

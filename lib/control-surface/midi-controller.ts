@@ -2,9 +2,13 @@ import { ControlSurfaceBindingEngine } from './binding-engine';
 import { loadControlSurfaceDocument } from './persistence';
 import { getDirectControlRuntime } from './direct-control';
 import { MidiRuntime } from './midi-runtime';
+import {
+  configureControllerModulationBindings,
+  disposeControllerModulationBridge,
+} from './controller-modulation';
 
 /**
- * Lazy browser integration for Phase 4.97B/4.97C. Merely importing the module
+ * Lazy browser integration for Phase 4.97B–4.97D. Merely importing the module
  * never requests MIDI permission. UI code can call getMidiControlSurface(),
  * inspect diagnostics, and invoke requestAccess() from an explicit user
  * gesture.
@@ -26,6 +30,9 @@ export function getMidiControlSurface(): MidiRuntime {
     const loaded = loadControlSurfaceDocument();
     persistenceWarnings = loaded.warnings;
     midiRuntime.configure(loaded.document);
+    configureControllerModulationBindings(
+      loaded.document.mappings.flatMap((mapping) => mapping.bindings),
+    );
   }
   return midiRuntime;
 }
@@ -36,6 +43,9 @@ export function reloadMidiControlSurfaceConfiguration(): string[] {
   const loaded = loadControlSurfaceDocument();
   persistenceWarnings = loaded.warnings;
   runtime.configure(loaded.document);
+  configureControllerModulationBindings(
+    loaded.document.mappings.flatMap((mapping) => mapping.bindings),
+  );
   return [...persistenceWarnings];
 }
 
@@ -51,6 +61,7 @@ export async function requestMidiControlSurfaceAccess() {
 /** Useful for hot-reload/dev teardown and future account/session switches. */
 export function disposeMidiControlSurface(): void {
   midiRuntime?.dispose();
+  disposeControllerModulationBridge();
   midiRuntime = null;
   bindingEngine = null;
   persistenceWarnings = [];

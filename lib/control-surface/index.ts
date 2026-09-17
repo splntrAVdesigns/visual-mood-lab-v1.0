@@ -5,6 +5,7 @@ export * from './source-registry';
 export * from './binding-engine';
 export * from './runtime';
 export * from './direct-control';
+export * from './controller-modulation';
 export * from './scheduler';
 export * from './persistence';
 export * from './learn';

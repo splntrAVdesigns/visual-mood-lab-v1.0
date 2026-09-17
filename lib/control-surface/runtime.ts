@@ -5,6 +5,7 @@ import { hydrate, type Control, type ControlSchema, type ParamValue } from '@/re
 import { useBoardStore } from '@/stores/boardStore';
 import { useInspectorStore } from '@/stores/inspectorStore';
 import { mapUnitToControl } from './normalize';
+import { getControllerModulationBridge } from './controller-modulation';
 import { resolveTargetCardId, resolvedTargetKey, validateTargetRef } from './targets';
 import type {
   ControllerBinding,
@@ -58,7 +59,6 @@ export type ControllerActionHandler = (context: ControllerActionContext) => Cont
 export class LiveControlSurfaceRuntime implements ControlSurfaceRuntimeAdapter {
   private overrides = new Map<string, OverrideEntry>();
   private pendingWrites = new Map<string, PendingControllerWrite>();
-  private modulationValues = new Map<string, number>();
   private actions = new Map<string, ControllerActionHandler>();
   private sequence = 0;
 
@@ -151,9 +151,10 @@ export class LiveControlSurfaceRuntime implements ControlSurfaceRuntimeAdapter {
   }
 
   /**
-   * 4.97A intentionally records/stages Modulation dispatch without yet
-   * changing the existing ModSource union. Phase 4.97D is the dedicated
-   * bridge from ControllerSourceRegistry into lib/modulation/bus.ts.
+   * Phase 4.97D — real controller modulation path. The binding engine has
+   * already normalized/inverted/curved/smoothed the physical signal; the
+   * bridge converts that 0..1 value into a temporary runtime base offset.
+   * RendererPool's existing LFO/audio/mic modulation then layers on top.
    */
   applyModulation(
     binding: ControllerBinding,
@@ -162,8 +163,7 @@ export class LiveControlSurfaceRuntime implements ControlSurfaceRuntimeAdapter {
   ): ControllerDispatchOutcome {
     const error = validateTargetRef(binding.target);
     if (error) return { status: 'error', detail: error };
-    this.modulationValues.set(binding.id, value01);
-    return { status: 'applied', detail: 'Controller modulation source staged for Phase 4.97D bus bridge.' };
+    return getControllerModulationBridge().update(binding, value01);
   }
 
   dispatchAction(binding: ControllerBinding, signal: ControlSignal): ControllerDispatchOutcome {
@@ -188,7 +188,7 @@ export class LiveControlSurfaceRuntime implements ControlSurfaceRuntimeAdapter {
       this.renderRuntimeTarget(previous.target);
     }
     this.pendingWrites.delete(bindingId);
-    this.modulationValues.delete(bindingId);
+    getControllerModulationBridge().remove(bindingId);
   }
 
   /** Deterministic neutral/base recovery for live use. */
@@ -197,7 +197,7 @@ export class LiveControlSurfaceRuntime implements ControlSurfaceRuntimeAdapter {
     for (const entry of this.overrides.values()) targets.set(entry.targetKey, entry.target);
     this.overrides.clear();
     this.pendingWrites.clear();
-    this.modulationValues.clear();
+    getControllerModulationBridge().panic();
     for (const target of targets.values()) this.renderRuntimeTarget(target);
   }
 
@@ -206,7 +206,7 @@ export class LiveControlSurfaceRuntime implements ControlSurfaceRuntimeAdapter {
   }
 
   getModulationValue(bindingId: string): number | null {
-    return this.modulationValues.get(bindingId) ?? null;
+    return getControllerModulationBridge().value(bindingId);
   }
 
   private resolveCard(target: TargetRef): string | null {

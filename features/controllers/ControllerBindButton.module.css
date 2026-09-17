@@ -166,3 +166,42 @@
   .twoCol,
   .bindingSettings { grid-template-columns: 1fr; }
 }
+
+/* Phase 4.97D — compact modulation controls inside the existing Learn dialog. */
+.modLearnBlock,
+.bindingModSettings {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(4,217,255,.14);
+  border-radius: 8px;
+  background: rgba(4,217,255,.035);
+}
+.modLearnTitle {
+  color: rgba(180,238,248,.78);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.invertLine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 28px;
+  color: rgba(236,244,247,.58);
+  font-size: 10px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.modHint {
+  margin: 0;
+  color: rgba(236,244,247,.46);
+  font-size: 10px;
+  line-height: 1.45;
+}
+.bindingModSettings {
+  border-color: rgba(255,255,255,.075);
+  background: rgba(255,255,255,.018);
+}
