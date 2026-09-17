@@ -1014,12 +1014,30 @@
         "tiling"
       ]
     },
-{
-  "slug": "rippling-table",
-  "type": "p5",
-  "file": "sketches/rippling-table.js",
-  "title": "Rippling Table",
-  "tags": ["3d", "water", "audio-reactive", "shader", "interactive"]
-}
+    {
+      "slug": "rippling-table",
+      "type": "p5",
+      "file": "sketches/rippling-table.js",
+      "title": "Rippling Table",
+      "tags": [
+        "3d",
+        "water",
+        "audio-reactive",
+        "shader",
+        "interactive"
+      ]
+    },
+    {
+      "slug": "gradient-fold-tunnel",
+      "type": "shader",
+      "file": "shaders/gradient-fold-tunnel.frag",
+      "title": "Gradient Fold Tunnel",
+      "tags": [
+        "kaleidoscope",
+        "gradient",
+        "symmetry",
+        "tunnel"
+      ]
+    }
   ]
 }
