@@ -1,0 +1,168 @@
+.bindButton {
+  position: absolute;
+  top: -4px;
+  right: 2px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 34px;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 999px;
+  background: rgba(10,15,19,.84);
+  color: rgba(235,245,249,.55);
+  font: 600 9px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .04em;
+  cursor: pointer;
+  opacity: .26;
+  transition: opacity .15s ease, border-color .15s ease, color .15s ease, background .15s ease;
+}
+.bindButton:hover,
+.bindButton:focus-visible,
+.bindButton[data-bound='true'] {
+  opacity: 1;
+}
+.bindButton[data-bound='true'] {
+  border-color: rgba(4,217,255,.55);
+  color: #9cefff;
+  background: rgba(4,217,255,.08);
+}
+.bindDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 8px currentColor;
+}
+.dialogStack {
+  display: grid;
+  gap: 14px;
+  min-width: min(440px, 78vw);
+}
+.statusRow,
+.bindingTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.statusLabel,
+.sectionTitle {
+  color: rgba(236,244,247,.74);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.statusValue {
+  color: rgba(236,244,247,.5);
+  font-size: 11px;
+}
+.statusValue[data-ok='true'] {
+  color: #77e9ff;
+}
+.deviceLine,
+.notice,
+.fanoutHint {
+  color: rgba(236,244,247,.58);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.notice {
+  padding: 9px 10px;
+  border: 1px solid rgba(4,217,255,.18);
+  border-radius: 7px;
+  background: rgba(4,217,255,.05);
+  color: rgba(205,244,252,.82);
+}
+.twoCol {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.field {
+  display: grid;
+  gap: 6px;
+  color: rgba(236,244,247,.55);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.field select,
+.bindingSettings select {
+  width: 100%;
+  height: 31px;
+  padding: 0 8px;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 6px;
+  background: #11171b;
+  color: rgba(239,247,250,.86);
+  font-size: 11px;
+}
+.primaryButton,
+.learnButton,
+.removeButton {
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 7px;
+  background: rgba(255,255,255,.045);
+  color: rgba(241,248,250,.82);
+  cursor: pointer;
+}
+.primaryButton,
+.learnButton {
+  min-height: 34px;
+  padding: 0 12px;
+}
+.learnButton {
+  border-color: rgba(4,217,255,.32);
+  background: rgba(4,217,255,.08);
+  color: #9cefff;
+  font-weight: 700;
+}
+.learnButton[data-learning='true'] {
+  box-shadow: inset 0 0 0 1px rgba(4,217,255,.18), 0 0 14px rgba(4,217,255,.08);
+}
+.boundSection {
+  display: grid;
+  gap: 9px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(255,255,255,.07);
+}
+.bindingCard {
+  display: grid;
+  gap: 9px;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,.08);
+  border-radius: 8px;
+  background: rgba(255,255,255,.025);
+}
+.bindingTop > div {
+  display: grid;
+  gap: 3px;
+}
+.bindingTop strong {
+  color: rgba(239,247,250,.9);
+  font-size: 11px;
+}
+.bindingTop span {
+  color: rgba(236,244,247,.48);
+  font-size: 10px;
+}
+.removeButton {
+  padding: 5px 8px;
+  color: rgba(255,160,160,.76);
+  border-color: rgba(255,100,100,.18);
+  font-size: 10px;
+}
+.bindingSettings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .dialogStack { min-width: 0; }
+  .twoCol,
+  .bindingSettings { grid-template-columns: 1fr; }
+}

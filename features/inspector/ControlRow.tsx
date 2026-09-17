@@ -2,6 +2,7 @@
 
 import type { Control, ParamValue } from '@/renderers/control-schema';
 import { useInspectorStore } from '@/stores';
+import { ControllerBindButton } from '@/features/controllers/ControllerBindButton';
 import s from '../features.module.css';
 import { SliderControlRow } from './controls/SliderControl';
 import { StepperControlRow } from './controls/StepperControl';
@@ -27,44 +28,22 @@ interface ControlRowProps {
    * as isVisible(control, params) already is for filtering which rows
    * render at all — this component never receives the full ParamState
    * itself (only its own control's value), so a disabledIf predicate
-   * that reads a SIBLING control (e.g. Waveform Layers disabled based
-   * on Render Style) can't be evaluated in here. Distinct from
-   * `control.disabled`, the static always-off case below.
+   * that reads a SIBLING control can't be evaluated in here.
    */
   forceDisabled?: boolean;
 }
 
 /**
- * Dispatches to one component per `ControlKind`, in `./controls/`.
- *
- * This is the entire reason the inspector needs no per-asset-type code: a
- * shader, a video, and a p5 sketch all arrive here as the same shape, and
- * adding an eleventh control kind is one new file plus one new case here —
- * nothing else in the app changes.
- *
- * Modulation used to be a right-click popover triggered from this row. It's
- * retired: routing now lives entirely in the Modulate sidecar panel, opened
- * from the focused view's header. This row still shows the accent indicator
- * when a control IS modulated — that stays a useful at-a-glance signal — it
- * just no longer owns any interaction of its own.
+ * Dispatches to one component per ControlKind. Phase 4.97C adds one generic
+ * controller affordance at THIS schema boundary rather than teaching every
+ * individual slider/toggle/select implementation about MIDI. That preserves
+ * the Inspector's renderer-agnostic contract: any eligible control on any
+ * tile gets Learn automatically.
  */
 export function ControlRow({ control, value, dirty, onChange, onReset, forceDisabled }: ControlRowProps) {
   const modulated = useInspectorStore((st) => Boolean(st.mod[control.id]));
+  const itemId = useInspectorStore((st) => st.itemId);
 
-  // A `disabled` control (e.g. Blend mode, ahead of real layer compositing
-  // — see its schema comment) is still shown, so people can see it's
-  // coming rather than wondering if it vanished, but is genuinely inert:
-  // pointer-events off at the row level (belt-and-suspenders alongside
-  // SelectControlRow forwarding `disabled` to the native <select> itself).
-  // Field renders the "Future feature" badge next to the label.
-  //
-  // `forceDisabled` (from disabledIf, evaluated by the caller — see this
-  // prop's own doc) hits the exact same inert rendering path, but keeps
-  // showing the control's actual current value rather than the
-  // `disabled`-only "Future feature" badge, since a disabledIf control
-  // is a real, working control that just doesn't apply to whatever the
-  // render style (or whichever sibling control it depends on) is
-  // currently set to — not a stubbed-out future feature.
   if (control.disabled || forceDisabled) {
     return (
       <div className={s.controlRow} data-disabled="true">
@@ -74,8 +53,13 @@ export function ControlRow({ control, value, dirty, onChange, onReset, forceDisa
   }
 
   return (
-    <div className={s.controlRow} data-modulated={modulated ? 'true' : undefined}>
+    <div
+      className={s.controlRow}
+      data-modulated={modulated ? 'true' : undefined}
+      style={{ position: 'relative' }}
+    >
       <ControlBody control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />
+      {itemId && <ControllerBindButton control={control} itemId={itemId} />}
     </div>
   );
 }
