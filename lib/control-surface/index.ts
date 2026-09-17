@@ -7,3 +7,7 @@ export * from './runtime';
 export * from './scheduler';
 export * from './persistence';
 export * from './mock';
+export * from './midi-types';
+export * from './midi-parser';
+export * from './midi-runtime';
+export * from './midi-controller';
