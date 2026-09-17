@@ -6,6 +6,7 @@ export * from './binding-engine';
 export * from './runtime';
 export * from './direct-control';
 export * from './controller-modulation';
+export * from './presentation';
 export * from './scheduler';
 export * from './persistence';
 export * from './management';

@@ -11,6 +11,7 @@ import {
 import { useBoardStore } from '@/stores/boardStore';
 import { useInspectorStore } from '@/stores/inspectorStore';
 import { applyResponseCurve, clamp01 } from './normalize';
+import { getControllerPresentationRegistry } from './presentation';
 import { getControllerSourceRegistry } from './source-registry';
 import { resolveTargetCardId } from './targets';
 import type { ControllerBinding, ControllerDispatchOutcome } from './types';
@@ -32,64 +33,26 @@ interface EffectTarget {
   controlId: string;
 }
 
-/**
- * Phase 4.97D — controller modulation bridge.
- *
- * The existing renderer pool already has the right layering model:
- * persisted Inspector values are the base, then the normal modulation bus
- * (LFO/audio/mic) is applied every frame. Controller modulation therefore
- * does NOT need a second render loop or a second copy of the modulation
- * system. Instead this bridge computes a temporary, non-persisted base value
- * from the controller signal and writes that into RendererPool.baseParams
- * (or the effect chain base). Existing LFO/audio/mic routing then continues
- * to layer on top on the very next frame.
- *
- * This gives us the approved behavior without database churn:
- *   persisted base -> controller modulation offset -> existing signal mod
- *
- * The bridge also resolves Focused targets on every reconciliation, so a
- * Focused controller binding follows the selected tile even if the physical
- * control has not moved again. Pinned targets remain attached to their card.
- */
+/** Controller modulation stays outside persisted Inspector state. */
 export class ControllerModulationBridge {
   private entries = new Map<string, BridgeEntry>();
   private sequence = 0;
-
-  /** Targets touched by the previous reconciliation. They must be restored
-   * when a binding is removed, disabled, or a Focused target moves cards. */
   private previousParameterTargets = new Map<string, ParameterTarget>();
   private previousEffectCards = new Set<string>();
-
   private unsubscribeBoard: (() => void) | null = null;
   private unsubscribeInspector: (() => void) | null = null;
 
   constructor() {
-    // Keep Focused bindings and live base edits coherent without requiring a
-    // fresh MIDI event. Neither callback writes Zustand state, so these
-    // subscriptions cannot recurse through themselves.
     this.unsubscribeBoard = useBoardStore.subscribe((state, previous) => {
-      if (state.selectedId !== previous.selectedId || state.assets !== previous.assets) {
-        this.reconcile();
-      }
+      if (state.selectedId !== previous.selectedId || state.assets !== previous.assets) this.reconcile();
     });
-
     this.unsubscribeInspector = useInspectorStore.subscribe((state, previous) => {
-      if (
-        state.itemId !== previous.itemId ||
-        state.params !== previous.params ||
-        state.effects !== previous.effects
-      ) {
+      if (state.itemId !== previous.itemId || state.params !== previous.params || state.effects !== previous.effects) {
         this.reconcile();
       }
     });
   }
 
-  /**
-   * Synchronize persisted controller mappings into the bridge. Existing
-   * signal values are re-read from the shared source registry so changes to
-   * amount/invert/curve take effect immediately after Learn/settings reload,
-   * without needing the user to jiggle the hardware first.
-   */
   configure(bindings: ControllerBinding[]): void {
     const next = new Map<string, BridgeEntry>();
     for (const binding of bindings) {
@@ -104,16 +67,12 @@ export class ControllerModulationBridge {
     this.reconcile();
   }
 
-  /** Called by the runtime for every normalized controller modulation event. */
   update(binding: ControllerBinding, value01: number): ControllerDispatchOutcome {
     if (binding.target.domain === 'action') {
       return { status: 'ignored', detail: 'Action targets cannot use the Modulation path.' };
     }
-
     const cardId = resolveTargetCardId(binding.target, useBoardStore.getState().selectedId);
-    if (!cardId) {
-      return { status: 'unavailable', detail: 'No tile resolved for controller modulation target.' };
-    }
+    if (!cardId) return { status: 'unavailable', detail: 'No tile resolved for controller modulation target.' };
 
     const previous = this.entries.get(binding.id);
     this.entries.set(binding.id, {
@@ -130,9 +89,6 @@ export class ControllerModulationBridge {
     this.reconcile();
   }
 
-  /** Panic returns every controller modulation source to neutral while
-   * preserving the configured routes. The next hardware event resumes from
-   * that route without requiring Learn again. */
   panic(): void {
     for (const entry of this.entries.values()) entry.value01 = 0.5;
     this.reconcile();
@@ -153,7 +109,6 @@ export class ControllerModulationBridge {
 
   private reconcile(): void {
     const focusedCardId = useBoardStore.getState().selectedId;
-
     const parameterGroups = new Map<string, { target: ParameterTarget; entries: BridgeEntry[] }>();
     const effectGroups = new Map<string, { target: EffectTarget; entries: BridgeEntry[] }>();
 
@@ -182,11 +137,8 @@ export class ControllerModulationBridge {
       }
     }
 
-    // Restore targets that were active last pass but disappeared this pass,
-    // and update targets that remain active from canonical persisted state.
     const parameterTargets = new Map(this.previousParameterTargets);
     for (const [key, group] of parameterGroups) parameterTargets.set(key, group.target);
-
     for (const [key, target] of parameterTargets) {
       this.renderParameterTarget(target, parameterGroups.get(key)?.entries ?? []);
     }
@@ -198,9 +150,7 @@ export class ControllerModulationBridge {
       this.renderEffectCard(cardId, groups);
     }
 
-    this.previousParameterTargets = new Map(
-      [...parameterGroups.entries()].map(([key, group]) => [key, group.target]),
-    );
+    this.previousParameterTargets = new Map([...parameterGroups.entries()].map(([key, group]) => [key, group.target]));
     this.previousEffectCards = new Set([...effectGroups.values()].map((group) => group.target.cardId));
   }
 
@@ -219,12 +169,13 @@ export class ControllerModulationBridge {
       next = applyControllerModulation(control, next, entry);
     }
 
-    // Runtime base only — no Inspector setter, board mutation, or DB write.
-    // The renderer write makes the response immediate when no normal
-    // modulation route exists; the pool will layer any existing route on top
-    // during its next shared frame tick.
     getPool().setBaseParam(target.cardId, target.controlId, next);
     renderer.setParam(target.controlId, next);
+    if (entries.length > 0) {
+      getControllerPresentationRegistry().setParameter(target.cardId, target.controlId, next);
+    } else {
+      getControllerPresentationRegistry().clearParameter(target.cardId, target.controlId);
+    }
   }
 
   private renderEffectCard(
@@ -240,40 +191,28 @@ export class ControllerModulationBridge {
     for (const group of groups) {
       const instance = effects.find((effect) => effect.id === group.target.effectInstanceId);
       if (!instance) continue;
-      const control = getEffectSchema(instance.effectType)?.controls.find(
-        (candidate) => candidate.id === group.target.controlId,
-      );
+      const control = getEffectSchema(instance.effectType)?.controls.find((candidate) => candidate.id === group.target.controlId);
       if (!control || (control.kind !== 'slider' && control.kind !== 'stepper')) continue;
 
-      let next: ParamValue = group.target.controlId === 'mix'
-        ? instance.mix
-        : instance.params[group.target.controlId];
+      let next: ParamValue = group.target.controlId === 'mix' ? instance.mix : instance.params[group.target.controlId];
       if (typeof next !== 'number') continue;
-
       for (const entry of [...group.entries].sort((a, b) => a.sequence - b.sequence)) {
         next = applyControllerModulation(control, next, entry);
       }
-
       if (typeof next !== 'number') continue;
       if (group.target.controlId === 'mix') instance.mix = next;
       else instance.params[group.target.controlId] = next;
+      getControllerPresentationRegistry().setEffect(cardId, group.target.effectInstanceId, group.target.controlId, next);
     }
 
-    // EffectInstance.mod is preserved from canonicalEffects(), so the pool's
-    // existing VFX modulation pass continues to run on top of this temporary
-    // controller-adjusted base chain.
     getPool().setEffects(cardId, effects);
   }
 }
 
 function applyControllerModulation(control: Control, base: ParamValue, entry: BridgeEntry): ParamValue {
-  const amount = clampAmount(entry.binding.amount ?? 0.3);
   const synthetic: Modulation = {
-    // applyModulation() is source-agnostic; source is required by the shared
-    // Modulation type only. midi.cc is retained as a compatibility token and
-    // is never sampled here.
     source: 'midi.cc',
-    amount,
+    amount: clampAmount(entry.binding.amount ?? 0.3),
     smoothing: 0,
   };
   return applyModulation(control, base, synthetic, clamp01(entry.value01));
@@ -283,12 +222,8 @@ function canonicalParameterValue(cardId: string, controlId: string): ParamValue 
   const renderer = getPool().get(cardId);
   const schema = renderer?.getControlSchema();
   if (!schema) return undefined;
-
   const inspector = useInspectorStore.getState();
-  if (inspector.itemId === cardId && inspector.params[controlId] !== undefined) {
-    return inspector.params[controlId];
-  }
-
+  if (inspector.itemId === cardId && inspector.params[controlId] !== undefined) return inspector.params[controlId];
   const asset = useBoardStore.getState().assets.find((candidate) => candidate.itemId === cardId);
   return asset ? hydrate(schema, asset.params)[controlId] : undefined;
 }
@@ -312,11 +247,7 @@ function cloneBinding(binding: ControllerBinding): ControllerBinding {
 }
 
 function cloneEffect(effect: EffectInstance): EffectInstance {
-  return {
-    ...effect,
-    params: { ...effect.params },
-    mod: { ...effect.mod },
-  };
+  return { ...effect, params: { ...effect.params }, mod: { ...effect.mod } };
 }
 
 function clampAmount(value: number): number {

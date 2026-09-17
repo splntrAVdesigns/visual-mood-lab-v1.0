@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { getPool } from '@/lib/render/pool';
 import { decimalsOf } from '@/components/ui';
+import { sampleLiveEffectValue, sampleLiveParameterValue } from '@/lib/control-surface';
 import s from '../features.module.css';
 
 interface ModulatedValueProps {
@@ -10,26 +10,26 @@ interface ModulatedValueProps {
   controlId: string;
   step: number;
   unit?: string;
+  fallback?: number;
+  effectInstanceId?: string;
 }
 
 /**
- * A parameter's value, breathing in real time while it is modulated.
- *
- * Writes `textContent` on a ref inside its own animation frame rather than
- * calling setState. At 60fps a React state update per readout would rerender
- * the whole inspector sixty times a second for what is, visually, a few
- * characters changing — and with several modulated controls open at once
- * that cost multiplies. Touching the text node directly keeps it free.
- *
- * The design brief called this out specifically: a value visibly moving is
- * the one moment of motion in an otherwise completely still interface, so it
- * is worth doing properly rather than approximating with a static label.
+ * Live numeric readout for both classic modulation and controller runtime
+ * values. Uses direct text-node writes so MIDI/gamepad CC traffic does not
+ * rerender the Inspector at hardware rate.
  */
-export function ModulatedValue({ cardId, controlId, step, unit }: ModulatedValueProps) {
+export function ModulatedValue({
+  cardId,
+  controlId,
+  step,
+  unit,
+  fallback,
+  effectInstanceId,
+}: ModulatedValueProps) {
   const ref = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
-    if (!cardId) return;
     let raf = 0;
     const decimals = Math.min(decimalsOf(step), 4);
 
@@ -38,15 +38,17 @@ export function ModulatedValue({ cardId, controlId, step, unit }: ModulatedValue
       const node = ref.current;
       if (!node) return;
 
-      const value = getPool().sampleModulated(cardId, controlId);
-      if (value === null) return;
-
-      node.textContent = `${value.toFixed(decimals)}${unit ? ` ${unit}` : ''}`;
+      const value = effectInstanceId
+        ? sampleLiveEffectValue(cardId, effectInstanceId, controlId)
+        : sampleLiveParameterValue(cardId, controlId);
+      const visible = value ?? fallback;
+      if (visible === undefined || !Number.isFinite(visible)) return;
+      node.textContent = `${visible.toFixed(decimals)}${unit ? ` ${unit}` : ''}`;
     };
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [cardId, controlId, step, unit]);
+  }, [cardId, controlId, step, unit, fallback, effectInstanceId]);
 
   return <span ref={ref} className={s.modulatedValue} />;
 }

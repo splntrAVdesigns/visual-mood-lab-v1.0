@@ -13,6 +13,7 @@ import {
 } from './types';
 
 export const CONTROL_SURFACE_STORAGE_KEY = 'vml.control-surface.v1';
+export const CONTROL_SURFACE_CHANGE_EVENT = 'vml:control-surface-change';
 
 export interface ParsedControlSurfaceDocument {
   document: ControlSurfaceDocument;
@@ -95,6 +96,10 @@ export function loadControlSurfaceDocument(): ParsedControlSurfaceDocument {
 export function saveControlSurfaceDocument(document: ControlSurfaceDocument): void {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(CONTROL_SURFACE_STORAGE_KEY, serializeControlSurfaceDocument(document));
+  // Same-tab localStorage writes do not fire a storage event. Publish a tiny
+  // local event so Inspector/Modulate presentation can immediately reflect a
+  // new Learn/remove/import without polling or high-frequency React updates.
+  window.dispatchEvent(new Event(CONTROL_SURFACE_CHANGE_EVENT));
 }
 
 function parseProfile(value: unknown, warnings: string[], index: number): DeviceProfile | null {

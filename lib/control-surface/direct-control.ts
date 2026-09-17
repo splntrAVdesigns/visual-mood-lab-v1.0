@@ -4,6 +4,7 @@ import { hydrate, type Control, type ParamValue } from '@/renderers/control-sche
 import { useBoardStore } from '@/stores/boardStore';
 import { useInspectorStore } from '@/stores/inspectorStore';
 import { clamp01, mapUnitToControl } from './normalize';
+import { getControllerPresentationRegistry } from './presentation';
 import { getLiveControlSurfaceRuntime, type LiveControlSurfaceRuntime } from './runtime';
 import { resolveTargetCardId } from './targets';
 import type {
@@ -37,8 +38,13 @@ interface PendingWrite {
  * 4.97A's LiveControlSurfaceRuntime deliberately owns the low-level runtime
  * override path. This decorator adds the interaction semantics that belong to
  * a physical control: pickup/jump/scaled takeover and Write-mode settling.
- * Keeping those policies here means MIDI and the later Gamepad adapter can use
- * the exact same behavior instead of re-implementing takeover per transport.
+ * Keeping those policies here means MIDI and Gamepad use the exact same
+ * behavior instead of re-implementing takeover per transport.
+ *
+ * Phase 4.97F.2 additionally mirrors only successfully-applied runtime values
+ * into the lightweight presentation registry. That lets sliders/readouts track
+ * Live-mode hardware without converting every MIDI CC into persisted React
+ * state or a database write.
  */
 export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
   private gestures = new Map<string, DirectGestureState>();
@@ -58,9 +64,12 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
     }
 
     const outcome = this.inner.applyDirect(binding, transformed, signal);
-    if (outcome.status === 'applied' && (binding.writeMode ?? 'live') === 'write') {
-      const cardId = resolveTargetCardId(binding.target, useBoardStore.getState().selectedId);
-      if (cardId) this.scheduleWrite(binding, cardId, transformed);
+    if (outcome.status === 'applied') {
+      this.publishAppliedValue(binding, transformed);
+      if ((binding.writeMode ?? 'live') === 'write') {
+        const cardId = resolveTargetCardId(binding.target, useBoardStore.getState().selectedId);
+        if (cardId) this.scheduleWrite(binding, cardId, transformed);
+      }
     }
     return outcome;
   }
@@ -88,7 +97,30 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
     this.writeTimers.clear();
     this.pendingWrites.clear();
     this.gestures.clear();
+    getControllerPresentationRegistry().clear();
     this.inner.panic();
+  }
+
+  private publishAppliedValue(binding: ControllerBinding, value01: number): void {
+    if (binding.target.domain === 'action') return;
+    const cardId = resolveTargetCardId(binding.target, useBoardStore.getState().selectedId);
+    if (!cardId) return;
+
+    if (binding.target.domain === 'parameter') {
+      const prepared = this.parameterValue(binding.target, cardId, value01);
+      if (prepared) getControllerPresentationRegistry().setParameter(cardId, binding.target.controlId, prepared.value);
+      return;
+    }
+
+    const prepared = this.effectValue(binding.target, cardId, value01);
+    if (prepared) {
+      getControllerPresentationRegistry().setEffect(
+        cardId,
+        binding.target.effectInstanceId,
+        binding.target.controlId,
+        prepared.value,
+      );
+    }
   }
 
   private applyTakeover(
@@ -157,18 +189,17 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
     const { binding, cardId, value01 } = pending;
     const inspector = useInspectorStore.getState();
 
-    // Write mode is intentionally conservative in this first UX pass: the
-    // learned control commits through the same Inspector setters as a mouse
-    // gesture, preserving all existing persistence/dirty/base-param rules.
-    // If the target is no longer the open Inspector tile by the time the
-    // gesture settles, leave the live override in place rather than writing
-    // stale data into a different card.
+    // Write mode is intentionally conservative: commit through the same
+    // Inspector setters as a mouse gesture, preserving existing persistence,
+    // dirty-state and base-param rules. If focus moved, keep the live override
+    // rather than writing stale data into a different card.
     if (inspector.itemId !== cardId) return;
 
     if (binding.target.domain === 'parameter') {
       const prepared = this.parameterValue(binding.target, cardId, value01);
       if (!prepared) return;
       inspector.setParam(binding.target.controlId, prepared.value);
+      getControllerPresentationRegistry().clearParameter(cardId, binding.target.controlId);
     } else if (binding.target.domain === 'effect') {
       const prepared = this.effectValue(binding.target, cardId, value01);
       if (!prepared) return;
@@ -177,6 +208,11 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
       } else {
         inspector.setEffectParam(binding.target.effectInstanceId, binding.target.controlId, prepared.value);
       }
+      getControllerPresentationRegistry().clearEffect(
+        cardId,
+        binding.target.effectInstanceId,
+        binding.target.controlId,
+      );
     } else {
       return;
     }

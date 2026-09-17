@@ -3,6 +3,7 @@
 import type { Control, ParamValue } from '@/renderers/control-schema';
 import { useInspectorStore } from '@/stores';
 import { ControllerBindButton } from '@/features/controllers/ControllerBindButton';
+import { useControllerTargetState } from '@/features/controllers/useControllerDocument';
 import { FieldActionProvider } from '@/components/ui';
 import s from '../features.module.css';
 import { SliderControlRow } from './controls/SliderControl';
@@ -27,15 +28,10 @@ interface ControlRowProps {
   forceDisabled?: boolean;
 }
 
-/**
- * Dispatches to one component per ControlKind. Phase 4.97F routes the
- * controller affordance through FieldActionProvider so the CTRL pill takes a
- * real slot in Field's header row, immediately left of the value indicator,
- * instead of floating over/behind the value with absolute positioning.
- */
 export function ControlRow({ control, value, dirty, onChange, onReset, forceDisabled }: ControlRowProps) {
   const modulated = useInspectorStore((st) => Boolean(st.mod[control.id]));
   const itemId = useInspectorStore((st) => st.itemId);
+  const controller = useControllerTargetState(itemId, control.id);
 
   if (control.disabled || forceDisabled) {
     return (
@@ -48,20 +44,39 @@ export function ControlRow({ control, value, dirty, onChange, onReset, forceDisa
   const controllerAction = itemId ? <ControllerBindButton control={control} itemId={itemId} /> : null;
 
   return (
-    <div className={s.controlRow} data-modulated={modulated ? 'true' : undefined}>
+    <div
+      className={s.controlRow}
+      data-modulated={modulated || controller.active ? 'true' : undefined}
+    >
       <FieldActionProvider value={controllerAction}>
-        <ControlBody control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />
+        <ControlBody
+          control={control}
+          value={value}
+          dirty={dirty}
+          onChange={onChange}
+          onReset={onReset}
+          controllerActive={controller.active}
+          cardId={itemId}
+        />
       </FieldActionProvider>
     </div>
   );
 }
 
-function ControlBody({ control, value, dirty, onChange, onReset }: ControlRowProps) {
+function ControlBody({
+  control,
+  value,
+  dirty,
+  onChange,
+  onReset,
+  controllerActive = false,
+  cardId = null,
+}: ControlRowProps & { controllerActive?: boolean; cardId?: string | null }) {
   switch (control.kind) {
     case 'slider':
-      return <SliderControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />;
+      return <SliderControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} controllerActive={controllerActive} />;
     case 'stepper':
-      return <StepperControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />;
+      return <StepperControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} controllerActive={controllerActive} cardId={cardId} />;
     case 'toggle':
       return <ToggleControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />;
     case 'select':

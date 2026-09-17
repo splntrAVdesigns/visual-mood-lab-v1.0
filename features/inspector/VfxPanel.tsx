@@ -17,11 +17,14 @@ import {
   formatValue,
 } from '@/components/ui';
 import { ControllerBindButton } from '@/features/controllers/ControllerBindButton';
+import { controllerTargetState, useControllerDocument } from '@/features/controllers/useControllerDocument';
+import { sampleLiveEffectValue } from '@/lib/control-surface';
 import { listEffectDefinitions, getEffectDefinition, getEffectSchema } from '@/lib/effects/registry';
 import { MAX_EFFECTS_PER_CHAIN } from '@/lib/effects/types';
 import type { EffectDefinition, EffectFamily, EffectInstance } from '@/lib/effects/types';
 import type { Modulation, ParamValue } from '@/renderers/control-schema';
 import { useTrackLoaded, useMicEnabled } from '@/lib/hooks/useTrackState';
+import { ModulatedValue } from './ModulatedValue';
 import { ModRow } from './ModulationPanel';
 import { sourceMeta } from '@/lib/modulation/bus';
 import { useInspectorStore } from '@/stores';
@@ -48,11 +51,6 @@ interface VfxPanelProps {
   embedded?: boolean;
 }
 
-/**
- * Phase 4.97F exposes controller binding directly on every eligible effect
- * parameter. The effect target contract/runtime already landed in 4.97D;
- * this is the missing VFX-facing Learn affordance.
- */
 export function VfxPanel({ itemId, onClose, embedded = false }: VfxPanelProps) {
   const effects = useInspectorStore((state) => state.effects);
   const addEffect = useInspectorStore((state) => state.addEffect);
@@ -62,6 +60,7 @@ export function VfxPanel({ itemId, onClose, embedded = false }: VfxPanelProps) {
   const setEffectMix = useInspectorStore((state) => state.setEffectMix);
   const setEffectParam = useInspectorStore((state) => state.setEffectParam);
   const setEffectModulation = useInspectorStore((state) => state.setEffectModulation);
+  const controllerDocument = useControllerDocument();
 
   const trackLoaded = useTrackLoaded(itemId);
   const micEnabled = useMicEnabled(itemId);
@@ -81,6 +80,7 @@ export function VfxPanel({ itemId, onClose, embedded = false }: VfxPanelProps) {
           key={instance.id}
           itemId={itemId}
           instance={instance}
+          controllerDocument={controllerDocument}
           index={index}
           count={effects.length}
           onEnabledChange={(enabled) => setEffectEnabled(instance.id, enabled)}
@@ -111,11 +111,7 @@ export function VfxPanel({ itemId, onClose, embedded = false }: VfxPanelProps) {
               <div key={group.key}>
                 <SectionLabel>{group.label}</SectionLabel>
                 {group.items.map((definition) => (
-                  <div
-                    key={definition.id}
-                    className={s.vfxCatalogCard}
-                    style={{ borderLeftColor: definition.accentColor ?? 'var(--text-dim)' }}
-                  >
+                  <div key={definition.id} className={s.vfxCatalogCard} style={{ borderLeftColor: definition.accentColor ?? 'var(--text-dim)' }}>
                     <Button
                       variant="outline"
                       block
@@ -164,6 +160,7 @@ export function VfxPanel({ itemId, onClose, embedded = false }: VfxPanelProps) {
 function VfxRow({
   itemId,
   instance,
+  controllerDocument,
   index,
   count,
   onEnabledChange,
@@ -180,6 +177,7 @@ function VfxRow({
 }: {
   itemId: string;
   instance: EffectInstance;
+  controllerDocument: ReturnType<typeof useControllerDocument>;
   index: number;
   count: number;
   onEnabledChange: (enabled: boolean) => void;
@@ -221,6 +219,7 @@ function VfxRow({
               const raw = isMix ? instance.mix : instance.params[control.id];
               const activeMod = instance.mod[control.id];
               const modExpanded = expandedModParamId === control.id;
+              const controller = controllerTargetState(controllerDocument, itemId, control.id, instance.id);
               const controllerAction = (
                 <ControllerBindButton
                   control={control}
@@ -233,14 +232,30 @@ function VfxRow({
               let field: ReactNode;
               if (control.kind === 'slider') {
                 const value = typeof raw === 'number' ? raw : control.default;
+                const live = controller.active || Boolean(activeMod);
                 field = (
-                  <Field label={control.label} value={formatValue(value, control.step ?? 0.01)}>
+                  <Field
+                    label={control.label}
+                    value={formatValue(value, control.step ?? 0.01)}
+                    valueNode={controller.active ? (
+                      <ModulatedValue
+                        cardId={itemId}
+                        effectInstanceId={instance.id}
+                        controlId={control.id}
+                        step={control.step ?? 0.01}
+                        fallback={value}
+                      />
+                    ) : undefined}
+                  >
                     <Slider
                       label={control.label}
                       value={value}
                       min={control.min}
                       max={control.max}
                       step={control.step ?? 0.01}
+                      scale={control.scale}
+                      modulated={live}
+                      liveValue={controller.active ? () => sampleLiveEffectValue(itemId, instance.id, control.id) : undefined}
                       onChange={(next) => (isMix ? onMixChange(next) : onParamChange(control.id, next))}
                     />
                   </Field>
@@ -261,12 +276,22 @@ function VfxRow({
                 );
               }
 
+              const hardwareMod = controller.hasModulation;
+              const modRouted = Boolean(activeMod) || hardwareMod;
+              const modLabel = activeMod && controller.shortLabel
+                ? `${sourceMeta(activeMod.source)?.label} + ${controller.shortLabel}`
+                : activeMod
+                  ? sourceMeta(activeMod.source)?.label
+                  : hardwareMod
+                    ? controller.shortLabel
+                    : null;
+
               return (
                 <div key={control.id}>
                   <FieldActionProvider value={controllerAction}>{field}</FieldActionProvider>
                   {control.modulatable && (
-                    <div className={s.vfxModSection} data-routed={activeMod ? 'true' : undefined}>
-                      <Tooltip content={activeMod ? `Modulated — ${sourceMeta(activeMod.source)?.label}` : `Modulate ${control.label}`}>
+                    <div className={s.vfxModSection} data-routed={modRouted ? 'true' : undefined}>
+                      <Tooltip content={modLabel ? `Active — ${modLabel}` : `Modulate ${control.label}`}>
                         <button
                           type="button"
                           className={s.vfxModSectionHead}
@@ -275,14 +300,15 @@ function VfxRow({
                           onClick={() => onToggleMod(control.id)}
                         >
                           {modExpanded ? <ChevronDownIcon /> : <ChevronRightIcon />}
-                          <span className={s.modPanelDot} data-on={activeMod ? 'true' : undefined} />
-                          <span>{activeMod ? sourceMeta(activeMod.source)?.label : 'Modulate'}</span>
+                          <span className={s.modPanelDot} data-on={modRouted ? 'true' : undefined} />
+                          <span>{modLabel ?? 'Modulate'}</span>
                         </button>
                       </Tooltip>
                       {modExpanded && (
                         <ModRow
                           control={control}
                           active={activeMod}
+                          controllerState={controller}
                           trackLoaded={trackLoaded}
                           micEnabled={micEnabled}
                           expanded
