@@ -1051,6 +1051,19 @@
         "interference",
         "dual-layer"
       ]
+    },
+    {
+      "slug": "ribbon-flow",
+      "type": "shader",
+      "file": "shaders/ribbon-flow.frag",
+      "title": "Ribbon Flow",
+      "tags": [
+        "organic",
+        "flow",
+        "ribbon",
+        "calligraphic",
+        "gradient"
+      ]
     }
   ]
 }
