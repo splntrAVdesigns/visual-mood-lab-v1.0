@@ -1,24 +1,29 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Button } from '@/components/ui';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Button, Toggle } from '@/components/ui';
 import {
   addControllerBank,
   controllerBankCapacityLabel,
   countBindingsForVirtualControl,
   deleteControllerPreset,
+  getControllerSessionSnapshot,
   loadControllerPresets,
   loadControlSurfaceDocument,
+  normalizeGeneratedControllerBankLabels,
   parseControlSurfaceDocument,
   reloadGamepadControlSurfaceConfiguration,
   reloadMidiControlSurfaceConfiguration,
   removeEmptyControllerBank,
   renameControllerBank,
   renameControllerProfile,
+  resetLiveControllers,
   saveControllerPreset,
   saveControlSurfaceDocument,
   serializeControlSurfaceDocument,
   setActiveControllerBank,
+  setControllersActive,
+  subscribeControllerSession,
   type ControlSurfaceDocument,
   type ControllerPreset,
 } from '@/lib/control-surface';
@@ -39,9 +44,21 @@ export function ControllerPanel({ itemId }: ControllerPanelProps) {
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
+  const session = useSyncExternalStore(
+    subscribeControllerSession,
+    getControllerSessionSnapshot,
+    getControllerSessionSnapshot,
+  );
 
   useEffect(() => {
-    setDocument(loadControlSurfaceDocument().document);
+    const loaded = loadControlSurfaceDocument().document;
+    const normalized = normalizeGeneratedControllerBankLabels(loaded);
+    if (normalized.changed) {
+      saveControlSurfaceDocument(normalized.document);
+      reloadMidiControlSurfaceConfiguration();
+      reloadGamepadControlSurfaceConfiguration();
+    }
+    setDocument(normalized.document);
     setPresets(loadControllerPresets());
   }, [itemId]);
 
@@ -50,7 +67,9 @@ export function ControllerPanel({ itemId }: ControllerPanelProps) {
     [document],
   );
 
-  const applyDocument = (next: ControlSurfaceDocument, message?: string) => {
+  const applyDocument = (nextSource: ControlSurfaceDocument, message?: string) => {
+    const normalized = normalizeGeneratedControllerBankLabels(nextSource);
+    const next = normalized.document;
     saveControlSurfaceDocument(next);
     reloadMidiControlSurfaceConfiguration();
     reloadGamepadControlSurfaceConfiguration();
@@ -113,8 +132,26 @@ export function ControllerPanel({ itemId }: ControllerPanelProps) {
     setNotice('Controller preset removed.');
   };
 
+  const resetLive = () => {
+    resetLiveControllers();
+    setNotice('Live controller influence reset. Mappings and devices were kept.');
+  };
+
   return (
     <div className={s.panel}>
+      <section className={s.sessionBar} aria-label="Live controller session">
+        <div className={s.sessionCopy}>
+          <strong>Live controllers</strong>
+          <span>{session.active ? 'MIDI / gamepad routing is active.' : 'Hardware routing is temporarily bypassed.'}</span>
+        </div>
+        <Toggle
+          label="Controllers active"
+          checked={session.active}
+          onChange={setControllersActive}
+        />
+        <Button variant="outline" onClick={resetLive}>Reset live</Button>
+      </section>
+
       <div className={s.summary}>
         <div>
           <strong>{document.profiles.length}</strong>
@@ -271,6 +308,7 @@ export function ControllerPanel({ itemId }: ControllerPanelProps) {
         <p className={s.help}>Exports include device profiles, banks, calibration, Direct/Modulation/Action routes, and Focused/Pinned targets.</p>
       </section>
 
+      <p className={s.help}>Gamepad note: some browsers only expose a connected controller after you press a button or move a stick once.</p>
       {notice && <div className={s.notice}>{notice}</div>}
     </div>
   );

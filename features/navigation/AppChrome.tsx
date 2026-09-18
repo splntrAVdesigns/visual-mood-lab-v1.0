@@ -1,13 +1,18 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Button, Dialog, Field, Select, Slider, Toggle, useTooltipsEnabled } from '@/components/ui';
 import { useBoardStore, useInspectorStore, usePlaybackStore, MAX_LIVE_RENDERERS } from '@/stores';
 import type { Asset } from '@/types/asset';
 import type { User } from '@/lib/auth';
 import {
+  CONTROLLER_SIDECAR_CLOSE_EVENT,
+  getControllerSessionSnapshot,
   getMidiControlSurface,
   requestMidiControlSurfaceAccess,
+  resetLiveControllers,
+  setControllersActive,
+  subscribeControllerSession,
   type MidiRuntimeSnapshot,
 } from '@/lib/control-surface';
 import { AppHeader } from './AppHeader';
@@ -33,6 +38,8 @@ export function AppChrome({ assets, needsSeed = false, user = null }: AppChromeP
 
   const setNavOpen = useInspectorStore((st) => st.setNavOpen);
   const setReducedMotion = usePlaybackStore((st) => st.setReducedMotion);
+  const selectedId = useBoardStore((st) => st.selectedId);
+  const previousSelectedId = useRef<string | null>(selectedId);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -54,6 +61,16 @@ export function AppChrome({ assets, needsSeed = false, user = null }: AppChromeP
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [setNavOpen]);
+
+  // Controller Learn is portaled outside the Inspector so it cannot be clipped.
+  // Explicitly close that ownerless portal whenever the focused tile changes or
+  // closes, matching the lifecycle of the rest of the tile sidecars.
+  useEffect(() => {
+    if (previousSelectedId.current !== selectedId) {
+      window.dispatchEvent(new Event(CONTROLLER_SIDECAR_CLOSE_EVENT));
+      previousSelectedId.current = selectedId;
+    }
+  }, [selectedId]);
 
   return (
     <>
@@ -92,11 +109,38 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
   const muted = usePlaybackStore((st) => st.muted);
   const [tooltipsEnabled, setTooltipsEnabled] = useTooltipsEnabled();
   const [midiSnapshot, setMidiSnapshot] = useState<MidiRuntimeSnapshot | null>(null);
+  const session = useSyncExternalStore(
+    subscribeControllerSession,
+    getControllerSessionSnapshot,
+    getControllerSessionSnapshot,
+  );
 
   useEffect(() => {
     if (!open) return;
     const runtime = getMidiControlSurface();
-    return runtime.subscribe(setMidiSnapshot);
+    let first = true;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let pending: MidiRuntimeSnapshot | null = null;
+
+    const unsubscribe = runtime.subscribe((next) => {
+      if (first) {
+        first = false;
+        setMidiSnapshot(next);
+        return;
+      }
+      pending = next;
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        if (pending) setMidiSnapshot(pending);
+        pending = null;
+      }, 100);
+    });
+
+    return () => {
+      unsubscribe();
+      if (timer) clearTimeout(timer);
+    };
   }, [open]);
 
   const enableMidi = async () => {
@@ -182,6 +226,19 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
           </span>
         </div>
 
+        <div className={midiStyles.safetyRow}>
+          <div>
+            <strong>Controllers active</strong>
+            <span>Bypass or restore all MIDI / gamepad routing without deleting mappings.</span>
+          </div>
+          <Toggle
+            label="Controllers active"
+            checked={session.active}
+            onChange={setControllersActive}
+          />
+          <Button variant="outline" onClick={() => resetLiveControllers()}>Reset live</Button>
+        </div>
+
         {!midiReady && (
           <Button
             variant="outline"
@@ -214,6 +271,10 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void 
             ))}
           </div>
         )}
+
+        <p className={midiStyles.help}>
+          Reset live clears temporary controller influence, pickup/smoothing history and queued gestures, then restores saved visual values. Device profiles, banks and mappings are kept.
+        </p>
 
         {midiSnapshot?.error && <div className={midiStyles.error}>{midiSnapshot.error}</div>}
       </section>

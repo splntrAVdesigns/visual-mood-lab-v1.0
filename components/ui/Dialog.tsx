@@ -17,15 +17,17 @@ interface DialogProps {
   /** Compact tool-dialog sizing used by controller Learn. */
   compact?: boolean;
   /**
-   * Phase 4.97F.3 — on sufficiently wide desktop viewports, render the
-   * compact controller tool as a non-modal sidecar immediately left of the
-   * Inspector instead of dimming/covering the artwork. Mobile/narrow layouts
-   * automatically retain the safe-area modal introduced in 4.97F.2.
+   * On sufficiently wide desktop viewports, render the compact controller
+   * tool as a non-modal sidecar immediately left of the Inspector instead of
+   * dimming/covering the artwork. Mobile/narrow layouts retain the safe-area
+   * modal introduced in 4.97F.2.
    */
   desktopSidecar?: boolean;
 }
 
 const DESKTOP_SIDECAR_QUERY = '(min-width: 1200px) and (pointer: fine)';
+const CONTROLLER_SIDECAR_CLOSE_EVENT = 'vml:close-controller-sidecars';
+let activeControllerToolClose: (() => void) | null = null;
 
 export function Dialog({
   open,
@@ -37,7 +39,9 @@ export function Dialog({
   desktopSidecar = false,
 }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
   const [useSidecar, setUseSidecar] = useState(false);
+  closeRef.current = onClose;
 
   useEffect(() => {
     if (!desktopSidecar || typeof window === 'undefined') {
@@ -51,6 +55,26 @@ export function Dialog({
     media.addEventListener?.('change', sync);
     return () => media.removeEventListener?.('change', sync);
   }, [desktopSidecar]);
+
+  // Controller Learn is a singleton live-production tool. Portaling the tool
+  // out of Inspector/VFX prevents clipping, but also means the portal can
+  // outlive its owner unless lifecycle is explicit. Phase 4.97G guarantees
+  // only one controller tool is open and closes it on tile/session teardown.
+  useEffect(() => {
+    if (!open || !desktopSidecar || typeof window === 'undefined') return;
+
+    const closeThis = () => closeRef.current();
+    if (activeControllerToolClose && activeControllerToolClose !== closeThis) {
+      activeControllerToolClose();
+    }
+    activeControllerToolClose = closeThis;
+    window.addEventListener(CONTROLLER_SIDECAR_CLOSE_EVENT, closeThis);
+
+    return () => {
+      window.removeEventListener(CONTROLLER_SIDECAR_CLOSE_EVENT, closeThis);
+      if (activeControllerToolClose === closeThis) activeControllerToolClose = null;
+    };
+  }, [open, desktopSidecar]);
 
   // Sidecar mode is deliberately modeless: no focus trap, no body scroll
   // lock and no scrim interception. Narrow/mobile mode keeps the original
@@ -94,9 +118,5 @@ export function Dialog({
     </div>
   );
 
-  // Portaling to body prevents a focused mobile Inspector/VFX panel's own
-  // overflow/transform context from clipping the controller dialog at the top.
-  // The desktop sidecar uses the same portal so its positioning is relative to
-  // the viewport rather than whichever Inspector/VFX subtree opened it.
   return typeof document === 'undefined' ? dialog : createPortal(dialog, document.body);
 }

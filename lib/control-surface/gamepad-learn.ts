@@ -8,6 +8,7 @@ import {
   type PhysicalControlMatcher,
   type VirtualControl,
 } from './types';
+import { controllerBankLabelForIndex } from './management';
 import type { LearnBindingRequest, LearnedBindingResult } from './learn';
 import type { GamepadLearnCalibration, GamepadLearnCandidate } from './gamepad-types';
 
@@ -58,7 +59,7 @@ export function applyGamepadLearnBinding(
       const index = profile.banks.length;
       bank = {
         id: `bank-gamepad-${index + 1}`,
-        label: `Bank ${index + 1}`,
+        label: controllerBankLabelForIndex(index),
         controls: [],
       };
       profile.banks.push(bank);

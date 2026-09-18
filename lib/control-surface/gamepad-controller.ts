@@ -3,10 +3,16 @@ import { configureControllerModulationBindings } from './controller-modulation';
 import { getDirectControlRuntime } from './direct-control';
 import { GamepadRuntime } from './gamepad-runtime';
 import { loadControlSurfaceDocument } from './persistence';
+import {
+  controllersAreActive,
+  registerControllerSessionParticipant,
+} from './session';
 
 let gamepadRuntime: GamepadRuntime | null = null;
 let bindingEngine: ControlSurfaceBindingEngine | null = null;
 let persistenceWarnings: string[] = [];
+let unregisterSessionParticipant: (() => void) | null = null;
+let resumeAfterSessionEnable = false;
 
 /** Lazy Gamepad API host. Importing it never starts polling. */
 export function getGamepadControlSurface(): GamepadRuntime {
@@ -19,6 +25,20 @@ export function getGamepadControlSurface(): GamepadRuntime {
     configureControllerModulationBindings(
       loaded.document.mappings.flatMap((mapping) => mapping.bindings),
     );
+
+    unregisterSessionParticipant?.();
+    unregisterSessionParticipant = registerControllerSessionParticipant('gamepad', {
+      reset: () => gamepadRuntime?.panic(),
+      suspend: () => {
+        resumeAfterSessionEnable = Boolean(gamepadRuntime?.active);
+        gamepadRuntime?.panic();
+        gamepadRuntime?.disable();
+      },
+      resume: () => {
+        if (resumeAfterSessionEnable) gamepadRuntime?.enable();
+        resumeAfterSessionEnable = false;
+      },
+    });
   }
   return gamepadRuntime;
 }
@@ -39,12 +59,16 @@ export function getGamepadControlSurfaceWarnings(): string[] {
 }
 
 export function enableGamepadControlSurface() {
-  return getGamepadControlSurface().enable();
+  const runtime = getGamepadControlSurface();
+  return controllersAreActive() ? runtime.enable() : runtime.snapshot();
 }
 
 export function disposeGamepadControlSurface(): void {
+  unregisterSessionParticipant?.();
+  unregisterSessionParticipant = null;
   gamepadRuntime?.dispose();
   gamepadRuntime = null;
   bindingEngine = null;
   persistenceWarnings = [];
+  resumeAfterSessionEnable = false;
 }

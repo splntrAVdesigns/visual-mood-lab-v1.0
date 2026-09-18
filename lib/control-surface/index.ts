@@ -10,6 +10,7 @@ export * from './presentation';
 export * from './scheduler';
 export * from './persistence';
 export * from './management';
+export * from './session';
 export * from './learn';
 export * from './mock';
 export * from './midi-types';

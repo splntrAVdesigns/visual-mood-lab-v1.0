@@ -1,5 +1,6 @@
 import { applyResponseCurve, clamp01, sanitizeSignal, signalToUnit } from './normalize';
 import { ControllerSourceRegistry, getControllerSourceRegistry } from './source-registry';
+import { controllersAreActive } from './session';
 import type {
   ControllerBinding,
   ControllerDispatchOutcome,
@@ -17,6 +18,11 @@ export interface BindingDispatchRecord {
  * Transport-independent binding engine. A failing mapping is contained to
  * that mapping; one malformed controller event must never escape into the
  * renderer loop or block sibling fan-out targets.
+ *
+ * Phase 4.97G adds a single session gate here rather than duplicating bypass
+ * logic inside MIDI and Gamepad. Learn/discovery may continue while inactive,
+ * but no controller signal can reach a renderer until Controllers Active is
+ * enabled again.
  */
 export class ControlSurfaceBindingEngine {
   private bindings = new Map<string, ControllerBinding>();
@@ -67,6 +73,8 @@ export class ControlSurfaceBindingEngine {
   }
 
   dispatch(virtualControlId: string, incoming: ControlSignal): BindingDispatchRecord[] {
+    if (!controllersAreActive()) return [];
+
     const signal = sanitizeSignal(incoming);
     this.sources.publish(virtualControlId, signal);
 

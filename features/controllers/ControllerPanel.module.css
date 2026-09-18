@@ -7,6 +7,31 @@
   min-width: 0;
   padding: var(--space-3) var(--space-4) var(--space-4);
 }
+.sessionBar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: var(--space-2);
+  align-items: center;
+  padding: var(--space-3);
+  border: 1px solid var(--accent-dim);
+  border-radius: var(--radius);
+  background: var(--accent-faint);
+}
+.sessionCopy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.sessionCopy strong {
+  color: var(--text);
+  font-size: var(--step--1);
+  font-weight: 500;
+}
+.sessionCopy span {
+  color: var(--text-mute);
+  font-size: var(--step--2);
+  line-height: 1.35;
+}
 .summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -190,6 +215,15 @@
   overflow: hidden;
   clip: rect(0,0,0,0);
   white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .sessionBar {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .sessionBar > :last-child {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 420px) {

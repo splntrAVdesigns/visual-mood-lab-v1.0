@@ -12,6 +12,7 @@ import {
   type TargetRef,
   type VirtualControl,
 } from './types';
+import { controllerBankLabelForIndex } from './management';
 import type { MidiLearnCandidate } from './midi-types';
 
 export interface LearnBindingRequest {
@@ -28,7 +29,6 @@ export interface LearnBindingRequest {
   /** Invert the normalized controller signal before applying modulation. */
   invert?: boolean;
 }
-
 
 export interface LearnedBindingResult {
   document: ControlSurfaceDocument;
@@ -87,7 +87,7 @@ export function applyMidiLearnBinding(
       const index = profile.banks.length;
       bank = {
         id: `bank-${String.fromCharCode(97 + Math.min(index, 25))}-${index + 1}`,
-        label: `Bank ${index + 1}`,
+        label: controllerBankLabelForIndex(index),
         controls: [],
       };
       profile.banks.push(bank);
@@ -114,9 +114,6 @@ export function applyMidiLearnBinding(
     document.mappings.push(mapping);
   }
 
-  // Learning a control from a different bank makes that bank the active one
-  // for this profile. Eight controls remain visible at once, while the data
-  // model itself stays unlimited-bank as approved in 4.97A.
   mapping.activeBankId = bank.id;
 
   const targetKey = stableTargetKey(request.target);
@@ -282,7 +279,6 @@ function normalize(value: string | undefined): string {
 function cloneDocument(document: ControlSurfaceDocument): ControlSurfaceDocument {
   return JSON.parse(JSON.stringify(document)) as ControlSurfaceDocument;
 }
-
 
 function clampAmount(value: number): number {
   if (!Number.isFinite(value)) return 0.3;

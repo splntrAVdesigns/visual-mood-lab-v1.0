@@ -1,5 +1,6 @@
 import {
   CONTROLS_PER_BANK,
+  type ControlBank,
   type ControlSurfaceDocument,
 } from './types';
 import { parseControlSurfaceDocument } from './persistence';
@@ -17,6 +18,45 @@ export interface ControllerDocumentMutation {
   document: ControlSurfaceDocument;
   changed: boolean;
   error?: string;
+}
+
+/** Zero-based index -> Bank A, Bank B ... Bank Z, Bank AA, Bank AB ... */
+export function controllerBankLabelForIndex(index: number): string {
+  let value = Math.max(0, Math.floor(index)) + 1;
+  let letters = '';
+  while (value > 0) {
+    value -= 1;
+    letters = String.fromCharCode(65 + (value % 26)) + letters;
+    value = Math.floor(value / 26);
+  }
+  return `Bank ${letters}`;
+}
+
+export function nextControllerBankLabel(banks: ControlBank[]): string {
+  return controllerBankLabelForIndex(banks.length);
+}
+
+/**
+ * One-time compatibility cleanup for banks auto-created by older 4.97F builds
+ * as "Bank 2", "Bank 3", etc. Only exact system-style labels matching their
+ * ordinal position are changed; custom user labels are never touched.
+ */
+export function normalizeGeneratedControllerBankLabels(
+  source: ControlSurfaceDocument,
+): ControllerDocumentMutation {
+  const document = cloneDocument(source);
+  let changed = false;
+
+  for (const profile of document.profiles) {
+    profile.banks.forEach((bank, index) => {
+      const legacy = `Bank ${index + 1}`;
+      if (bank.label !== legacy) return;
+      bank.label = controllerBankLabelForIndex(index);
+      changed = true;
+    });
+  }
+
+  return { document, changed };
 }
 
 export function setActiveControllerBank(
@@ -48,10 +88,9 @@ export function addControllerBank(
   const profile = document.profiles.find((item) => item.id === profileId);
   if (!profile) return { document, changed: false, error: 'Controller profile not found.' };
 
-  const index = profile.banks.length + 1;
   const bank = {
     id: createId('bank'),
-    label: `Bank ${index}`,
+    label: nextControllerBankLabel(profile.banks),
     controls: [],
   };
   profile.banks.push(bank);

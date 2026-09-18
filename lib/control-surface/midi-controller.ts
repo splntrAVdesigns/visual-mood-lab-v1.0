@@ -6,20 +6,15 @@ import {
   configureControllerModulationBindings,
   disposeControllerModulationBridge,
 } from './controller-modulation';
+import { registerControllerSessionParticipant } from './session';
 
 /**
- * Lazy browser integration for Phase 4.97B–4.97D. Merely importing the module
- * never requests MIDI permission. UI code can call getMidiControlSurface(),
- * inspect diagnostics, and invoke requestAccess() from an explicit user
- * gesture.
- *
- * 4.97C routes the binding engine through DirectControlRuntime, which decorates
- * the 4.97A live override adapter with pickup/jump/scaled takeover plus settled
- * Write-mode commits. Transport parsing remains completely separate.
+ * Lazy browser integration. Importing this module never requests MIDI access.
  */
 let midiRuntime: MidiRuntime | null = null;
 let bindingEngine: ControlSurfaceBindingEngine | null = null;
 let persistenceWarnings: string[] = [];
+let unregisterSessionParticipant: (() => void) | null = null;
 
 export function getMidiControlSurface(): MidiRuntime {
   if (!bindingEngine) {
@@ -33,6 +28,11 @@ export function getMidiControlSurface(): MidiRuntime {
     configureControllerModulationBindings(
       loaded.document.mappings.flatMap((mapping) => mapping.bindings),
     );
+
+    unregisterSessionParticipant?.();
+    unregisterSessionParticipant = registerControllerSessionParticipant('midi', {
+      reset: () => midiRuntime?.panic(),
+    });
   }
   return midiRuntime;
 }
@@ -60,6 +60,8 @@ export async function requestMidiControlSurfaceAccess() {
 
 /** Useful for hot-reload/dev teardown and future account/session switches. */
 export function disposeMidiControlSurface(): void {
+  unregisterSessionParticipant?.();
+  unregisterSessionParticipant = null;
   midiRuntime?.dispose();
   disposeControllerModulationBridge();
   midiRuntime = null;
