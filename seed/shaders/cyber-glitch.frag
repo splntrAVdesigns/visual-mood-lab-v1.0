@@ -170,8 +170,8 @@ void main() {
       float ph = t2 - cycleIdx;
 
       float activeSeed = nId.x * 7.1 + nId.y * 3.3 + cycleIdx;
-      float active = step(1.0 - u_density, hash1(activeSeed));
-      float show = active * step(ph, 0.65);
+      float isActive = step(1.0 - u_density, hash1(activeSeed));
+      float show = isActive * step(ph, 0.65);
 
       if (show > 0.5) {
         float growPh = clamp(ph / 0.15, 0.0, 1.0);
