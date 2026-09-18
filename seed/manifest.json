@@ -1077,6 +1077,71 @@
         "glow",
         "vortex"
       ]
+    },
+    {
+      "slug": "twin-vortex",
+      "type": "shader",
+      "file": "shaders/twin-vortex.frag",
+      "title": "Twin Vortex",
+      "tags": [
+        "kaleidoscope",
+        "spiral",
+        "interference",
+        "dual-layer",
+        "organic"
+      ]
+    },
+    {
+      "slug": "solar-bloom",
+      "type": "shader",
+      "file": "shaders/solar-bloom.frag",
+      "title": "Solar Bloom",
+      "tags": [
+        "kaleidoscope",
+        "spiral",
+        "spikes",
+        "organic",
+        "glow"
+      ]
+    },
+    {
+      "slug": "cyber-glitch",
+      "type": "shader",
+      "file": "shaders/cyber-glitch.frag",
+      "title": "Cyber Glitch",
+      "tags": [
+        "glitch",
+        "hud",
+        "glyphs",
+        "generative",
+        "cyberpunk"
+      ]
+    },
+    {
+      "slug": "dark-matter",
+      "type": "shader",
+      "file": "shaders/dark-matter.frag",
+      "title": "Dark Matter",
+      "tags": [
+        "metaball",
+        "organic",
+        "reflective",
+        "liquid-metal",
+        "raymarch"
+      ]
+    },
+    {
+      "slug": "wireframe-morph",
+      "type": "shader",
+      "file": "shaders/wireframe-morph.frag",
+      "title": "Wireframe Morph",
+      "tags": [
+        "wireframe",
+        "3d",
+        "organic",
+        "mesh",
+        "glow"
+      ]
     }
   ]
 }
