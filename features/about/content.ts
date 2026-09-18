@@ -16,7 +16,7 @@ export const aboutHero = {
  * copy above actually changes.
  */
 export const updatedCopy = {
-  date: '2026-08-22',
+  date: '2026-09-18',
 };
 
 /**
@@ -84,8 +84,9 @@ export const capabilitiesCopy = {
     { key: 'sound engine', detail: 'a tunable synth per tile \u2014 arp, pad, pluck & more', status: 'live' },
     { key: 'audio input', detail: 'upload a track or use your mic, up to 80MB \u2014 drives modulation live', status: 'live' },
     { key: 'modulation', detail: 'LFO bank, time, pointer, track & mic \u2014 routed per control', status: 'live' },
+    { key: 'midi', detail: 'CC knobs & 8-slot pad triggers, pickup takeover \u2014 mapped onto any parameter', status: 'live' },
     { key: 'snapshots', detail: 'save a param state as a new board item', status: 'live' },
-    { key: 'library', detail: '90+ shaders & sketches, seeded, to explore', status: 'live' },
+    { key: 'library', detail: '95+ shaders & sketches, seeded, to explore', status: 'live' },
     { key: 'mobile', detail: 'the full board, inspector, and sound \u2014 tuned for touch', status: 'live' },
     { key: 'auth', detail: 'accounts, saved boards', status: 'live' },
     { key: 'deep-links', detail: '/asset/[id] \u2014 share one tuned look', status: 'live' },
@@ -99,11 +100,12 @@ export const roadmapCopy = {
     { key: 'media-library', detail: 'your snapshots, built-in & custom vectors, and import controls, in one place', status: 'building' },
     { key: 'playground', detail: 'write + save shaders and sketches in-browser', status: 'building' },
     { key: 'export', detail: 'PNG / WebM capture, frame-exact', status: 'building' },
+    { key: 'gamepad-input', detail: 'axis & button mapping on the same control-surface bus as MIDI \u2014 in internal testing', status: 'building' },
     { key: 'canvas-mode', detail: 'free-position board, not just grid', status: 'planned' },
     { key: 'blend-layers', detail: 'stack two assets through a GLSL blend pass', status: 'planned' },
     { key: 'web-synth', detail: 'a running, working synthesizer you can control with your visuals', status: 'planned' },
-    { key: 'midi-in', detail: 'map hardware controllers to any control', status: 'planned' },
     { key: 'timeline', detail: 'sequence board items into a playable set', status: 'planned' },
+    { key: 'performance-mode', detail: 'use any mood tile in a dedicated live-performance view', status: 'planned' },
   ] satisfies ManifestRow[],
 };
 

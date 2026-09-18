@@ -703,6 +703,28 @@
   color: var(--text-dim);
 }
 
+/* Small "New" pill next to a feature name (Step 7 only) — same visual
+   grammar as the About page's [live] status tag (accent border + accent
+   text, mono, uppercase) rather than a new pattern, and the one accent
+   element on its row besides the leading .featDot. Remove a feature's
+   `isNew` flag in content.ts once it's been live long enough that it no
+   longer needs calling out; this class stays for the next one. */
+.newTag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+
 /* ==================================================================
  * Step 8 — grid + contact
  * ================================================================== */

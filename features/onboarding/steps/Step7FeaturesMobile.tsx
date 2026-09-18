@@ -18,7 +18,8 @@ export function Step7FeaturesMobile() {
         <div key={f.name} className={s.mFeatItem}>
           <span className={s.featDot} aria-hidden="true" />
           <div className={s.mFeatText}>
-            <b>{f.name}</b> <span>&mdash; {f.descMobile}</span>
+            <b>{f.name}</b>
+            {f.isNew && <span className={s.newTag}>New</span>} <span>&mdash; {f.descMobile}</span>
           </div>
         </div>
       ))}

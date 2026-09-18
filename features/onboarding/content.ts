@@ -77,6 +77,22 @@ export const STEP6 = {
 /* ------------------------------------------------------------------ *
  * Step 7 — Current features
  * ------------------------------------------------------------------ */
+
+/**
+ * `isNew` drives the small "New" pill rendered next to a feature's name
+ * (see Step7Features.tsx / Step7FeaturesMobile.tsx + .newTag in
+ * onboarding.module.css). Deliberately not a content-version mechanism —
+ * it's a plain per-item flag someone clears by hand once a feature has
+ * been live long enough to stop calling out. Optional so existing items
+ * don't need touching whenever a new one is flagged.
+ */
+interface FeatureItem {
+  name: string;
+  descDesktop: string;
+  descMobile: string;
+  isNew?: boolean;
+}
+
 export const STEP7 = {
   tagline: "A quick recap of what's already live.",
   sectionLabel: 'Current features',
@@ -99,6 +115,13 @@ export const STEP7 = {
       descMobile: 'route an LFO or live audio to any parameter.',
     },
     {
+      name: 'MIDI',
+      descDesktop:
+        'map a hardware controller to any parameter or trigger, right on the modulation bus.',
+      descMobile: 'map a hardware controller to any parameter or trigger.',
+      isNew: true,
+    },
+    {
       name: 'Sound & VFX',
       descDesktop: 'upload audio or use your mic, then stack up to three effects.',
       descMobile: 'upload audio or use your mic, stack up to three effects.',
@@ -113,7 +136,7 @@ export const STEP7 = {
       descDesktop: "export a clip or go fullscreen, right from the tile's own toolbar.",
       descMobile: "export a clip or go fullscreen from the tile's own toolbar.",
     },
-  ],
+  ] satisfies FeatureItem[],
 };
 
 /* ------------------------------------------------------------------ *
@@ -140,9 +163,9 @@ export const STEP8 = {
       descMobile: 'shapes and graphics to import, blend, and mask against.',
     },
     {
-      name: 'MIDI input',
-      descDesktop: 'map a hardware controller straight onto the modulation bus.',
-      descMobile: 'map a controller straight onto the modulation bus.',
+      name: 'Performance Mode',
+      descDesktop: 'use any mood tile in a dedicated live-performance view.',
+      descMobile: 'use any mood tile in a live-performance view.',
     },
   ],
   contactLead: "Questions, bugs, or a feature you'd love to see? We'd genuinely like to hear it.",

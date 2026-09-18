@@ -18,7 +18,8 @@ export function Step7Features() {
         <div key={f.name} className={s.featItem}>
           <span className={s.featDot} aria-hidden="true" />
           <div className={s.featText}>
-            <b>{f.name}</b> <span>&mdash; {f.descDesktop}</span>
+            <b>{f.name}</b>
+            {f.isNew && <span className={s.newTag}>New</span>} <span>&mdash; {f.descDesktop}</span>
           </div>
         </div>
       ))}
