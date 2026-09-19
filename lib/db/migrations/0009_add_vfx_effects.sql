@@ -13,4 +13,5 @@
 -- blindly — see PLACEMENT.md.
 
 ALTER TABLE "assets" ADD COLUMN IF NOT EXISTS "effects" jsonb NOT NULL DEFAULT '[]'::jsonb;
+--> statement-breakpoint
 ALTER TABLE "board_items" ADD COLUMN IF NOT EXISTS "effects_override" jsonb;

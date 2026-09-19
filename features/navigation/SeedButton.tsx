@@ -15,7 +15,12 @@ export function SeedButton() {
   const seed = async () => {
     setState('working');
     try {
-      const res = await fetch('/api/seed');
+      // POST-only since the seed-route lockdown (see app/api/seed/route.ts).
+      // Works as-is against a local dev server; against production the
+      // route additionally requires ALLOW_SEED_ROUTE + a bearer secret this
+      // button deliberately has no way to send, so it will report failure
+      // there — seed a live database with curl instead (see README).
+      const res = await fetch('/api/seed', { method: 'POST' });
       if (!res.ok) throw new Error(await res.text());
       window.location.reload();
     } catch {

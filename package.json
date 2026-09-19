@@ -11,6 +11,7 @@
     "verify:seed": "tsx --env-file=.env.local scripts/verify-seed.ts",
     "verify:control-surface": "tsx scripts/verify-control-surface.ts",
     "verify:midi-runtime": "tsx scripts/verify-midi-runtime.ts",
+    "verify:security": "tsx scripts/verify-security-guards.ts",
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
     "seed:fresh": "tsx --env-file=.env.local scripts/seed.ts -- --fresh",
     "db:generate": "node --env-file=.env.local ./node_modules/.bin/drizzle-kit generate",
@@ -27,7 +28,7 @@
     "argon2": "^0.45.1",
     "drizzle-orm": "^0.45.2",
     "mediabunny": "^1.55.3",
-    "next": "^16.0.0",
+    "next": "^16.3.5",
     "next-auth": "^5.0.0-beta.32",
     "p5": "^1.11.13",
     "postgres": "^3.4.9",
@@ -46,7 +47,7 @@
   },
   "overrides": {
     "postcss": "^8.5.18",
-    "sharp": "^0.35.0",
+    "sharp": "^0.35.4",
     "esbuild": "0.19.12",
     "tsx": {
       "esbuild": "0.19.12"

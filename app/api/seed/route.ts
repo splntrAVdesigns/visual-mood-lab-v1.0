@@ -6,20 +6,31 @@ import { and, isNotNull, notInArray, sql } from 'drizzle-orm';
 import { getDb, isLocalDb, schema } from '@/lib/db/client';
 import { ingestAsset } from '@/lib/ingest/ingest';
 import { LIBRARY_OWNER_ID } from '@/lib/data/assets';
+import { evaluateSeedRequest } from '@/lib/security/seed-guard';
 
 /**
- * Browser-triggerable seeding: visit /api/seed to migrate and load the
- * starter library.
+ * Seeding over HTTP: POST /api/seed migrates, then loads the starter library.
  *
  * `scripts/seed.ts` does the same thing from the command line, but it runs
  * through tsx, which depends on an esbuild binary that will not load on
  * macOS 11 or older. This route runs inside the Next.js server that is
  * already working, so it sidesteps that toolchain entirely.
  *
- *   /api/seed          migrate, then upsert every manifest entry
- *   /api/seed?fresh=1  drop the tables first
+ *   POST /api/seed          migrate, then upsert every manifest entry
+ *   POST /api/seed?fresh=1  drop the tables first (NOT available in production)
  *
- * Disabled in production unless ALLOW_SEED_ROUTE is set.
+ * POST only. It used to be a GET, which meant a link prefetch, a crawler, or
+ * an <img> tag on another site could trigger it — and with ?fresh=1 that
+ * dropped the production tables. The decision logic lives in
+ * lib/security/seed-guard.ts (tested by `npm run verify:security`):
+ *
+ *   Development   open, unless SEED_ADMIN_SECRET is set. From a terminal:
+ *                   curl -X POST http://localhost:3000/api/seed
+ *   Production    requires ALLOW_SEED_ROUTE=1 AND SEED_ADMIN_SECRET (24+ chars)
+ *                 AND `Authorization: Bearer <SEED_ADMIN_SECRET>`:
+ *                   curl -X POST -H "Authorization: Bearer $SEED_ADMIN_SECRET" \
+ *                     https://your-app.example/api/seed
+ *                 `fresh` is refused outright.
  */
 
 export const runtime = 'nodejs';
@@ -94,12 +105,36 @@ async function dropAll(): Promise<void> {
   }
 }
 
-export async function GET(req: Request) {
-  if (process.env.NODE_ENV === 'production' && !process.env.ALLOW_SEED_ROUTE) {
-    return NextResponse.json({ error: 'Seed route disabled in production' }, { status: 403 });
+/** Anything that isn't a POST gets a plain refusal — never runs a seed. */
+export async function GET() {
+  return NextResponse.json(
+    { error: 'Method not allowed. Seeding is POST-only.' },
+    { status: 405, headers: { Allow: 'POST' } },
+  );
+}
+
+export async function POST(req: Request) {
+  const fresh = new URL(req.url).searchParams.get('fresh') === '1';
+
+  const decision = evaluateSeedRequest({
+    nodeEnv: process.env.NODE_ENV,
+    allowSeedRoute: process.env.ALLOW_SEED_ROUTE,
+    adminSecret: process.env.SEED_ADMIN_SECRET,
+    authorization: req.headers.get('authorization'),
+    origin: req.headers.get('origin'),
+    host: req.headers.get('x-forwarded-host') ?? req.headers.get('host'),
+    fresh,
+  });
+  if (!decision.ok) {
+    return NextResponse.json(
+      { error: decision.error },
+      {
+        status: decision.status,
+        headers: decision.status === 401 ? { 'WWW-Authenticate': 'Bearer' } : undefined,
+      },
+    );
   }
 
-  const fresh = new URL(req.url).searchParams.get('fresh') === '1';
   const log: string[] = [];
 
   try {

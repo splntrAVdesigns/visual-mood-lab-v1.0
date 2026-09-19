@@ -12,6 +12,8 @@ import {
 import { getStorage } from '@/lib/storage';
 import { requireUser } from '@/lib/auth';
 import { MAX_POSTER_CAPTURE_BYTES } from '@/lib/validation/asset';
+import { validatePosterBytes } from '@/lib/validation/poster';
+import { checkLimits, posterWriteRateLimit } from '@/lib/auth/rate-limit';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -54,6 +56,13 @@ export async function POST(req: Request, ctx: { params: Promise<{ itemId: string
 
   try {
     const user = await requireUser();
+
+    // Scripted-abuse guard, ahead of any DB or storage work. Generous — see
+    // posterWriteRateLimit in lib/auth/rate-limit.ts.
+    if (!(await checkLimits([[posterWriteRateLimit, user.id]]))) {
+      return NextResponse.json({ error: 'Too many captures. Try again shortly.' }, { status: 429 });
+    }
+
     const boardId = await getOrCreateDefaultBoard(user.id);
 
     // Ownership MUST be checked before the storage write below, not after
@@ -81,12 +90,12 @@ export async function POST(req: Request, ctx: { params: Promise<{ itemId: string
     }
 
     const bytes = new Uint8Array(await req.arrayBuffer());
-    if (bytes.byteLength < 2048) {
-      return NextResponse.json({ error: 'Capture too small, ignored' }, { status: 422 });
-    }
-    if (bytes.byteLength > MAX_POSTER_CAPTURE_BYTES) {
-      return NextResponse.json({ error: 'Capture too large' }, { status: 413 });
-    }
+
+    // Same size floor/ceiling as before, now plus: it must really be a PNG
+    // (signature + sane IHDR). Previously any 2 KB – 10 MB body was stored
+    // and served back as image/png.
+    const check = validatePosterBytes(bytes);
+    if (!check.ok) return NextResponse.json({ error: check.error }, { status: check.status });
 
     const put = await getStorage().put(`snapshots/${itemId}.png`, bytes, 'image/png');
     await setSnapshotPoster(itemId, boardId, put.url);

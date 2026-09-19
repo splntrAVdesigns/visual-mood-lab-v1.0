@@ -51,9 +51,6 @@ export default function proxy(req: NextRequest) {
     PROTECTED_EXACT.has(pathname) ||
     PROTECTED_PREFIXES.some((p) => pathname.startsWith(p));
 
-  // TEMPORARY DEBUG — remove once the redirect issue is confirmed fixed.
-  console.log('[proxy]', pathname, 'protected=', isProtected, 'hasCookie=', hasSessionCookie(req));
-
   if (isProtected && !hasSessionCookie(req)) {
     const loginUrl = new URL("/login", req.nextUrl.origin);
     loginUrl.searchParams.set("callbackUrl", pathname);

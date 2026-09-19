@@ -41,7 +41,8 @@ import { eq } from "drizzle-orm";
 import { getDb } from "@/lib/db/client";
 import { users, accounts, sessions, verificationTokens } from "@/lib/db/schema.auth";
 import { verifyPassword } from "./hash";
-import { loginRateLimit } from "./rate-limit";
+import { loginRateLimit, loginIpRateLimit, checkLimits } from "./rate-limit";
+import { clientIpKey } from "@/lib/http/client-ip";
 import { UnverifiedEmailError, RateLimitedError } from "./errors";
 
 // getDb() is async — it has to decide Neon vs. PGlite before returning.
@@ -117,15 +118,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!email || !password) return null;
 
         // Rate limit BEFORE touching the DB — this is the brute-force
-        // choke point. Keyed by email, not IP alone, so a distributed
-        // attempt against one account still gets throttled.
+        // choke point. TWO independent buckets, both must pass:
+        //   - per IP: stops one client working through many accounts
+        //     (password spraying). This one did not exist before — the old
+        //     comment here said "keyed by email, not IP alone", but it was
+        //     keyed by email ONLY.
+        //   - per email: stops a distributed attempt against one account.
+        // The IP comes from the request Auth.js hands authorize(); when no
+        // trustworthy IP is available the IP bucket is skipped, not shared.
         //
         // Throws a typed CredentialsSignin subclass (see ./errors.ts),
         // NOT a plain Error — Auth.js v5 silently discards the message of
         // anything that isn't a CredentialsSignin subclass, which used to
         // make this indistinguishable from a wrong password on the client.
-        const { success } = await loginRateLimit.limit(email.toLowerCase());
-        if (!success) {
+        const withinLimits = await checkLimits([
+          [loginIpRateLimit, clientIpKey(request?.headers)],
+          [loginRateLimit, email.toLowerCase()],
+        ]);
+        if (!withinLimits) {
           throw new RateLimitedError();
         }
 

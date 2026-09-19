@@ -14,6 +14,7 @@
 // the form entirely.
 
 import { AuthError, CredentialsSignin } from 'next-auth';
+import { headers } from 'next/headers';
 import { eq } from 'drizzle-orm';
 import { signIn, signOut } from '@/lib/auth/config';
 import { getDb } from '@/lib/db/client';
@@ -21,10 +22,15 @@ import { users, accounts } from '@/lib/db/schema.auth';
 import { hashPassword } from '@/lib/auth/hash';
 import { isPasswordReused, recordPasswordHistory } from '@/lib/auth/password-history';
 import {
+  checkLimits,
   signupRateLimit,
+  signupIpRateLimit,
   resetPasswordRateLimit,
+  resetPasswordIpRateLimit,
   resendVerificationRateLimit,
+  resendVerificationIpRateLimit,
 } from '@/lib/auth/rate-limit';
+import { clientIpKey } from '@/lib/http/client-ip';
 import { signupEnabled, appleSignInEnabled } from '@/lib/auth/flags';
 import { requireUser } from '@/lib/auth';
 import { signupSchema, passwordSchema } from '@/lib/validation/auth';
@@ -46,6 +52,18 @@ export interface FormState {
   // (a "resend verification email" button) instead of just a red error
   // string. Anything not explicitly set here should be treated as opaque.
   code?: string;
+}
+
+/**
+ * The caller's rate-limit key (IP, or IPv6 /64), or null if no trustworthy IP
+ * is available — in which case the IP limiters are skipped rather than
+ * lumping every such caller into one shared bucket. Every limiter below is
+ * checked per-IP AND per-email: the email bucket protects one mailbox, the IP
+ * bucket stops one client cycling through many mailboxes (signup email
+ * bombing through Resend, password spraying, reset-email flooding).
+ */
+async function requestIpKey(): Promise<string | null> {
+  return clientIpKey(await headers());
 }
 
 export async function loginAction(
@@ -149,8 +167,11 @@ export async function signupAction(
   }
   const { username, email, password } = parsed.data;
 
-  const { success } = await signupRateLimit.limit(email);
-  if (!success) {
+  const withinSignupLimits = await checkLimits([
+    [signupIpRateLimit, await requestIpKey()],
+    [signupRateLimit, email],
+  ]);
+  if (!withinSignupLimits) {
     return { error: 'Too many attempts. Try again shortly.' };
   }
 
@@ -170,7 +191,10 @@ export async function signupAction(
     // so confirming an account exists for it leaks nothing they don't
     // already know from having just tried to create it.
     if (!existing.emailVerified) {
-      const { success: withinLimit } = await resendVerificationRateLimit.limit(email);
+      const withinLimit = await checkLimits([
+        [resendVerificationIpRateLimit, await requestIpKey()],
+        [resendVerificationRateLimit, email],
+      ]);
       if (withinLimit) {
         const token = await createVerificationToken(email);
         try {
@@ -303,7 +327,10 @@ export async function requestPasswordResetAction(
     return { error: 'Enter your email.' };
   }
 
-  const { success: withinLimit } = await resetPasswordRateLimit.limit(email);
+  const withinLimit = await checkLimits([
+    [resetPasswordIpRateLimit, await requestIpKey()],
+    [resetPasswordRateLimit, email],
+  ]);
 
   // The response is identical whether the account exists, was rate
   // limited, or the email send failed — every branch below falls through
@@ -490,7 +517,10 @@ export async function resendVerificationAction(
     return { error: 'Missing email.' };
   }
 
-  const { success: withinLimit } = await resendVerificationRateLimit.limit(email);
+  const withinLimit = await checkLimits([
+    [resendVerificationIpRateLimit, await requestIpKey()],
+    [resendVerificationRateLimit, email],
+  ]);
   if (!withinLimit) {
     return { error: 'Too many attempts. Try again shortly.' };
   }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getStorage } from '@/lib/storage';
 import { requireUser } from '@/lib/auth';
+import { checkLimits, uploadSignRateLimit } from '@/lib/auth/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,13 @@ const MAX_BYTES = 200 * 1024 * 1024;
 export async function POST(req: Request) {
   try {
     const user = await requireUser();
+
+    // Each call mints a signed Blob upload token, so it is the cost lever for
+    // storage abuse. Per account, not per IP — see lib/auth/rate-limit.ts.
+    if (!(await checkLimits([[uploadSignRateLimit, user.id]]))) {
+      return NextResponse.json({ error: 'Too many uploads. Try again shortly.' }, { status: 429 });
+    }
+
     const body = (await req.json()) as {
       filename?: string;
       contentType?: string;

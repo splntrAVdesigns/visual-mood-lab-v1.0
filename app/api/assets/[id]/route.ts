@@ -1,10 +1,12 @@
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, like, or } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { getDb, schema } from '@/lib/db/client';
 import { getStorage } from '@/lib/storage';
 import { requireUser } from '@/lib/auth';
 import { LIBRARY_OWNER_ID } from '@/lib/data/assets';
 import { MAX_POSTER_CAPTURE_BYTES } from '@/lib/validation/asset';
+import { posterWriteMode, validatePosterBytes } from '@/lib/validation/poster';
+import { checkLimits, posterWriteRateLimit } from '@/lib/auth/rate-limit';
 import type { ParamState } from '@/renderers/control-schema';
 
 export const runtime = 'nodejs';
@@ -48,7 +50,7 @@ async function loadPosterWritable(id: string) {
   const rows = await db.select().from(schema.assets).where(eq(schema.assets.id, id)).limit(1);
   const row = rows[0];
   if (!row || (row.ownerId !== user.id && row.ownerId !== LIBRARY_OWNER_ID)) return null;
-  return { db, row };
+  return { db, row, userId: user.id };
 }
 
 export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }> }) {
@@ -89,10 +91,32 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
   try {
     // Already correctly ordered (check ownership, THEN touch storage) —
     // this is the pattern app/api/boards/default/items/[itemId]/route.ts's
-    // equivalent handler was missing and now matches. No change to the
-    // ordering here, only the size cap below.
+    // equivalent handler was missing and now matches.
     const owned = await loadPosterWritable(id);
     if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+    // Scripted abuse guard, ahead of any body read or storage write. The
+    // ceiling is generous — see posterWriteRateLimit in lib/auth/rate-limit.ts.
+    if (!(await checkLimits([[posterWriteRateLimit, owned.userId]]))) {
+      return NextResponse.json({ error: 'Too many captures. Try again shortly.' }, { status: 429 });
+    }
+
+    // A SHARED (library-owned) poster is writable once: while it is still the
+    // generated placeholder. The client already follows this rule (see
+    // isPlaceholderPoster in lib/persist/client.ts); this is the server
+    // enforcing it, so a hand-built request can't replace a real poster that
+    // every account is looking at. Decided BEFORE the body is read or any
+    // blob is written.
+    const mode = posterWriteMode({
+      ownerId: owned.row.ownerId,
+      userId: owned.userId,
+      libraryOwnerId: LIBRARY_OWNER_ID,
+      currentPosterUrl: owned.row.posterUrl,
+    });
+    if (mode === 'forbidden') return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    if (mode === 'shared-locked') {
+      return NextResponse.json({ error: 'Poster already set' }, { status: 409 });
+    }
 
     const declaredLength = Number(req.headers.get('content-length') ?? NaN);
     if (Number.isFinite(declaredLength) && declaredLength > MAX_POSTER_CAPTURE_BYTES) {
@@ -101,25 +125,67 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
     const bytes = new Uint8Array(await req.arrayBuffer());
 
-    // A poster smaller than this is almost certainly a blank or single-colour
-    // frame captured before the sketch had drawn anything. Rejecting it keeps
-    // a black square from permanently replacing a usable placeholder.
-    if (bytes.byteLength < 2048) {
-      return NextResponse.json({ error: 'Capture too small, ignored' }, { status: 422 });
-    }
-    // Upper bound didn't exist before — req.arrayBuffer() buffers the
-    // whole body into memory regardless, so this is also what limits how
-    // much memory a single request can force the server to hold.
-    if (bytes.byteLength > MAX_POSTER_CAPTURE_BYTES) {
-      return NextResponse.json({ error: 'Capture too large' }, { status: 413 });
+    // Size floor/ceiling (a blank frame captured before the sketch drew
+    // anything must not permanently replace a usable placeholder; the
+    // ceiling bounds the memory one request can make the server hold —
+    // req.arrayBuffer() buffers the whole body regardless) plus: it must
+    // actually be a PNG.
+    const check = validatePosterBytes(bytes);
+    if (!check.ok) return NextResponse.json({ error: check.error }, { status: check.status });
+
+    const storage = getStorage();
+
+    if (mode === 'own') {
+      // Overwriting your own asset's poster in place is fine.
+      const put = await storage.put(`posters/${id}.png`, bytes, 'image/png');
+
+      await owned.db
+        .update(schema.assets)
+        .set({ posterUrl: put.url, updatedAt: new Date() })
+        .where(eq(schema.assets.id, id));
+
+      return NextResponse.json({ ok: true, posterUrl: put.url, bytes: bytes.byteLength });
     }
 
-    const put = await getStorage().put(`posters/${id}.png`, bytes, 'image/png');
+    // mode === 'shared-first-capture'.
+    //
+    // Two accounts can pass the placeholder check above at the same moment,
+    // and Vercel Blob writes here overwrite by pathname. So a shared poster
+    // is never written to a fixed path: each attempt gets its own unique
+    // blob, and the DB row is claimed with a conditional UPDATE that only
+    // matches while the poster is STILL a placeholder. Exactly one attempt
+    // wins; every loser's blob is discarded and nothing already published is
+    // ever overwritten. (The SQL pattern is deliberately the strict form of
+    // isPlaceholderPosterUrl — no query-string leniency.)
+    const uniqueName = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+    const put = await storage.put(`posters/${id}.${uniqueName}.png`, bytes, 'image/png');
 
     await owned.db
       .update(schema.assets)
       .set({ posterUrl: put.url, updatedAt: new Date() })
-      .where(eq(schema.assets.id, id));
+      .where(
+        and(
+          eq(schema.assets.id, id),
+          or(isNull(schema.assets.posterUrl), like(schema.assets.posterUrl, '%.svg')),
+        ),
+      );
+
+    // Read the row back rather than trusting a driver-specific affected-row
+    // count (this app runs on Neon, postgres-js AND PGlite, whose update
+    // results differ). Our blob URL is unique to this attempt, so if the row
+    // holds it, this attempt — and only this attempt — won the claim.
+    const [after] = await owned.db
+      .select()
+      .from(schema.assets)
+      .where(eq(schema.assets.id, id))
+      .limit(1);
+
+    if (after?.posterUrl !== put.url) {
+      // Lost the race. Best-effort cleanup — an orphan is cheap, a thrown
+      // error here would only turn a clean 409 into a confusing 500.
+      await storage.delete(put.pathname).catch(() => undefined);
+      return NextResponse.json({ error: 'Poster already set' }, { status: 409 });
+    }
 
     return NextResponse.json({ ok: true, posterUrl: put.url, bytes: bytes.byteLength });
   } catch (err) {

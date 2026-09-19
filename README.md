@@ -188,14 +188,28 @@ Variables** (Blob's token is already there from step 3), and deploy.
 
 ### 5. Seed the deployed database
 
-The seed route is disabled in production by default. To run it once:
+The seed route is **POST-only** and disabled in production by default. To run
+it once:
 
-1. Add `ALLOW_SEED_ROUTE=1` in Vercel's environment variables, redeploy
-2. Visit `https://your-app.vercel.app/api/seed` — you should see JSON
-   reporting `"created": 30`
-3. Remove `ALLOW_SEED_ROUTE` and redeploy (or just leave it — there's rarely
-   a reason to reseed a live deployment, but there's no harm in leaving the
-   route reachable either if you'd rather not redeploy twice)
+1. In Vercel's environment variables add `ALLOW_SEED_ROUTE=1` and
+   `SEED_ADMIN_SECRET=<24+ random characters>` (`openssl rand -base64 32`),
+   then redeploy.
+2. Call it with the secret — a browser visit won't work, by design:
+
+   ```bash
+   curl -X POST -H "Authorization: Bearer $SEED_ADMIN_SECRET" \
+     https://your-app.vercel.app/api/seed
+   ```
+
+   You should see JSON reporting the created/updated counts.
+3. **Remove `ALLOW_SEED_ROUTE` and `SEED_ADMIN_SECRET` and redeploy.** Don't
+   leave the route enabled: it writes to your production database on every
+   call, and `?fresh=1` (drop everything) is refused in production regardless.
+   To rebuild a database from scratch, run `npm run seed:fresh` from a trusted
+   machine with `DATABASE_URL` set.
+
+Locally there's nothing to configure: `curl -X POST http://localhost:3000/api/seed`
+(or the "Seed database" button in the header when the board is empty).
 
 ### 6. Access
 

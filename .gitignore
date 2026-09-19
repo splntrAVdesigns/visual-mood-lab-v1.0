@@ -11,6 +11,17 @@ next-env.d.ts
 # file (your seeded library, your saved parameters, everything you've
 # tuned); public/uploads holds captured posters, snapshot exports, and
 # anything uploaded through the app. Both are generated at runtime and
-# regenerate from a fresh `npm run seed` / `/api/seed`.
-.pglite
+# regenerate from a fresh `npm run seed` / `POST /api/seed`.
+#
+# `.pglite*` (not just `.pglite`) so a hand-made backup directory such as
+# `.pglite.bak` is ignored too — the old exact-name rule missed it, and
+# ~2,000 database files ended up committed.
+.pglite*
 public/uploads
+
+# Local process output — `nohup npx next start` writes nohup.out into the
+# working directory, and request logs can carry things that don't belong in
+# a public repo.
+nohup.out
+*.log
+npm-debug.log*
