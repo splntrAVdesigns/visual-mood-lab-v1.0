@@ -29,12 +29,15 @@ function check(name: string, condition: boolean, detail?: unknown): void {
 }
 const p = parseSandboxMessage;
 
+/** A parsed message viewed as a loose record — for asserting on fields the type says may be absent. */
+const loose = (m: unknown): Record<string, unknown> | null => (m as Record<string, unknown> | null);
+
 function verifyRealMessages(): void {
   console.log('messages the real sandbox sends pass through intact');
 
   check('ready', p({ type: 'ready' })?.type === 'ready');
   const schema = p({ type: 'schema', params: { count: { kind: 'slider' } } });
-  check('schema with params', schema?.type === 'schema' && (schema.params as any)?.count?.kind === 'slider');
+  check('schema with params', schema?.type === 'schema' && (schema.params as Record<string, { kind?: string }> | undefined)?.count?.kind === 'slider');
   const hb = p({ type: 'heartbeat', fps: 59.4, frame: 1204 });
   check('heartbeat', hb?.type === 'heartbeat' && hb.fps === 59.4 && hb.frame === 1204, hb);
   check('error', p({ type: 'error', message: 'boom', stack: 'at x' })?.message === 'boom');
@@ -102,8 +105,8 @@ function verifyAbuse(): void {
     const r = p({ type: 'captured', requestId: 1, dataUrl });
     check(`captured dataUrl ${dataUrl.slice(0, 40)} is dropped`, r?.type === 'captured' && r.dataUrl === undefined, r);
   }
-  check('captured dataUrl not a string', (p({ type: 'captured', requestId: 1, dataUrl: 5 }) as any)?.dataUrl === undefined);
-  check('oversized dataUrl is dropped (and never regex-scanned)', (p({ type: 'captured', requestId: 1, dataUrl: 'data:image/png;base64,' + 'A'.repeat(MAX_CAPTURE_DATA_URL_CHARS) }) as any)?.dataUrl === undefined);
+  check('captured dataUrl not a string', loose(p({ type: 'captured', requestId: 1, dataUrl: 5 }))?.dataUrl === undefined);
+  check('oversized dataUrl is dropped (and never regex-scanned)', loose(p({ type: 'captured', requestId: 1, dataUrl: 'data:image/png;base64,' + 'A'.repeat(MAX_CAPTURE_DATA_URL_CHARS) }))?.dataUrl === undefined);
   check('captured needs an integer requestId', p({ type: 'captured', requestId: 1.5, dataUrl: null }) === null && p({ type: 'captured', dataUrl: null }) === null && p({ type: 'captured', requestId: 'x' }) === null);
   check('captured NaN requestId', p({ type: 'captured', requestId: NaN }) === null);
 
@@ -115,23 +118,23 @@ function verifyAbuse(): void {
   check('pluck -5 is clamped to 0', p({ type: 'pluck', x: -5 })?.x === 0);
   check('energy NaN', p({ type: 'energy', energy: NaN }) === null);
   check('energy 9 is clamped to 1', p({ type: 'energy', energy: 9 })?.energy === 1);
-  check('heartbeat fps NaN is dropped, message kept', (p({ type: 'heartbeat', fps: NaN }) as any)?.fps === undefined && p({ type: 'heartbeat', fps: NaN })?.type === 'heartbeat');
+  check('heartbeat fps NaN is dropped, message kept', loose(p({ type: 'heartbeat', fps: NaN }))?.fps === undefined && p({ type: 'heartbeat', fps: NaN })?.type === 'heartbeat');
   check('heartbeat fps 1e9 is clamped', p({ type: 'heartbeat', fps: 1e9 })?.fps === 1000);
   check('heartbeat negative frame is floored to 0', p({ type: 'heartbeat', frame: -50 })?.frame === 0);
   check('hover must be literally true', p({ type: 'hover', hovering: 'true' })?.hovering === false && p({ type: 'hover', hovering: 1 })?.hovering === false);
 
   // schema / error
-  check('schema with array params is treated as none', (p({ type: 'schema', params: [1, 2] }) as any)?.params === undefined);
-  check('schema with string params is treated as none', (p({ type: 'schema', params: 'x' }) as any)?.params === undefined);
+  check('schema with array params is treated as none', loose(p({ type: 'schema', params: [1, 2] }))?.params === undefined);
+  check('schema with string params is treated as none', loose(p({ type: 'schema', params: 'x' }))?.params === undefined);
   const manyKeys = Object.fromEntries(Array.from({ length: 300 }, (_, i) => [`k${i}`, {}]));
-  check('schema with 300 params is treated as none', (p({ type: 'schema', params: manyKeys }) as any)?.params === undefined);
+  check('schema with 300 params is treated as none', loose(p({ type: 'schema', params: manyKeys }))?.params === undefined);
   const longErr = p({ type: 'error', message: 'x'.repeat(50_000), stack: 'y'.repeat(50_000) });
   check('error message and stack are truncated', (longErr?.message?.length ?? 0) <= 2000 && (longErr?.stack?.length ?? 0) <= 4000, [longErr?.message?.length, longErr?.stack?.length]);
   check('error with non-string message is kept without it', p({ type: 'error', message: { a: 1 } })?.message === undefined);
 
   // output hygiene: only known fields survive
-  const dirty = p({ type: 'pluck', x: 0.5, evil: 'x', __proto__: { polluted: true } }) as any;
-  check('unknown extra fields never reach the handler', dirty && !('evil' in dirty) && Object.keys(dirty).sort().join() === 'type,x', dirty && Object.keys(dirty));
+  const dirty = loose(p({ type: 'pluck', x: 0.5, evil: 'x', __proto__: { polluted: true } }));
+  check('unknown extra fields never reach the handler', dirty !== null && !('evil' in dirty) && Object.keys(dirty).sort().join() === 'type,x', dirty && Object.keys(dirty));
   const hostile = Object.defineProperty({}, 'type', {
     get() {
       throw new Error('nope');

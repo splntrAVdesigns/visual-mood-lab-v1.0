@@ -171,3 +171,8 @@ export const uploadSignRateLimit = makeLimiter('ratelimit:upload-sign', 60, '600
 // scroll can legitimately trigger dozens in a minute — so this is generous
 // on purpose. It exists to stop scripted abuse, not to shape normal use.
 export const posterWriteRateLimit = makeLimiter('ratelimit:poster-write', 120, '60 s');
+
+// CSP violation reports arrive unauthenticated (see app/api/csp-report). One
+// bad page can fire dozens at once, so this is generous per burst but still
+// caps what a single address can push into the logs.
+export const cspReportRateLimit = makeLimiter('ratelimit:csp-report', 30, '60 s');

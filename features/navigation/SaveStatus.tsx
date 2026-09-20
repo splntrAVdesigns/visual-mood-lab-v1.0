@@ -49,7 +49,7 @@ export function SaveStatus() {
             Sign in
           </a>
         )}
-        <Button variant="outline" onClick={() => retryFailedPersist()}>
+        <Button variant="outline" className={s.retry} onClick={() => retryFailedPersist()}>
           Retry
         </Button>
       </div>

@@ -1,4 +1,21 @@
 import type { NextConfig } from 'next';
+import { securityHeaderRules, type CspMode } from './lib/security/headers';
+
+/*
+ * CSP rollout. Both start as Report-Only: the policy is evaluated and every
+ * would-be violation is POSTed to /api/csp-report (visible in the platform
+ * logs as `[csp-report]`), but nothing is blocked. Promote a policy to
+ * 'enforce' only after a period of real use shows no violations you'd want to
+ * allow. The sandbox policy was enforced first — it's the narrow one and it
+ * guards the document that runs sketch code. The app policy stays Report-Only
+ * until it has seen real production traffic (uploads to Vercel Blob, media
+ * playback, OAuth) that a local test can't reproduce.
+ */
+const APP_CSP_MODE: CspMode = 'report-only';
+// ENFORCED: promoted after all 44 seed sketches were opened under it in
+// Report-Only with zero violations (once `data:` was allowed for the font
+// loader's local decode — the one real finding). See lib/security/headers.ts.
+const SANDBOX_CSP_MODE: CspMode = 'enforce';
 
 const config: NextConfig = {
   reactStrictMode: true,
@@ -22,6 +39,13 @@ const config: NextConfig = {
    */
   outputFileTracingIncludes: {
     '/api/seed': ['./seed/**/*', './lib/db/migrations/**/*'],
+  },
+  async headers() {
+    return securityHeaderRules({
+      dev: process.env.NODE_ENV !== 'production',
+      appCspMode: APP_CSP_MODE,
+      sandboxCspMode: SANDBOX_CSP_MODE,
+    });
   },
   // Seed shaders and sketches are loaded as raw text at build/seed time.
   turbopack: {

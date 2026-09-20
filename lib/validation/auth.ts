@@ -10,6 +10,16 @@
 
 import { z } from 'zod';
 
+// Zod compiles a validator with `new Function` (its "JIT") and finds out
+// whether that's allowed by ATTEMPTING it — `Function("")` in a try/catch.
+// Under a Content-Security-Policy without 'unsafe-eval' the attempt is caught
+// and zod falls back correctly, but the attempt itself is a CSP violation, so
+// every login / signup page view would file a report (found by running the
+// policy in Report-Only: one `script-src eval` per auth page load, from zod's
+// own chunk). These schemas check a handful of short strings — the JIT buys
+// nothing — so it's switched off, which also removes the probe.
+z.config({ jitless: true });
+
 /* ------------------------------------------------------------------ *
  * Username
  * ------------------------------------------------------------------ *

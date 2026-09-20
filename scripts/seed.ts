@@ -2,7 +2,13 @@
  * Loads the seed library into the database.
  *
  *   npm run seed          # migrate if needed, then ingest every manifest entry
- *   npm run seed -- --fresh   # drop and recreate first
+ *   npm run seed -- --fresh   # drop and recreate first (LOCAL database only)
+ *
+ * `--fresh` DROPS the boards, board_items and assets tables. Pointed at a
+ * remote database (a DATABASE_URL in .env.local — i.e. Neon) it is refused
+ * unless you also pass `--force-remote`, so it can't be run against production
+ * by muscle memory. The HTTP seed route already refuses `fresh` in production;
+ * this closes the same gap on the command line.
  *
  * Runs through `ingestAsset`, exactly like an upload does. If this works,
  * upload works — there is no second code path to drift.
@@ -44,6 +50,17 @@ async function main(): Promise<void> {
   const wantsFresh = process.argv.includes('--fresh');
 
   console.log(`\nDatabase: ${isLocalDb() ? 'PGlite (local)' : 'Postgres (DATABASE_URL)'}`);
+
+  if (wantsFresh && !isLocalDb() && !process.argv.includes('--force-remote')) {
+    console.error(
+      '\nRefusing --fresh: DATABASE_URL points at a remote Postgres, and --fresh DROPS the\n' +
+        'boards, board_items and assets tables.\n\n' +
+        'If you really mean to wipe that database, add --force-remote:\n' +
+        '  npm run seed:fresh -- --force-remote\n\n' +
+        'To rebuild a LOCAL database instead, unset DATABASE_URL (or use a .env.local without it).\n',
+    );
+    process.exit(1);
+  }
 
   if (wantsFresh) {
     console.log('Dropping existing tables...');

@@ -110,7 +110,7 @@ async function main(): Promise<void> {
     // 1. Modulation fault on card A (first in Map order): B must still render, and A too.
     reset();
     let A = makeEntry('A', { modFault: true });
-    let B = makeEntry('B');
+    const B = makeEntry('B');
     pool.entries.set('A', A.entry);
     pool.entries.set('B', B.entry);
     tick();

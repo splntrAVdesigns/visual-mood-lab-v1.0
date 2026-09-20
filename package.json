@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
+    "lint:strict": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit",
     "verify:seed": "tsx --env-file=.env.local scripts/verify-seed.ts",
     "verify:control-surface": "tsx scripts/verify-control-surface.ts",
@@ -16,6 +17,7 @@
     "verify:tile-state": "tsx scripts/verify-tile-state.ts",
     "verify:persist": "tsx scripts/verify-persist.ts",
     "verify:sandbox": "tsx scripts/verify-sandbox-messages.ts",
+    "verify:headers": "tsx scripts/verify-headers.ts",
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
     "seed:fresh": "tsx --env-file=.env.local scripts/seed.ts -- --fresh",
     "db:generate": "node --env-file=.env.local ./node_modules/.bin/drizzle-kit generate",
@@ -38,6 +40,7 @@
     "postgres": "^3.4.9",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "zod": "4.1.11",
     "zustand": "^5.0.0"
   },
   "devDependencies": {
@@ -45,6 +48,8 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "drizzle-kit": "^0.31.10",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.3.5",
     "playwright": "^1.62.0",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0"

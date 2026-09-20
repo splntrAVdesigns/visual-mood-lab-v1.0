@@ -36,6 +36,18 @@
   animation: saveStatusIn var(--dur-base) var(--ease);
 }
 
+.pill .retry {
+  /* The shared outline Button renders its label in the dim text colour, which
+     next to the bright message read as disabled. Two classes so this wins
+     regardless of stylesheet load order. */
+  color: var(--text);
+  border-color: var(--border-hi);
+}
+
+.pill .retry:hover:not(:disabled) {
+  border-color: var(--text-dim);
+}
+
 .link {
   color: var(--text);
   text-decoration: underline;

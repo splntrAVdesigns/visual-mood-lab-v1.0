@@ -218,7 +218,16 @@ export class P5Renderer implements AssetRenderer {
         // close) keep working with no knowledge that a sandboxed iframe was
         // ever involved.
         if (!msg.key) break;
-        window.dispatchEvent(
+        // Dispatched on `document`, NOT `window`. The two are not equivalent:
+        // an event fired at `window` is delivered only to window's own
+        // listeners — it never travels DOWN to `document`. The focus overlay
+        // and the drawers listen on `document`, so with this on `window`
+        // Escape (forwarded whenever focus is inside the sketch, i.e. after any
+        // click or drag on it) reached AppShell's window listener but never the
+        // overlay or the inspector: the overlay would not close. Fired at
+        // `document` with bubbles:true it reaches document listeners first and
+        // then window listeners — every existing shortcut owner, once each.
+        document.dispatchEvent(
           new KeyboardEvent('keydown', { key: msg.key, bubbles: true, cancelable: true }),
         );
         break;
