@@ -21,6 +21,7 @@
     "verify:roll": "tsx scripts/verify-roll.ts",
     "verify:roll-store": "tsx scripts/verify-roll-store.ts",
     "verify:schema-fuzz": "tsx scripts/verify-schema-fuzz.ts",
+    "verify:site-url": "tsx scripts/verify-site-url.ts",
     "seed": "tsx --env-file=.env.local scripts/seed.ts",
     "seed:fresh": "tsx --env-file=.env.local scripts/seed.ts -- --fresh",
     "db:generate": "node --env-file=.env.local ./node_modules/.bin/drizzle-kit generate",
