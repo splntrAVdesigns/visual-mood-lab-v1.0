@@ -235,3 +235,44 @@ export const CheckIcon = (p: IconProps) => (
     <path d="M3 8.5l3.25 3.25L13 5" />
   </Svg>
 );
+
+/* Roll / Mutate / lock — see features/inspector/RollBar.tsx */
+
+export const DiceIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="2.5" y="2.5" width="11" height="11" rx="2.5" />
+    <circle cx="5.6" cy="5.6" r="0.55" fill="currentColor" />
+    <circle cx="10.4" cy="5.6" r="0.55" fill="currentColor" />
+    <circle cx="8" cy="8" r="0.55" fill="currentColor" />
+    <circle cx="5.6" cy="10.4" r="0.55" fill="currentColor" />
+    <circle cx="10.4" cy="10.4" r="0.55" fill="currentColor" />
+  </Svg>
+);
+
+export const UndoIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M5.5 3.25L3 5.75l2.5 2.5" />
+    <path d="M3 5.75h6a3.5 3.5 0 0 1 0 7H6" />
+  </Svg>
+);
+
+export const RedoIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M10.5 3.25L13 5.75l-2.5 2.5" />
+    <path d="M13 5.75H7a3.5 3.5 0 0 0 0 7h3" />
+  </Svg>
+);
+
+export const LockIcon = (p: IconProps) => (
+  <Svg {...p} size={p.size ?? 12}>
+    <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
+    <path d="M5.5 7V5.25a2.5 2.5 0 0 1 5 0V7" />
+  </Svg>
+);
+
+export const UnlockIcon = (p: IconProps) => (
+  <Svg {...p} size={p.size ?? 12}>
+    <rect x="3.5" y="7" width="9" height="6.5" rx="1.5" />
+    <path d="M5.5 7V5.25a2.5 2.5 0 0 1 4.7-1.15" />
+  </Svg>
+);

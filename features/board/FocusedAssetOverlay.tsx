@@ -446,6 +446,9 @@ export function FocusedAssetOverlay() {
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
+        // Marks THIS as the tile being edited (not a dialog on top of it) so the
+        // Roll shortcuts can tell the two apart — see useRollShortcuts.
+        data-focused-view="true"
         aria-label={asset.title}
         tabIndex={-1}
       >

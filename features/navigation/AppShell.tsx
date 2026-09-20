@@ -13,6 +13,7 @@ import type { User } from '@/lib/auth';
 import { attachAudioLifecycleListeners } from '@/lib/sound/context';
 import { attachTrackVisibilityLifecycle } from '@/lib/sound/track';
 import { attachPersistLifecycle } from '@/lib/persist/client';
+import { useRollShortcuts } from '@/features/inspector/useRollShortcuts';
 import { AppChrome } from './AppChrome';
 import { SaveStatus } from './SaveStatus';
 import s from '../features.module.css';
@@ -102,6 +103,10 @@ export function AppShell({ assets, needsSeed = false, focusItemId, user = null }
   useEffect(() => {
     return attachPersistLifecycle();
   }, []);
+
+  // R / M / ⌘Z for Roll, Mutate and Undo. Mounted once, here, because the
+  // desktop drawer and the mobile sheet both render a Roll bar.
+  useRollShortcuts();
 
   return (
     <>

@@ -1,5 +1,6 @@
 'use client';
 
+import { LockButton } from './RollLocks';
 import type { Control, ParamValue } from '@/renderers/control-schema';
 import { useInspectorStore } from '@/stores';
 import { ControllerBindButton } from '@/features/controllers/ControllerBindButton';
@@ -42,13 +43,21 @@ export function ControlRow({ control, value, dirty, onChange, onReset, forceDisa
   }
 
   const controllerAction = itemId ? <ControllerBindButton control={control} itemId={itemId} /> : null;
+  // The padlock rides in the same label-row slot as the MIDI pill.
+  const fieldActions = (
+    <>
+      <LockButton control={control} />
+      {controllerAction}
+    </>
+  );
 
   return (
     <div
       className={s.controlRow}
       data-modulated={modulated || controller.active ? 'true' : undefined}
+      data-lockable="true"
     >
-      <FieldActionProvider value={controllerAction}>
+      <FieldActionProvider value={fieldActions}>
         <ControlBody
           control={control}
           value={value}

@@ -15,6 +15,9 @@ import { selectSelectedAsset, useBoardStore, useInspectorStore } from '@/stores'
 import { ASSET_TYPE_BADGE } from '@/types/asset';
 import { WAVE_SHAPE_CONTROL_ID, waveShapeValueToLfoShape } from '@/lib/sound/types';
 import { ControlRow } from './ControlRow';
+import { RollBar } from './RollBar';
+import { GroupLockButton } from './RollLocks';
+import roll from './rollBar.module.css';
 import s from '../features.module.css';
 
 /**
@@ -158,6 +161,7 @@ export function InspectorDrawer() {
               <Badge>{ASSET_TYPE_BADGE[asset.type]}</Badge>
             </div>
           )}
+          {asset && <RollBar assetType={asset.type} />}
 
           {groups.map(({ group, controls }) => {
             const isCollapsed = collapsed.has(group.id) || (group.collapsed && !collapsed.has(`!${group.id}`));
@@ -169,7 +173,8 @@ export function InspectorDrawer() {
             if (rows.length === 0) return null;
 
             return (
-              <section key={group.id} className={s.group}>
+              <section key={group.id} className={s.group} data-lockgroup="true">
+                <div className={roll.groupHeadRow}>
                 <button
                   type="button"
                   className={s.groupHead}
@@ -180,6 +185,8 @@ export function InspectorDrawer() {
                   {group.label}
                   <span className={s.groupRule} />
                 </button>
+                <GroupLockButton label={group.label} controls={rows} />
+                </div>
 
                 {!isCollapsed &&
                   rows.map((c) => {

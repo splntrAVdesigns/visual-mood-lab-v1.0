@@ -10,6 +10,9 @@ import {
 } from '@/stores';
 import { groupedControls, isVisible, isDisabledByState } from '@/renderers/control-schema';
 import { ControlRow } from '@/features/inspector/ControlRow';
+import { RollBar } from '@/features/inspector/RollBar';
+import { GroupLockButton } from '@/features/inspector/RollLocks';
+import roll from '@/features/inspector/rollBar.module.css';
 import { ModulationPanel } from '@/features/inspector/ModulationPanel';
 import { SoundPanel } from '@/features/inspector/SoundPanel';
 import { VfxPanel } from '@/features/inspector/VfxPanel';
@@ -228,6 +231,7 @@ export function MobileFocusedView() {
       data-fullscreen={pseudoFullscreen || undefined}
       role="dialog"
       aria-modal="true"
+      data-focused-view="true"
       aria-label={asset.title}
     >
       <header className={s.mobileFocusHeader}>
@@ -405,6 +409,7 @@ export function MobileFocusedView() {
           />
         ) : (
           <>
+            <RollBar assetType={asset.type} variant="sheet" />
             {groups.map(({ group, controls }) => {
               const rows = controls
                 .filter((c) => isVisible(c, params))
@@ -412,7 +417,7 @@ export function MobileFocusedView() {
               if (rows.length === 0) return null;
 
               return (
-                <section key={group.id} className={s.mobileGroup}>
+                <section key={group.id} className={s.mobileGroup} data-lockgroup="true">
                   {/* Skipped when there's only one group total — the
                       "Parameters" tab immediately above already says
                       this, and repeating it here just eats vertical
@@ -426,7 +431,10 @@ export function MobileFocusedView() {
                       the first control. Dropped unconditionally; every
                       other group label is untouched. */}
                   {groups.length > 1 && group.label.trim().toLowerCase() !== 'global' && (
-                    <h2 className={s.mobileGroupLabel}>{group.label}</h2>
+                    <div className={roll.groupHeadRow}>
+                      <h2 className={s.mobileGroupLabel}>{group.label}</h2>
+                      <GroupLockButton label={group.label} controls={rows} className={roll.groupLockSheet} />
+                    </div>
                   )}
                   {rows.map((c) => (
                     <ControlRow

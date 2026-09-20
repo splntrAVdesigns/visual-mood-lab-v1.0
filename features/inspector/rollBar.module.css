@@ -1,0 +1,189 @@
+/*
+ * Roll bar + lock buttons. Existing tokens only: hairline borders, no shadow,
+ * no new colours. The accent shows up only where the rest of the inspector
+ * already uses it — keyboard focus.
+ */
+
+.bar {
+  display: contents;
+}
+
+/*
+ * ONLY this row is sticky. The options panel and the feedback line flow with
+ * the content: a tall opaque sticky block (up to ~230px with the panel open)
+ * would hide whatever scrolls under it — including a control reached by
+ * keyboard. The row is a constant ~50px, which the scroll-margin rule at the
+ * bottom of this file accounts for.
+ */
+.stickyRow {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  padding: var(--space-2) 0;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+/*
+ * A sticky element respects its scroller's padding, so with `top: 0` the row
+ * stuck 12px BELOW the drawer header and scrolled content peeked through the
+ * strip above it. The drawer body's top padding is var(--space-3)
+ * (components/ui/ui.module.css); offsetting by the same token makes the row
+ * stick flush. Drawer only — the mobile sheet has its own padding.
+ */
+.bar:not(.barSheet) > .stickyRow {
+  top: calc(-1 * var(--space-3));
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.spacer {
+  flex: 1;
+}
+
+/* Mutate + its options caret, joined into one control. */
+.split {
+  display: inline-flex;
+}
+.split > :first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.split > :last-child {
+  border-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.caret {
+  transition: transform var(--dur-base) var(--ease);
+}
+.caret[data-open='true'] {
+  transform: rotate(90deg);
+}
+
+.panel {
+  margin: var(--space-2) 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.panelRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 24px;
+}
+
+.panelLabel {
+  font-size: var(--step--1);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.panelSlider {
+  flex: 1;
+  min-width: 60px;
+}
+
+.panelValue {
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  color: var(--text);
+  min-width: 34px;
+  text-align: right;
+}
+
+.status {
+  margin: var(--space-2) 0 var(--space-3);
+  min-height: 1.3em;
+  font-size: var(--step--1);
+  color: var(--text-dim);
+}
+
+/* ---------------------------------------------------------------- locks */
+
+.lock {
+  opacity: 0;
+  color: var(--text-mute);
+  transition: opacity var(--dur-base) var(--ease), color var(--dur-base) var(--ease);
+}
+
+/* Revealed by hovering the row it belongs to (ControlRow carries data-lockable)… */
+:global([data-lockable]:hover) .lock,
+:global([data-lockgroup]:hover) .groupLockButton,
+.lock:focus-visible,
+.lock[data-locked='true'] {
+  opacity: 1;
+}
+
+.lock[data-locked='true'] {
+  color: var(--text);
+}
+
+.lock:hover {
+  color: var(--text);
+}
+
+/* …and always shown where there is no hover to reveal it. */
+@media (hover: none) {
+  .lock {
+    opacity: 1;
+  }
+}
+
+/*
+ * Section-level lock. It lives IN the group heading's row (a flex row) rather
+ * than being positioned over it — an absolute offset was a guess at the
+ * heading's height and floated the icon above the heading line.
+ */
+.groupHeadRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.groupHeadRow > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Mobile headings sit in a sheet whose rows carry their own side padding. */
+.groupLockSheet {
+  margin-right: var(--space-4);
+}
+
+/* The bar in the mobile sheet: rows there inset themselves, the bar must too. */
+.barSheet > .stickyRow {
+  padding-left: var(--space-4);
+  padding-right: var(--space-4);
+}
+.barSheet > .panel,
+.barSheet > .status {
+  margin-left: var(--space-4);
+  margin-right: var(--space-4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lock,
+  .caret {
+    transition: none;
+  }
+}
+
+/*
+ * Bring a control into view BELOW the sticky row, not under it, when the
+ * browser scrolls to it (keyboard Tab, focus(), anchor jumps).
+ */
+:global([data-lockable]),
+:global([data-lockgroup]) {
+  scroll-margin-top: 64px;
+}

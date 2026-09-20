@@ -16,6 +16,12 @@ import {
 import type { EffectInstance } from '@/lib/effects/types';
 import { MAX_EFFECTS_PER_CHAIN, createEffectInstance } from '@/lib/effects/types';
 import { defaultEffectParams, getEffectSchema } from '@/lib/effects/registry';
+import { mutateParams as mutateEngine, rollParams as rollEngine, sameValue } from '@/lib/roll/engine';
+import type { Rng } from '@/lib/roll/rng';
+import { EMPTY_HISTORY, recordHistory, redoHistory, undoHistory } from '@/lib/roll/history';
+import type { History, HistoryEntry } from '@/lib/roll/history';
+import { WAVE_SHAPE_CONTROL_ID, waveShapeValueToLfoShape } from '@/lib/sound/types';
+import { useRollStore } from './rollStore';
 
 interface InspectorState {
   open: boolean;
@@ -89,6 +95,30 @@ interface InspectorState {
   setParam: (id: string, value: ParamValue) => void;
   resetParam: (id: string) => void;
   resetAll: () => void;
+
+  /**
+   * Undo / redo for WHOLE-STATE batch operations only — Roll, Mutate and
+   * Restore defaults. Per-slider-drag undo would flood a 20-deep stack in a
+   * second and needs coalescing to be useful; it is deliberately not here.
+   * Session-scoped: cleared whenever an inspector is opened or closed.
+   */
+  history: History;
+  /** A new look. Returns what happened, or null when there is nothing to roll. `rng` is for tests. */
+  rollParams: (rng?: Rng) => RollSummary | null;
+  /** A nudge from the current look. `strength` is 0..1. */
+  mutateParams: (strength: number, rng?: Rng) => RollSummary | null;
+  undoParams: () => boolean;
+  redoParams: () => boolean;
+}
+
+/** What a Roll / Mutate did — for the UI's one-line feedback. */
+export interface RollSummary {
+  /** Controls whose value actually changed. */
+  changed: number;
+  /** Controls that were eligible this time. */
+  eligible: number;
+  /** Controls in this schema that are locked. */
+  locked: number;
 }
 
 /*
@@ -159,6 +189,53 @@ function applyEffects(
   useBoardStore.getState().updateAssetEffects(itemId, effects);
 }
 
+interface StoreApi {
+  get: () => InspectorState;
+  set: (partial: Partial<InspectorState>) => void;
+}
+
+function entryOf(params: ParamState, dirty: Set<string>): HistoryEntry {
+  return { params, dirty: [...dirty] };
+}
+
+/**
+ * Apply a WHOLE parameter state in one step: one store update, one push to the
+ * live renderer and the modulation base values, one debounced save (the save
+ * queue coalesces on its key, so a Roll costs a single PATCH — calling setParam
+ * once per control would do the same work N times and re-render N times).
+ * Shared by Roll, Mutate, Undo and Redo.
+ */
+function commitBatch(api: StoreApi, nextParams: ParamState, nextDirty: Set<string>): void {
+  const { itemId, assetId, isSnapshot, isOwned, params: prev, sound } = api.get();
+  api.set({ params: nextParams, dirty: nextDirty });
+  if (!itemId || !assetId) return;
+
+  getPool().get(itemId)?.setParams(nextParams);
+  getPool().setBaseParams(itemId, nextParams);
+  persist(itemId, assetId, isSnapshot || !isOwned, nextParams);
+
+  // The waveShape control is mirrored into the sound engine's LFO shape — the
+  // inspector's handleParamChange does this for a single edit; a batch must too
+  // or a Roll would leave the visual and the sound disagreeing.
+  const shape = nextParams[WAVE_SHAPE_CONTROL_ID];
+  if (shape !== undefined && !sameValue(shape, prev[WAVE_SHAPE_CONTROL_ID])) {
+    const mapped = waveShapeValueToLfoShape(shape);
+    if (mapped && mapped !== sound.lfoShape) api.get().setSoundState({ ...sound, lfoShape: mapped });
+  }
+}
+
+/** The "modified" dot follows the value: on when it differs from the default, off when it matches. */
+function dirtyAfter(schema: ControlSchema, dirty: Set<string>, params: ParamState, changed: string[]): Set<string> {
+  const next = new Set(dirty);
+  for (const id of changed) {
+    const control = schema.controls.find((c) => c.id === id);
+    if (!control) continue;
+    if (control.kind !== 'trigger' && sameValue(params[id], control.default as ParamValue)) next.delete(id);
+    else next.add(id);
+  }
+  return next;
+}
+
 export const useInspectorStore = create<InspectorState>()((set, get) => ({
   open: false,
   navOpen: false,
@@ -173,6 +250,7 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
   mod: {},
   sound: DEFAULT_SOUND_STATE,
   effects: [],
+  history: EMPTY_HISTORY,
 
   openInspector: (schema, saved, itemId, assetId, isSnapshot = false, mod = {}, isOwned = true, sound = DEFAULT_SOUND_STATE, effects = []) => {
     const params = hydrate(schema, saved);
@@ -190,7 +268,8 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
     // the store's own copy, what the panel actually renders from, was
     // still raw.
     const normalizedSound = normalizeSoundState(sound);
-    set({ open: true, schema, params, dirty: new Set(), itemId, assetId, isSnapshot, isOwned, mod, sound: normalizedSound, effects });
+    set({ open: true, schema, params, dirty: new Set(), itemId, assetId, isSnapshot, isOwned, mod, sound: normalizedSound, effects, history: EMPTY_HISTORY });
+    useRollStore.getState().loadFor(assetId);
     getPool().get(itemId)?.setParams(params);
     getPool().setBaseParams(itemId, params);
     getPool().setModState(itemId, mod);
@@ -326,7 +405,7 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
     // otherwise be lost inside the debounce window.
     const { itemId, assetId, isSnapshot, isOwned } = get();
     if (itemId && assetId) flush(itemId, assetId, isSnapshot || !isOwned);
-    set({ open: false });
+    set({ open: false, history: EMPTY_HISTORY });
   },
 
   toggleNav: () => set((s) => ({ navOpen: !s.navOpen })),
@@ -425,14 +504,67 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
   },
 
   resetAll: () => {
-    const { schema, itemId, assetId, isSnapshot, isOwned } = get();
+    const { schema, itemId, assetId, isSnapshot, isOwned, params: before, dirty: beforeDirty, history } = get();
     if (!schema) return;
     const params = defaultsOf(schema);
-    set({ params, dirty: new Set() });
+    // Restore defaults is a batch operation, so it is undoable. Skipped when it
+    // would change nothing, so pressing it twice doesn't bury real history.
+    const alreadyDefault = beforeDirty.size === 0 && schema.controls.every((c) => sameValue(before[c.id], params[c.id]));
+    set({ params, dirty: new Set(), history: alreadyDefault ? history : recordHistory(history, entryOf(before, beforeDirty)) });
 
     if (!itemId || !assetId) return;
     getPool().get(itemId)?.setParams(params);
     getPool().setBaseParams(itemId, params);
     persist(itemId, assetId, isSnapshot || !isOwned, params);
+  },
+
+  rollParams: (rng) => {
+    const { schema, params, dirty, assetId, history } = get();
+    if (!schema) return null;
+    const { locked, includeToggles } = useRollStore.getState();
+    const res = rollEngine(schema, params, { locked, includeToggles, assetId, rng });
+    const summary: RollSummary = {
+      changed: res.changed.length,
+      eligible: res.eligible,
+      locked: schema.controls.filter((c) => locked.has(c.id)).length,
+    };
+    if (res.changed.length === 0) return summary;
+    set({ history: recordHistory(history, entryOf(params, dirty)) });
+    commitBatch({ get, set }, res.params, dirtyAfter(schema, dirty, res.params, res.changed));
+    return summary;
+  },
+
+  mutateParams: (strength, rng) => {
+    const { schema, params, dirty, assetId, history } = get();
+    if (!schema) return null;
+    const { locked } = useRollStore.getState();
+    const res = mutateEngine(schema, params, { strength, locked, assetId, rng });
+    const summary: RollSummary = {
+      changed: res.changed.length,
+      eligible: res.eligible,
+      locked: schema.controls.filter((c) => locked.has(c.id)).length,
+    };
+    if (res.changed.length === 0) return summary;
+    set({ history: recordHistory(history, entryOf(params, dirty)) });
+    commitBatch({ get, set }, res.params, dirtyAfter(schema, dirty, res.params, res.changed));
+    return summary;
+  },
+
+  undoParams: () => {
+    const { params, dirty, history } = get();
+    const step = undoHistory(history, entryOf(params, dirty));
+    if (!step) return false;
+    set({ history: step.history });
+    commitBatch({ get, set }, step.entry.params, new Set(step.entry.dirty));
+    return true;
+  },
+
+  redoParams: () => {
+    const { params, dirty, history } = get();
+    const step = redoHistory(history, entryOf(params, dirty));
+    if (!step) return false;
+    set({ history: step.history });
+    commitBatch({ get, set }, step.entry.params, new Set(step.entry.dirty));
+    return true;
   },
 }));
