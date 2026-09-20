@@ -16,7 +16,7 @@ export const params = {
   slow: { kind: 'color', label: 'Slow', default: { r: 0.15, g: 0.1, b: 0.4, a: 1 } },
   fast: { kind: 'color', label: 'Fast', default: { r: 0, g: 0.83, b: 1, a: 1 } },
   showTarget: { kind: 'toggle', label: 'Show target', default: true, advanced: true },
-  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed' },
+  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed', advanced: true, midi: false },
 };
 
 export default function sketch(p, get) {

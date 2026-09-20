@@ -29,7 +29,7 @@ uniform bool u_mirrorX;        // @label(Mirror horizontal) @default(false) @hin
 uniform bool u_mirrorY;        // @label(Mirror vertical) @default(false) @hint(Reflects the bottom half of the grid to match the top half.)
 uniform int u_panelShape;      // @label(Panel shape) @select(Rounded Rect=0 | Circle=1 | Triangle=2 | Cut Corner=3 | Octagon=4 | Stripe=5 | Right Triangle=6 | Mixed=7) @default(0)
 uniform float u_shapeAmount;   // @label(Shape amount) @range(0, 0.5) @default(0.15) @hint(Corner rounding, chamfer, or stripe thickness, depending on the shape — reused per-shape rather than one control per option.)
-uniform float u_shapeSeed;     // @label(Shuffle seed) @range(0, 50) @default(7) @step(1) @advanced @hint(Only affects Mixed — nudge this for a different random arrangement of shapes across the grid, the same "roll again" idea Rorschach Metaball's own Arrangement control uses.)
+uniform float u_shapeSeed;     // @label(Shuffle seed) @nomidi @range(0, 50) @default(7) @step(1) @advanced @hint(Only affects Mixed — nudge this for a different random arrangement of shapes across the grid, the same "roll again" idea Rorschach Metaball's own Arrangement control uses.)
 
 uniform float u_warpAmount;    // @label(Warp amount) @range(0.2, 3) @default(1.3) @mod
 uniform float u_warpScale;     // @label(Warp scale) @range(0.5, 5) @default(1.8) @mod

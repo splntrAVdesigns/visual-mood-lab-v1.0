@@ -22,8 +22,8 @@ uniform int u_iterations;     // @label(Iterations) @range(24, 400) @default(120
 uniform float u_escape;       // @label(Escape radius) @range(2, 64) @default(16) @log
 
 uniform float u_julia;        // @label(Julia morph) @range(0, 1) @default(0) @mod @hint(Blends from the Mandelbrot set toward a Julia set of the seed below.)
-uniform vec2 u_juliaSeed;     // @label(Julia seed) @range(-1.5, 1.5) @default(-0.79, 0.15)
-uniform bool u_animateSeed;   // @label(Drift seed) @default(false)
+uniform vec2 u_juliaSeed;     // @label(Julia seed) @advanced @nomidi @range(-1.5, 1.5) @default(-0.79, 0.15)
+uniform bool u_animateSeed;   // @label(Drift seed) @advanced @nomidi @default(false)
 uniform float u_driftSpeed;   // @label(Drift speed) @range(0.02, 1.5) @default(0.15)
 
 uniform float u_paletteScale; // @label(Palette scale) @range(0.02, 2) @default(0.14) @log

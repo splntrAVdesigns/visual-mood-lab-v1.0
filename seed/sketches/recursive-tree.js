@@ -13,7 +13,7 @@ export const params = {
   taper: { kind: 'slider', label: 'Taper', min: 0.5, max: 1, step: 0.01, default: 0.72, advanced: true },
   trunkColor: { kind: 'color', label: 'Trunk', default: { r: 0.27, g: 0.27, b: 0.3, a: 1 } },
   tipColor: { kind: 'color', label: 'Tips', default: { r: 0, g: 0.83, b: 1, a: 1 } },
-  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed' },
+  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed', advanced: true, midi: false },
 };
 
 export default function sketch(p, get) {

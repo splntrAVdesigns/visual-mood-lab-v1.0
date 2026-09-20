@@ -29,7 +29,7 @@ export const params = {
   densityShade: { kind: 'slider', label: 'Density shading', min: 0, max: 1, step: 0.02, default: 0.6, hint: 'Darkens birds in crowded regions, which is what gives a real murmuration its depth.' },
   colorA: { kind: 'color', label: 'Sparse', default: { r: 0, g: 0.83, b: 1, a: 1 } },
   colorB: { kind: 'color', label: 'Dense', default: { r: 0.15, g: 0.05, b: 0.35, a: 1 } },
-  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed' },
+  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed', advanced: true, midi: false },
 };
 
 export default function sketch(p, get) {

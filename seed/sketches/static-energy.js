@@ -29,7 +29,7 @@ export const params = {
   fieldNoise: { kind: 'slider', label: 'Static field', min: 0, max: 1, step: 0.02, default: 0.25, hint: 'Background speckle between strikes.' },
   coreColor: { kind: 'color', label: 'Core', default: { r: 1, g: 1, b: 1, a: 1 } },
   glowColor: { kind: 'color', label: 'Glow', default: { r: 0, g: 0.83, b: 1, a: 1 } },
-  reseed: { kind: 'trigger', label: 'Strike now', default: null, event: 'reseed' },
+  reseed: { kind: 'trigger', label: 'Strike now', default: null, event: 'reseed', advanced: true, midi: false },
 };
 
 export default function sketch(p, get) {

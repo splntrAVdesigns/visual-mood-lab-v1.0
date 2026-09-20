@@ -15,7 +15,7 @@ export const params = {
   weight: { kind: 'slider', label: 'Link weight', min: 0.2, max: 5, step: 0.05, default: 0.9 },
   head: { kind: 'color', label: 'Head', default: { r: 0, g: 0.83, b: 1, a: 1 } },
   tail: { kind: 'color', label: 'Tail', default: { r: 0.25, g: 0.08, b: 0.5, a: 1 } },
-  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed' },
+  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed', advanced: true, midi: false },
 };
 
 export default function sketch(p, get) {

@@ -68,7 +68,7 @@ float gBoundR;
 
 uniform float u_time;
 uniform vec2 u_resolution;
-uniform float u_variantSeed;     // @label(Variant seed) @range(0, 100) @default(0) @hint(Reseeds per-sphere size and position hashing without changing any other control.)
+uniform float u_variantSeed;     // @label(Variant seed) @advanced @nomidi @range(0, 100) @default(0) @hint(Reseeds per-sphere size and position hashing without changing any other control.)
 
 // Composition
 uniform vec2 u_center;           // @label(Center) @range(-1, 1) @group(Composition)

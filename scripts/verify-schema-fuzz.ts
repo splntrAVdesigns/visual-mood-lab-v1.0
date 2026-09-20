@@ -123,6 +123,7 @@ function violations(schema: ControlSchema): string[] {
       if (!(c.roll && isNum(c.roll.min) && isNum(c.roll.max) && c.roll.min < c.roll.max)) at('bad roll window');
       if (c.kind !== 'slider' && c.kind !== 'stepper') at('roll window on a non-numeric control');
     }
+    if (c.midi !== undefined && c.midi !== false) at('midi is not false');
     for (const key of ['showIf', 'disabledIf']) if (c[key] !== undefined && !predOk(c[key])) at(`${key} dangling / malformed`);
     if (c.maxIf !== undefined) {
       if (!Array.isArray(c.maxIf)) at('maxIf not an array');
@@ -348,6 +349,7 @@ async function main(): Promise<void> {
       if (kind === 'text') d.default = val(rng, () => 'hi');
       if (kind === 'trigger') d.event = 'go';
       if (rng() < 0.25) d.roll = val(rng, () => (rng() < 0.4 ? false : { min: 1, max: 4 }));
+      if (rng() < 0.15) d.midi = val(rng, () => false);
       if (rng() < 0.15) d.showIf = val(rng, () => ({ truthy: pick(rng, names) }));
       if (rng() < 0.1) d.maxIf = val(rng, () => [{ if: { truthy: pick(rng, names) }, max: val(rng, () => 3) }]);
       if (rng() < 0.1) d.disabledIf = val(rng, () => ({ equals: [pick(rng, names), 'a'] }));
@@ -513,6 +515,20 @@ async function main(): Promise<void> {
     check('GLSL: @roll(min, max) on a color is dropped with a warning', !('roll' in only(onColor)) && onColor.warnings.some((w) => /only applies to sliders/.test(w.message)));
     check('GLSL: @noroll on a color is fine', only(oneGlsl('vec3', '@color @noroll')).roll === false);
 
+    // ---- @nomidi / midi: false (hides the MIDI pill; a UI-only opt-out)
+    check('GLSL: @nomidi is parsed to false', only(oneGlsl('float', '@range(0,10) @nomidi')).midi === false);
+    check('GLSL: without @nomidi the control carries no midi field at all', !('midi' in JSON.parse(JSON.stringify(only(oneGlsl('float', '@range(0,10)'))))));
+    const combo = only(oneGlsl('float', '@range(0,10) @advanced @nomidi @noroll'));
+    check('GLSL: @nomidi combines with @advanced and @noroll independently', combo.midi === false && combo.advanced === true && combo.roll === false);
+    check('GLSL: @nomidi on any kind is fine (a toggle, a vec2, a select)', ['bool', 'vec2'].every((t) => only(oneGlsl(t, '@nomidi')).midi === false) && only(oneGlsl('int', '@select(A=0|B=1) @nomidi')).midi === false);
+    check('sketch: `midi: false` passes through and is kept', (paramsToSchema({ s: { kind: 'slider', min: 0, max: 9, default: 1, midi: false } }).schema.controls[0] as any).midi === false);
+    for (const bad of [true, 'no', 0, null, {}]) {
+      const r = paramsToSchema({ s: { kind: 'slider', min: 0, max: 9, default: 1, midi: bad } });
+      check(`sketch: midi: ${JSON.stringify(bad)} means nothing — removed WITH a warning`, !('midi' in (r.schema.controls[0] as any)) && r.warnings.some((w) => /midi can only be false/.test(w.message)), r.warnings.map((w) => w.message));
+    }
+    check('a well-formed midi: false control is left exactly alone (identity)', (() => { const c = sl({ midi: false }); return fixed(c).control === c && fixed(c).notes.length === 0; })());
+    check('a nomidi control still rolls normally (the pill is UI only)', (() => { const c = sl({ midi: false }); const sch = createSchema('t', [c]); return rollParams(sch, defaultsOf(sch), { rng: mulberry32(5) }).changed.includes('a'); })());
+
     // ---- policy precedence
     const speed = (extra: string) => only(oneGlsl('float', `@range(0,100) @default(10) ${extra}`, 'u_speed'));
     const plain = speed('');
@@ -625,6 +641,24 @@ async function main(): Promise<void> {
     check('...and what a Roll of it produces can be saved', validateParamState(res.params).ok);
     check('parse + sanitize of an absurdly large shader stays interactive (< 1.5 s)', parseMs < 1500, parseMs);
     check('a Roll of a full 256-control schema is instant (< 100 ms)', rollMs < 100, rollMs);
+  }
+
+  /* ================================================================ *
+   * 9. Seed controls stay out of the way (production convention)
+   * ================================================================ */
+  group('9. seed controls: under Advanced, no MIDI pill');
+  {
+    const seedish = seeds.flatMap((s) => (s.schema.controls as any[]).filter((c) => /seed/i.test(`${c.id} ${c.label ?? ''}`)).map((c) => ({ slug: s.slug, c })));
+    const tiles = new Set(seedish.map((x) => x.slug));
+    console.log(`  ${seedish.length} seed-style controls across ${tiles.size} tiles`);
+    check('the check is not vacuous (the reviewed set is still found)', seedish.length >= 26 && tiles.size >= 22, [seedish.length, tiles.size]);
+    const notAdvanced = seedish.filter((x) => x.c.advanced !== true).map((x) => `${x.slug}.${x.c.id}`);
+    const withMidi = seedish.filter((x) => x.c.midi !== false).map((x) => `${x.slug}.${x.c.id}`);
+    check('every control with "seed" in its id or label is under Advanced', notAdvanced.length === 0, notAdvanced);
+    check('...and has its MIDI pill hidden (@nomidi / midi: false)', withMidi.length === 0, withMidi);
+    check('no non-seed control lost its MIDI pill by accident', seeds.every((s) => (s.schema.controls as any[]).every((c) => c.midi === undefined || /seed/i.test(`${c.id} ${c.label ?? ''}`))));
+    const triggers = seedish.filter((x) => x.c.kind === 'trigger');
+    check('every reseed-style BUTTON is still there (hidden under Advanced, not removed)', triggers.length === 15 && triggers.every((x) => x.c.event === 'reseed'), triggers.length);
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

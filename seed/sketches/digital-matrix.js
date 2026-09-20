@@ -15,7 +15,7 @@ export const params = {
                  ], default: 'DOWN' },
   tint:        { kind: 'color', label: 'Tint', default: { r: 0.1, g: 1.0, b: 0.4, a: 1 } },
   headGlow:    { kind: 'toggle', label: 'Head Glow', default: true },
-  reseed:      { kind: 'trigger', label: 'Reseed Columns', default: null, event: 'reseed' },
+  reseed:      { kind: 'trigger', label: 'Reseed Columns', default: null, event: 'reseed', advanced: true, midi: false },
 };
 
 // Not real Katakana — a small set of glyphs picked to *read* as Matrix-code

@@ -54,7 +54,7 @@ export const params = {
   zoom: { kind: 'slider', label: 'Zoom', min: 0.3, max: 3, step: 0.01, default: 1, scale: 'log' },
   tilt: { kind: 'slider', label: 'Tilt', min: -90, max: 90, step: 1, default: -12, unit: 'deg' },
   interactive: { kind: 'toggle', label: 'Drag to orbit', default: true },
-  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed' },
+  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed', advanced: true, midi: false },
 };
 
 export default function sketch(p, get) {

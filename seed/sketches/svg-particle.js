@@ -55,7 +55,7 @@ export const params = {
   colorB: { kind: 'color', label: 'Colour B', default: { r: 0.75, g: 0.15, b: 0.85, a: 1 } },
   alpha: { kind: 'slider', label: 'Opacity', min: 0.1, max: 1, step: 0.02, default: 0.9 },
   trail: { kind: 'slider', label: 'Trail', min: 0, max: 0.95, step: 0.01, default: 0 },
-  reseed: { kind: 'trigger', label: 'Rebuild', default: null, event: 'reseed' },
+  reseed: { kind: 'trigger', label: 'Rebuild', default: null, event: 'reseed', advanced: true, midi: false },
 };
 
 export default function sketch(p, get) {

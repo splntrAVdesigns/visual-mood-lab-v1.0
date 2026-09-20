@@ -37,11 +37,11 @@ uniform vec2 u_resolution;
 uniform int u_ringCount;        // @label(Ring count) @range(2, 16) @default(8)
 uniform int u_wedgeCount;       // @label(Wedge count) @range(3, 32) @default(12)
 uniform float u_ringVariance;   // @label(Ring thickness variance) @range(0, 1) @default(0.5) @hint(0 gives perfectly even ring spacing; higher values randomize how thick each ring is.)
-uniform float u_ringSeed;       // @label(Ring shuffle seed) @range(0, 50) @default(3) @step(1) @hint(Nudge for a different random arrangement of ring thicknesses.)
+uniform float u_ringSeed;       // @label(Ring shuffle seed) @advanced @nomidi @range(0, 50) @default(3) @step(1) @hint(Nudge for a different random arrangement of ring thicknesses.)
 uniform float u_maxRadius;      // @label(Overall size) @range(0.3, 1) @default(0.85)
 
 uniform float u_cellColorVariance; // @label(Cell color variance) @range(0, 1) @default(0.6) @hint(0 colours whole rings uniformly; higher values let individual cells within a ring switch to a different colour independently.)
-uniform float u_colorSeed;      // @label(Color shuffle seed) @range(0, 50) @default(11) @step(1) @hint(Nudge for a different random assignment of colours to rings and cells.)
+uniform float u_colorSeed;      // @label(Color shuffle seed) @advanced @nomidi @range(0, 50) @default(11) @step(1) @hint(Nudge for a different random assignment of colours to rings and cells.)
 uniform float u_rotationSpeed;  // @label(Rotation speed) @range(-1, 1) @default(0.12) @mod
 
 uniform float u_edgeWidth;      // @label(Edge line width) @range(0, 0.02) @default(0.006) @hint(Thin separator between cells — set to 0 for flat colour blocks with no line at all.)

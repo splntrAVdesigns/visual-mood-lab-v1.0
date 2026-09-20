@@ -22,7 +22,7 @@ uniform float u_radius;       // @label(Blob size) @range(0.02, 0.5) @default(0.
 uniform float u_threshold;    // @label(Threshold) @range(0.3, 3) @default(1) @log @mod @hint(Lower fuses blobs together; higher separates them.)
 uniform float u_speed;        // @label(Motion speed) @range(0, 2) @default(0.35) @mod
 uniform float u_spread;       // @label(Spread) @range(0.1, 1.2) @default(0.55)
-uniform float u_seedOffset;   // @label(Arrangement) @range(0, 20) @default(3) @hint(Shifts the motion pattern of every blob.)
+uniform float u_seedOffset;   // @label(Arrangement) @advanced @nomidi @range(0, 20) @default(3) @hint(Shifts the motion pattern of every blob.)
 
 uniform bool u_mirrorX;       // @label(Mirror horizontally) @default(true)
 uniform bool u_mirrorY;       // @label(Mirror vertically) @default(false)

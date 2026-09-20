@@ -12,7 +12,7 @@ export const params = {
   hueSpread: { kind: 'slider', label: 'Hue spread', min: 0, max: 1, step: 0.01, default: 0.22 },
   fade: { kind: 'slider', label: 'Trail fade', min: 0, max: 0.3, step: 0.005, default: 0.012, hint: 'Zero leaves permanent trails.' },
   wrap: { kind: 'toggle', label: 'Wrap edges', default: true },
-  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed' },
+  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed', advanced: true, midi: false },
 };
 
 export default function sketch(p, get) {

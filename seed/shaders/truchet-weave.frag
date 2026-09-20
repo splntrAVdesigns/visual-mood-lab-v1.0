@@ -11,7 +11,7 @@ uniform vec2 u_resolution;
 uniform float u_tiles;         // @label(Tiles) @range(2, 30) @default(5) @log
 uniform float u_lineWidth;     // @label(Line width) @range(0.02, 0.45) @default(0.15)
 uniform int u_style;           // @label(Style) @select(Arcs=0 | Diagonals=1 | Weave=2 | Maze=3) @default(2)
-uniform int u_patternSeed;     // @label(Seed) @range(0, 64) @default(7)
+uniform int u_patternSeed;     // @label(Seed) @advanced @nomidi @range(0, 64) @default(7)
 
 uniform float u_flip;          // @label(Tile flip) @range(0, 2) @default(0.55) @hint(Animates tiles rotating between orientations.)
 uniform float u_flipSpeed;     // @label(Flip speed) @range(0, 2) @default(0.35)

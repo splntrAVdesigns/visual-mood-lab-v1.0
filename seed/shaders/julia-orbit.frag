@@ -16,9 +16,9 @@ uniform float u_zoom;          // @label(Zoom) @range(0.2, 8) @default(1.1) @log
 uniform vec2 u_center;         // @label(Centre) @range(-1.5, 1.5) @group(Composition)
 uniform float u_rotation;      // @label(Rotation) @range(-180, 180) @default(0) @unit(deg) @group(Composition)
 
-uniform float u_seedRadius;    // @label(Seed radius) @range(0, 1) @default(0.72) @hint(Distance of the Julia seed from origin.)
-uniform float u_seedSpeed;     // @label(Seed drift) @range(0, 1) @default(0.06) @hint(How fast the form morphs.)
-uniform float u_seedPhase;     // @label(Seed phase) @range(0, 6.283) @default(0)
+uniform float u_seedRadius;    // @label(Seed radius) @advanced @nomidi @range(0, 1) @default(0.72) @hint(Distance of the Julia seed from origin.)
+uniform float u_seedSpeed;     // @label(Seed drift) @advanced @nomidi @range(0, 1) @default(0.06) @hint(How fast the form morphs.)
+uniform float u_seedPhase;     // @label(Seed phase) @advanced @nomidi @range(0, 6.283) @default(0)
 
 uniform int u_trap;            // @label(Orbit trap) @select(Cross=0 | Ring=1 | Point=2 | Spiral=3) @default(0)
 uniform float u_trapScale;     // @label(Trap scale) @range(0.1, 4) @default(1)

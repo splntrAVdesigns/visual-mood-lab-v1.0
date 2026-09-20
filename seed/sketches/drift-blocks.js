@@ -40,7 +40,7 @@ export const params = {
   accent: { kind: 'color', label: 'Accent', default: { r: 0, g: 0.83, b: 1, a: 1 } },
   bg: { kind: 'color', label: 'Background', default: { r: 0, g: 0, b: 0, a: 1 } },
   trail: { kind: 'slider', label: 'Trail', min: 0, max: 0.95, step: 0.01, default: 0 },
-  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed' },
+  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed', advanced: true, midi: false },
 };
 
 export default function sketch(p, get) {

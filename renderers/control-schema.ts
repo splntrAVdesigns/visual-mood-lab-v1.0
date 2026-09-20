@@ -200,6 +200,14 @@ interface ControlCommon {
    */
   roll?: false | { min: number; max: number };
   /**
+   * `false` hides the MIDI / controller-binding pill on this control's inspector
+   * row (`@nomidi` in GLSL, `midi: false` in a sketch's `params`). A UI opt-out
+   * only: bindings that already exist keep working, and nothing else about the
+   * control changes. Used for controls a performer should not be mapping — the
+   * seed / reseed controls.
+   */
+  midi?: false;
+  /**
    * Shown but inert — greyed out, its interactive control disabled, with
    * `disabledLabel` (defaults to "Future feature") rendered as a badge
    * next to the field label. For a control that exists in the schema

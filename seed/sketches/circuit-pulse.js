@@ -89,7 +89,7 @@ export const params = {
   bgColor: { kind: 'color', label: 'Background', default: { r: 0.02, g: 0.02, b: 0.03, a: 1 } },
 
   nodeSize: { kind: 'slider', label: 'Node size', min: 4, max: 28, step: 0.5, default: 9, unit: 'px' },
-  reseed: { kind: 'trigger', label: 'Regenerate layout', default: null, event: 'reseed' },
+  reseed: { kind: 'trigger', label: 'Regenerate layout', default: null, event: 'reseed', advanced: true, midi: false },
 };
 
 function mulberry32(seed) {

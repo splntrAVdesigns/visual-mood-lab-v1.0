@@ -38,6 +38,7 @@
  *   @mod / @nomod         force modulation eligibility on or off
  *   @roll(min, max)       Roll / Mutate sample this window (sliders & steppers)
  *   @noroll               Roll / Mutate never touch this control
+ *   @nomidi               hide the MIDI pill on this control's inspector row
  *
  * Location: lib/gl/parse-uniforms.ts
  */
@@ -75,6 +76,8 @@ export interface Annotations {
   mod?: boolean;
   /** @roll(min, max) => window; @noroll => false. Validated by lib/schema/sanitize. */
   roll?: false | { min: number; max: number };
+  /** @nomidi => false. Hides the MIDI pill (UI only). */
+  midi?: false;
   /** Render a @select as a compact button strip instead of a dropdown —
       same visual language as the Sound panel's rate/note strips, for a
       small (≤6 or so) set of options where tapping directly is more
@@ -447,6 +450,7 @@ export function parseAnnotations(text: string): Annotations {
         break;
       }
       case 'noroll': a.roll = false; break;
+      case 'nomidi': a.midi = false; break;
       case 'strip': a.strip = true; break;
       case 'step': {
         const n = Number(arg);
@@ -540,6 +544,7 @@ function controlFor(
     hint: a.hint,
     advanced: a.advanced,
     roll: a.roll,
+    midi: a.midi,
     binding: { target: 'uniform' as const, name: u.name, glslType: type as GlslType },
   };
 

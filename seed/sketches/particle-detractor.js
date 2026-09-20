@@ -36,7 +36,7 @@ export const params = {
   ] },
   colorA: { kind: 'color', label: 'Colour A', default: { r: 0, g: 0.83, b: 1, a: 1 } },
   colorB: { kind: 'color', label: 'Colour B', default: { r: 0.95, g: 0.25, b: 0.55, a: 1 } },
-  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed' },
+  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed', advanced: true, midi: false },
 };
 
 export default function sketch(p, get) {

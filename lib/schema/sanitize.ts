@@ -351,6 +351,12 @@ export function repairControl(input: Control): Repair {
     }
   }
 
+  // `midi` — only `false` means anything (it hides the MIDI pill).
+  if (c.midi !== undefined && c.midi !== false) {
+    remove.add('midi');
+    notes.push('midi can only be false (it hides the MIDI pill) — ignored');
+  }
+
   if (notes.length === 0) return { control: input, notes };
   const repaired: Loose = { ...c, ...patch };
   for (const k of remove) delete repaired[k];

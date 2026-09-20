@@ -114,6 +114,8 @@ export const params = {
     label: 'Reseed',
     default: null,
     event: 'reseed',
+    advanced: true,
+    midi: false,
   },
 };
 

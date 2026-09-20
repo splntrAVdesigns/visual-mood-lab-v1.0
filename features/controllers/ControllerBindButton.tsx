@@ -76,12 +76,14 @@ export function ControllerBindButton({
   const cancelLearnRef = useRef<(() => void) | null>(null);
 
   const isTrigger = control.kind === 'trigger';
+  // `midi: false` (@nomidi) is a per-control opt-out — used for seed / reseed controls.
   const eligible =
-    isTrigger ||
+    control.midi !== false &&
+    (isTrigger ||
     control.kind === 'slider' ||
     control.kind === 'stepper' ||
     control.kind === 'toggle' ||
-    control.kind === 'select';
+    control.kind === 'select');
   const canModulate =
     control.modulatable === true && (control.kind === 'slider' || control.kind === 'stepper');
 

@@ -148,7 +148,7 @@ export const params = {
   near: { kind: 'color', label: 'Near', default: { r: 0, g: 0.831, b: 1, a: 1 } },
   far: { kind: 'color', label: 'Far', default: { r: 0.349, g: 0.059, b: 0.549, a: 1 } },
   interactive: { kind: 'toggle', label: 'Drag to orbit', default: true },
-  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed' },
+  reseed: { kind: 'trigger', label: 'Reseed', default: null, event: 'reseed', advanced: true, midi: false },
 };
 
 export default function sketch(p, get) {
