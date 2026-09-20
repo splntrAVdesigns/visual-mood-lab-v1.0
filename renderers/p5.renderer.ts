@@ -10,6 +10,7 @@ import {
   type HostToSandbox,
   type SandboxToHost,
 } from '@/lib/sandbox/protocol';
+import { parseSandboxMessage } from '@/lib/sandbox/validate-message';
 import type { AssetRenderer, CaptureOpts, Quality, RenderContext } from './types';
 import { setTileHovering, pluckTileAudio, setTileEnergy, isTileAudioActive } from '@/lib/sound/engine';
 import { getWaveform } from '@/lib/sound/meter';
@@ -126,7 +127,11 @@ export class P5Renderer implements AssetRenderer {
 
     this.onMessage = (e: MessageEvent) => {
       if (e.source !== frame.contentWindow) return;
-      this.handle(e.data as SandboxToHost);
+      // The frame is a null-origin iframe, but sketch code runs in the same
+      // realm as the runtime and can postMessage anything. Nothing reaches
+      // handle() without passing the gate — see lib/sandbox/validate-message.ts.
+      const msg = parseSandboxMessage(e.data);
+      if (msg) this.handle(msg);
     };
     window.addEventListener('message', this.onMessage);
 

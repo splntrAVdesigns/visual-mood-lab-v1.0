@@ -30,7 +30,7 @@
  * Location: lib/gl/effects-compositor.ts
  */
 
-import type { GLStage } from './context-pool';
+import { peekGLStage, type GLStage } from './context-pool';
 import type { EffectInstance } from '@/lib/effects/types';
 import { getEffectDefinition } from '@/lib/effects/registry';
 import type { Control, ParamState, RGBA } from '@/renderers/control-schema';
@@ -126,6 +126,13 @@ function getRelay(key: string, w: number, h: number): { canvas: HTMLCanvasElemen
     GLStage's own texture map keyed off the same cardId-derived string)
     would leak for the lifetime of the tab. */
 export function disposeEffectsFor(cardId: string): void {
+  // The GL half. This function's doc (above) has always claimed the textures
+  // were freed "via GLStage's own texture map" — but nothing did that:
+  // deleting the canvases from the Maps below left the WebGL textures AND the
+  // stage's strong reference to each canvas (lastTextureSource) alive for the
+  // life of the tab. Keys released here: `${cardId}:echo`, `:fx-src`, `:a`, `:b`.
+  peekGLStage()?.releaseTexturesWithPrefix(`${cardId}:`);
+
   relayCanvases.delete(`${cardId}:a`);
   relayCanvases.delete(`${cardId}:b`);
   relayCtx.delete(`${cardId}:a`);

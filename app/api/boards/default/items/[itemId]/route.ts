@@ -14,6 +14,13 @@ import { requireUser } from '@/lib/auth';
 import { MAX_POSTER_CAPTURE_BYTES } from '@/lib/validation/asset';
 import { validatePosterBytes } from '@/lib/validation/poster';
 import { checkLimits, posterWriteRateLimit } from '@/lib/auth/rate-limit';
+import { badRequest, isPlainRecord, readJsonBody, unauthorizedResponse } from '@/lib/http/api';
+import {
+  validateEffects,
+  validateModState,
+  validateParamState,
+  validateSoundState,
+} from '@/lib/validation/tile-state';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,22 +32,35 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ itemId: strin
     const user = await requireUser();
     const boardId = await getOrCreateDefaultBoard(user.id);
 
-    const body = (await req.json()) as {
-      params?: Record<string, unknown>;
-      mod?: Record<string, unknown>;
-      sound?: Record<string, unknown>;
-      effects?: unknown;
-    };
-    if (!body.params && !body.mod && !body.sound && !body.effects) {
-      return NextResponse.json({ error: 'Expected { params }, { mod }, { sound }, or { effects }' }, { status: 400 });
+    const parsed = await readJsonBody(req);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.body;
+    if (!isPlainRecord(body)) return badRequest('Expected a JSON object');
+
+    // Validate everything that was sent BEFORE writing any of it, so a bad
+    // field can't leave a half-applied update behind. `null`/absent means
+    // "not sent", as before.
+    const params = body.params != null ? validateParamState(body.params) : null;
+    if (params && !params.ok) return badRequest(`Invalid params: ${params.error}`);
+    const mod = body.mod != null ? validateModState(body.mod) : null;
+    if (mod && !mod.ok) return badRequest(`Invalid mod: ${mod.error}`);
+    const sound = body.sound != null ? validateSoundState(body.sound) : null;
+    if (sound && !sound.ok) return badRequest(`Invalid sound: ${sound.error}`);
+    const effects = body.effects != null ? validateEffects(body.effects) : null;
+    if (effects && !effects.ok) return badRequest(`Invalid effects: ${effects.error}`);
+
+    if (!params && !mod && !sound && !effects) {
+      return badRequest('Expected { params }, { mod }, { sound }, or { effects }');
     }
 
-    if (body.params) await updateSnapshotParams(itemId, boardId, body.params);
-    if (body.mod) await updateSnapshotMod(itemId, boardId, body.mod);
-    if (body.sound) await updateSnapshotSound(itemId, boardId, body.sound);
-    if (body.effects) await updateSnapshotEffects(itemId, boardId, body.effects);
+    if (params?.ok) await updateSnapshotParams(itemId, boardId, params.value);
+    if (mod?.ok) await updateSnapshotMod(itemId, boardId, mod.value);
+    if (sound?.ok) await updateSnapshotSound(itemId, boardId, sound.value);
+    if (effects?.ok) await updateSnapshotEffects(itemId, boardId, effects.value);
     return NextResponse.json({ ok: true });
   } catch (err) {
+    const denied = unauthorizedResponse(err);
+    if (denied) return denied;
     console.error('[api/boards/default/items/:id PATCH]', err);
     return NextResponse.json({ error: 'Failed to save' }, { status: 500 });
   }
@@ -102,6 +122,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ itemId: string
 
     return NextResponse.json({ ok: true, posterUrl: put.url });
   } catch (err) {
+    const denied = unauthorizedResponse(err);
+    if (denied) return denied;
     console.error('[api/boards/default/items/:id POST]', err);
     return NextResponse.json({ error: 'Failed to store capture' }, { status: 500 });
   }
@@ -116,6 +138,8 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ itemId: str
     await deleteBoardItem(itemId, boardId);
     return NextResponse.json({ ok: true });
   } catch (err) {
+    const denied = unauthorizedResponse(err);
+    if (denied) return denied;
     console.error('[api/boards/default/items/:id DELETE]', err);
     return NextResponse.json({ error: 'Failed to delete' }, { status: 500 });
   }

@@ -1,0 +1,65 @@
+/*
+ * SaveStatus — see SaveStatus.tsx. Hairline border, no shadow, no new colours:
+ * --danger is the same token the shared Toast uses for its error state.
+ * Fixed top-centre under the header so it never reflows anything and never
+ * overlaps a bottom-centre Toast.
+ */
+
+.wrap {
+  position: fixed;
+  top: calc(var(--header-h) + var(--space-3) + env(safe-area-inset-top, 0px));
+  left: 0;
+  right: 0;
+  z-index: var(--z-toast);
+  display: flex;
+  justify-content: center;
+  padding: 0 var(--space-3);
+  /* The strip spans the viewport only so the pill can centre itself without a
+     transform (a left:50% box can be at most half the viewport wide, which
+     wrapped "Change not saved" onto two lines on a phone). It must not eat
+     clicks meant for whatever is underneath. */
+  pointer-events: none;
+}
+
+.pill {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 100%;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  background: var(--bg-raised);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-lg);
+  font-size: var(--step--1);
+  color: var(--text);
+  animation: saveStatusIn var(--dur-base) var(--ease);
+}
+
+.link {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+.link:hover {
+  color: var(--text-dim);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill {
+    animation: none;
+  }
+}
+
+@keyframes saveStatusIn {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

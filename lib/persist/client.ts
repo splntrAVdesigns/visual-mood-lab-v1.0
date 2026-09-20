@@ -86,6 +86,212 @@ export async function captureAndStorePoster(
 const timers = new Map<string, ReturnType<typeof setTimeout>>();
 const pending = new Map<string, ParamState>();
 
+/* ------------------------------------------------------------------ *
+ * The save queue
+ *
+ * Every tile write (params, snapshot params, modulation, sound, effects) is
+ * debounced 500ms, then sent as a PATCH. That debounce used to be the only
+ * thing between an edit and a lost edit: the timer lives in the page, so
+ * closing the tab, refreshing, or a mobile OS killing the backgrounded app
+ * inside that window dropped the change silently. Only `params` had a flush
+ * (called when the inspector closed); modulation, sound and effects had none.
+ *
+ * All five writers now go through queueWrite(), which remembers HOW to send
+ * each pending key. That is what makes flushAllPersist() possible: on
+ * pagehide / tab-hidden it sends everything still pending, immediately, with
+ * keepalive so the request outlives the page.
+ * ------------------------------------------------------------------ */
+
+type Sender = (payload: never, onSavedOverride?: (params: ParamState) => void) => void;
+const senders = new Map<string, Sender>();
+
+function queueWrite<T>(
+  key: string,
+  payload: T,
+  delay: number,
+  send: (payload: T, onSavedOverride?: (params: ParamState) => void) => void,
+): void {
+  // A newer write for this key supersedes any earlier one that FAILED — drop
+  // that failure so a stale retry can never resend old data over new.
+  failures.delete(key);
+
+  pending.set(key, payload as never);
+  senders.set(key, send as Sender);
+
+  const existing = timers.get(key);
+  if (existing) clearTimeout(existing);
+  timers.set(key, setTimeout(() => runQueued(key), delay));
+  publishStatus();
+}
+
+/** Sends `key`'s pending write now. Returns false if nothing was pending. */
+function runQueued(key: string, onSavedOverride?: (params: ParamState) => void): boolean {
+  const timer = timers.get(key);
+  const payload = pending.get(key);
+  const send = senders.get(key);
+
+  if (timer) clearTimeout(timer);
+  timers.delete(key);
+  pending.delete(key);
+  senders.delete(key);
+
+  if (payload === undefined || !send) return false;
+  send(payload as never, onSavedOverride);
+  return true;
+}
+
+/** Send every write still waiting out its debounce. Idempotent. */
+export function flushAllPersist(): void {
+  for (const key of [...timers.keys()]) runQueued(key);
+}
+
+/* ------------------------------------------------------------------ *
+ * Save-failure tracking
+ *
+ * A failed save used to leave exactly one trace: a console.error. The person
+ * kept editing, believing it was saved, and found out on the next visit. Now
+ * a failed write is remembered (with a way to resend it) and published, so
+ * the UI can say so — see features/navigation/SaveStatus.tsx.
+ * ------------------------------------------------------------------ */
+
+interface FailedWrite {
+  label: string;
+  /** null = the request never got a response (offline, DNS, blocked). */
+  status: number | null;
+  retry: () => void;
+}
+
+const failures = new Map<string, FailedWrite>();
+const statusListeners = new Set<() => void>();
+
+export interface PersistStatus {
+  /** How many writes are currently failed and unsaved. */
+  failed: number;
+  /** At least one failure was a 401 — signing in again is the fix, not retrying. */
+  sessionExpired: boolean;
+}
+
+const NO_FAILURES: PersistStatus = { failed: 0, sessionExpired: false };
+let statusSnapshot: PersistStatus = NO_FAILURES;
+
+function publishStatus(): void {
+  const failed = failures.size;
+  const sessionExpired = [...failures.values()].some((f) => f.status === 401);
+
+  // useSyncExternalStore needs a referentially stable snapshot between real
+  // changes (the same rule track.ts's metaSnapshot documents) — and there's
+  // no reason to wake subscribers when nothing changed.
+  if (failed === statusSnapshot.failed && sessionExpired === statusSnapshot.sessionExpired) return;
+  statusSnapshot = failed === 0 ? NO_FAILURES : { failed, sessionExpired };
+  statusListeners.forEach((fn) => fn());
+}
+
+export function subscribePersistStatus(fn: () => void): () => void {
+  statusListeners.add(fn);
+  return () => {
+    statusListeners.delete(fn);
+  };
+}
+
+export function getPersistStatus(): PersistStatus {
+  return statusSnapshot;
+}
+
+/** Server-render snapshot: nothing has failed before anything has run. */
+export function getServerPersistStatus(): PersistStatus {
+  return NO_FAILURES;
+}
+
+/**
+ * Worth retrying automatically: no response at all, a server fault, or the
+ * two "try again later" statuses. A 400/404/413 will fail identically forever,
+ * and a 401 needs a new session, not a retry.
+ */
+function isRetryable(status: number | null): boolean {
+  return status === null || status >= 500 || status === 408 || status === 429;
+}
+
+function recordFailure(key: string, label: string, status: number | null, retry: () => void): void {
+  failures.set(key, { label, status, retry });
+  publishStatus();
+}
+
+/**
+ * Resend failed writes. `onlyRetryable` is what the automatic triggers use
+ * (back online, tab visible again); the Retry button resends everything.
+ */
+export function retryFailedPersist(opts: { onlyRetryable?: boolean } = {}): void {
+  const entries = [...failures.entries()].filter(([, f]) => !opts.onlyRetryable || isRetryable(f.status));
+  for (const [key, f] of entries) {
+    failures.delete(key);
+    f.retry();
+  }
+  publishStatus();
+}
+
+/**
+ * Sends one PATCH and tracks the outcome under `key`. The retry closure
+ * re-sends the SAME body without keepalive — it only ever runs while the page
+ * is alive, and keepalive bodies are capped at 64KB combined, which a retry
+ * shouldn't be subject to.
+ */
+function sendPatch(
+  url: string,
+  body: Record<string, unknown>,
+  label: string,
+  key: string,
+  keepalive = true,
+): void {
+  const retry = () => sendPatch(url, body, label, key, false);
+
+  fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    keepalive,
+  })
+    .then((res) => {
+      if (res.ok) {
+        if (failures.delete(key)) publishStatus();
+        return;
+      }
+      logPersistFailure(label, res);
+      recordFailure(key, label, res.status, retry);
+    })
+    .catch((err) => {
+      logPersistFailure(label, null, err);
+      recordFailure(key, label, null, retry);
+    });
+}
+
+/**
+ * Flush on the way out, and recover on the way back. Mounted once from
+ * AppShell (the one component that lives for the whole session — same
+ * reasoning as the audio lifecycle listeners next to it).
+ *
+ *  - pagehide: the reliable "page is going away" event (bfcache-safe).
+ *  - visibilitychange -> hidden: the only one mobile browsers reliably fire
+ *    when the app is backgrounded, which is when they later kill it.
+ *  - visibilitychange -> visible / online: retry what failed while away.
+ */
+export function attachPersistLifecycle(): () => void {
+  const onPageHide = () => flushAllPersist();
+  const onVisibility = () => {
+    if (document.visibilityState === 'hidden') flushAllPersist();
+    else retryFailedPersist({ onlyRetryable: true });
+  };
+  const onOnline = () => retryFailedPersist({ onlyRetryable: true });
+
+  window.addEventListener('pagehide', onPageHide);
+  document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('online', onOnline);
+  return () => {
+    window.removeEventListener('pagehide', onPageHide);
+    document.removeEventListener('visibilitychange', onVisibility);
+    window.removeEventListener('online', onOnline);
+  };
+}
+
 /**
  * Debounced parameter save.
  *
@@ -121,33 +327,10 @@ export function persistParams(
   delay = 500,
   onSaved?: (params: ParamState) => void,
 ): void {
-  pending.set(assetId, params);
-
-  const existing = timers.get(assetId);
-  if (existing) clearTimeout(existing);
-
-  timers.set(
-    assetId,
-    setTimeout(() => {
-      const payload = pending.get(assetId);
-      timers.delete(assetId);
-      pending.delete(assetId);
-      if (!payload) return;
-
-      onSaved?.(payload);
-
-      fetch(`/api/assets/${assetId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ params: payload }),
-        keepalive: true,
-      })
-        .then((res) => {
-          if (!res.ok) logPersistFailure(`params (${assetId})`, res);
-        })
-        .catch((err) => logPersistFailure(`params (${assetId})`, null, err));
-    }, delay),
-  );
+  queueWrite(assetId, params, delay, (payload, onSavedOverride) => {
+    (onSavedOverride ?? onSaved)?.(payload);
+    sendPatch(`/api/assets/${assetId}`, { params: payload }, `params (${assetId})`, assetId);
+  });
 }
 
 /**
@@ -155,26 +338,7 @@ export function persistParams(
  * change made a moment before closing is not lost to the debounce window.
  */
 export function flushParams(assetId: string, onSaved?: (params: ParamState) => void): void {
-  const timer = timers.get(assetId);
-  const payload = pending.get(assetId);
-  if (!timer || !payload) return;
-
-  clearTimeout(timer);
-  timers.delete(assetId);
-  pending.delete(assetId);
-
-  onSaved?.(payload);
-
-  fetch(`/api/assets/${assetId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ params: payload }),
-    keepalive: true,
-  })
-    .then((res) => {
-      if (!res.ok) logPersistFailure(`params flush (${assetId})`, res);
-    })
-    .catch((err) => logPersistFailure(`params flush (${assetId})`, null, err));
+  runQueued(assetId, onSaved);
 }
 
 
@@ -298,57 +462,14 @@ export function persistSnapshotParams(
   onSaved?: (params: ParamState) => void,
 ): void {
   const key = `snapshot:${itemId}`;
-  pending.set(key, params);
-
-  const existing = timers.get(key);
-  if (existing) clearTimeout(existing);
-
-  timers.set(
-    key,
-    setTimeout(() => {
-      const payload = pending.get(key);
-      timers.delete(key);
-      pending.delete(key);
-      if (!payload) return;
-
-      onSaved?.(payload);
-
-      fetch(`/api/boards/default/items/${itemId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ params: payload }),
-        keepalive: true,
-      })
-        .then((res) => {
-          if (!res.ok) logPersistFailure(`snapshot params (${itemId})`, res);
-        })
-        .catch((err) => logPersistFailure(`snapshot params (${itemId})`, null, err));
-    }, delay),
-  );
+  queueWrite(key, params, delay, (payload, onSavedOverride) => {
+    (onSavedOverride ?? onSaved)?.(payload);
+    sendPatch(`/api/boards/default/items/${itemId}`, { params: payload }, `snapshot params (${itemId})`, key);
+  });
 }
 
 export function flushSnapshotParams(itemId: string, onSaved?: (params: ParamState) => void): void {
-  const key = `snapshot:${itemId}`;
-  const timer = timers.get(key);
-  const payload = pending.get(key);
-  if (!timer || !payload) return;
-
-  clearTimeout(timer);
-  timers.delete(key);
-  pending.delete(key);
-
-  onSaved?.(payload);
-
-  fetch(`/api/boards/default/items/${itemId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ params: payload }),
-    keepalive: true,
-  })
-    .then((res) => {
-      if (!res.ok) logPersistFailure(`snapshot params flush (${itemId})`, res);
-    })
-    .catch((err) => logPersistFailure(`snapshot params flush (${itemId})`, null, err));
+  runQueued(`snapshot:${itemId}`, onSaved);
 }
 
 
@@ -385,35 +506,10 @@ export function persistMod(
   delay = 500,
 ): void {
   const key = `mod:${itemId}`;
-  pending.set(key, mod as never);
-
-  const existing = timers.get(key);
-  if (existing) clearTimeout(existing);
-
-  const url = usesBoardItemPath
-    ? `/api/boards/default/items/${itemId}`
-    : `/api/assets/${assetId}`;
-
-  timers.set(
-    key,
-    setTimeout(() => {
-      const payload = pending.get(key);
-      timers.delete(key);
-      pending.delete(key);
-      if (!payload) return;
-
-      fetch(url, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mod: payload }),
-        keepalive: true,
-      })
-        .then((res) => {
-          if (!res.ok) logPersistFailure(`modulation (${itemId})`, res);
-        })
-        .catch((err) => logPersistFailure(`modulation (${itemId})`, null, err));
-    }, delay),
-  );
+  const url = usesBoardItemPath ? `/api/boards/default/items/${itemId}` : `/api/assets/${assetId}`;
+  queueWrite(key, mod, delay, (payload) => {
+    sendPatch(url, { mod: payload }, `modulation (${itemId})`, key);
+  });
 }
 
 /**
@@ -430,35 +526,10 @@ export function persistSound(
   delay = 500,
 ): void {
   const key = `sound:${itemId}`;
-  pending.set(key, sound as never);
-
-  const existing = timers.get(key);
-  if (existing) clearTimeout(existing);
-
-  const url = usesBoardItemPath
-    ? `/api/boards/default/items/${itemId}`
-    : `/api/assets/${assetId}`;
-
-  timers.set(
-    key,
-    setTimeout(() => {
-      const payload = pending.get(key);
-      timers.delete(key);
-      pending.delete(key);
-      if (!payload) return;
-
-      fetch(url, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sound: payload }),
-        keepalive: true,
-      })
-        .then((res) => {
-          if (!res.ok) logPersistFailure(`sound (${itemId})`, res);
-        })
-        .catch((err) => logPersistFailure(`sound (${itemId})`, null, err));
-    }, delay),
-  );
+  const url = usesBoardItemPath ? `/api/boards/default/items/${itemId}` : `/api/assets/${assetId}`;
+  queueWrite(key, sound, delay, (payload) => {
+    sendPatch(url, { sound: payload }, `sound (${itemId})`, key);
+  });
 }
 
 /**
@@ -479,35 +550,10 @@ export function persistEffects(
   delay = 500,
 ): void {
   const key = `effects:${itemId}`;
-  pending.set(key, effects as never);
-
-  const existing = timers.get(key);
-  if (existing) clearTimeout(existing);
-
-  const url = usesBoardItemPath
-    ? `/api/boards/default/items/${itemId}`
-    : `/api/assets/${assetId}`;
-
-  timers.set(
-    key,
-    setTimeout(() => {
-      const payload = pending.get(key);
-      timers.delete(key);
-      pending.delete(key);
-      if (!payload) return;
-
-      fetch(url, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ effects: payload }),
-        keepalive: true,
-      })
-        .then((res) => {
-          if (!res.ok) logPersistFailure(`effects (${itemId})`, res);
-        })
-        .catch((err) => logPersistFailure(`effects (${itemId})`, null, err));
-    }, delay),
-  );
+  const url = usesBoardItemPath ? `/api/boards/default/items/${itemId}` : `/api/assets/${assetId}`;
+  queueWrite(key, effects, delay, (payload) => {
+    sendPatch(url, { effects: payload }, `effects (${itemId})`, key);
+  });
 }
 
 /* ------------------------------------------------------------------ *

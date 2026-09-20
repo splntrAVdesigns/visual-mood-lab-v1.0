@@ -1,7 +1,7 @@
 import type { Asset } from '@/types/asset';
 import type { ControlSchema, ParamState, ParamValue, RGBA } from './control-schema';
 import { defaultsOf } from './control-schema';
-import { getGLStage, glUnavailableReason, type CompiledProgram, type UniformSetter } from '@/lib/gl/context-pool';
+import { getGLStage, glUnavailableReason, peekGLStage, type CompiledProgram, type UniformSetter } from '@/lib/gl/context-pool';
 import { getTextureImage } from '@/lib/gl/texture-source';
 import type { AssetRenderer, CaptureOpts, Quality, RenderContext } from './types';
 
@@ -355,6 +355,12 @@ export class ShaderRenderer implements AssetRenderer {
 
   dispose(): void {
     this.disposed = true;
+    // Free this asset's cached GL textures — the feedback backbuffer
+    // (`<assetId>:back`) and any texture-linked control's image
+    // (`<assetId>:<controlId>`). See GLStage.releaseTexture(): nothing
+    // released these before, so every feedback/texture shader ever promoted
+    // kept its texture resident on the GPU for the life of the tab.
+    peekGLStage()?.releaseTexturesWithPrefix(`${this.assetId}:`);
     this.canvas?.remove();
     this.canvas = null;
     this.ctx2d = null;

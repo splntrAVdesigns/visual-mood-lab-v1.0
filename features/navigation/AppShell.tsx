@@ -12,7 +12,9 @@ import type { Asset } from '@/types/asset';
 import type { User } from '@/lib/auth';
 import { attachAudioLifecycleListeners } from '@/lib/sound/context';
 import { attachTrackVisibilityLifecycle } from '@/lib/sound/track';
+import { attachPersistLifecycle } from '@/lib/persist/client';
 import { AppChrome } from './AppChrome';
+import { SaveStatus } from './SaveStatus';
 import s from '../features.module.css';
 
 interface AppShellProps {
@@ -92,6 +94,15 @@ export function AppShell({ assets, needsSeed = false, focusItemId, user = null }
     return attachTrackVisibilityLifecycle();
   }, []);
 
+  // Save-queue lifecycle. Every tile edit is debounced ~500ms before it is
+  // sent; closing the tab, refreshing, or a mobile OS backgrounding-then-
+  // killing the app inside that window used to drop the edit silently. This
+  // flushes everything still pending on pagehide / tab-hidden, and retries
+  // what failed once the network or tab is back. See lib/persist/client.ts.
+  useEffect(() => {
+    return attachPersistLifecycle();
+  }, []);
+
   return (
     <>
       <AppChrome assets={assets} needsSeed={needsSeed} user={user} />
@@ -102,6 +113,7 @@ export function AppShell({ assets, needsSeed = false, focusItemId, user = null }
       </main>
 
       <InspectorDrawer />
+      <SaveStatus />
       {/*
         Two different compositions for the same "asset is focused" state,
         picked by a CSS breakpoint (see .focusScrim / .mobileFocus in

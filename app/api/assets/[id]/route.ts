@@ -7,6 +7,13 @@ import { LIBRARY_OWNER_ID } from '@/lib/data/assets';
 import { MAX_POSTER_CAPTURE_BYTES } from '@/lib/validation/asset';
 import { posterWriteMode, validatePosterBytes } from '@/lib/validation/poster';
 import { checkLimits, posterWriteRateLimit } from '@/lib/auth/rate-limit';
+import { badRequest, isPlainRecord, readJsonBody, unauthorizedResponse } from '@/lib/http/api';
+import {
+  validateEffects,
+  validateModState,
+  validateParamState,
+  validateSoundState,
+} from '@/lib/validation/tile-state';
 import type { ParamState } from '@/renderers/control-schema';
 
 export const runtime = 'nodejs';
@@ -60,26 +67,51 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     const owned = await loadOwned(id);
     if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-    const body = (await req.json()) as {
-      params?: ParamState;
-      mod?: Record<string, unknown>;
-      sound?: Record<string, unknown>;
-      effects?: unknown;
-    };
-    if (!body.params && !body.mod && !body.sound && !body.effects) {
-      return NextResponse.json({ error: 'Expected { params }, { mod }, { sound }, or { effects }' }, { status: 400 });
-    }
+    const parsed = await readJsonBody(req);
+    if (!parsed.ok) return parsed.response;
+    const body = parsed.body;
+    if (!isPlainRecord(body)) return badRequest('Expected a JSON object');
 
+    // Same "at least one of these" contract as before — `null`/absent means
+    // "not sent" — but each field that IS sent is now validated before it
+    // reaches a JSONB column. See lib/validation/tile-state.ts for why.
     const patch: Record<string, unknown> = { updatedAt: new Date() };
-    if (body.params) patch.params = body.params;
-    if (body.mod) patch.mod = body.mod;
-    if (body.sound) patch.sound = body.sound;
-    if (body.effects) patch.effects = body.effects;
+    let sent = 0;
+
+    if (body.params != null) {
+      const v = validateParamState(body.params);
+      if (!v.ok) return badRequest(`Invalid params: ${v.error}`);
+      patch.params = v.value as ParamState;
+      sent++;
+    }
+    if (body.mod != null) {
+      const v = validateModState(body.mod);
+      if (!v.ok) return badRequest(`Invalid mod: ${v.error}`);
+      patch.mod = v.value;
+      sent++;
+    }
+    if (body.sound != null) {
+      const v = validateSoundState(body.sound);
+      if (!v.ok) return badRequest(`Invalid sound: ${v.error}`);
+      patch.sound = v.value;
+      sent++;
+    }
+    if (body.effects != null) {
+      const v = validateEffects(body.effects);
+      if (!v.ok) return badRequest(`Invalid effects: ${v.error}`);
+      patch.effects = v.value;
+      sent++;
+    }
+    if (sent === 0) {
+      return badRequest('Expected { params }, { mod }, { sound }, or { effects }');
+    }
 
     await owned.db.update(schema.assets).set(patch).where(eq(schema.assets.id, id));
 
     return NextResponse.json({ ok: true });
   } catch (err) {
+    const denied = unauthorizedResponse(err);
+    if (denied) return denied;
     console.error('[api/assets/:id PATCH]', err);
     return NextResponse.json({ error: 'Failed to save' }, { status: 500 });
   }
@@ -189,6 +221,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ id: string }> 
 
     return NextResponse.json({ ok: true, posterUrl: put.url, bytes: bytes.byteLength });
   } catch (err) {
+    const denied = unauthorizedResponse(err);
+    if (denied) return denied;
     console.error('[api/assets/:id POST]', err);
     return NextResponse.json({ error: 'Failed to store poster' }, { status: 500 });
   }
@@ -230,6 +264,8 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
 
     return NextResponse.json({ ok: true });
   } catch (err) {
+    const denied = unauthorizedResponse(err);
+    if (denied) return denied;
     console.error('[api/assets/:id DELETE]', err);
     return NextResponse.json({ error: 'Failed to delete asset' }, { status: 500 });
   }

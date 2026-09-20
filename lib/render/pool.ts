@@ -106,6 +106,11 @@ class RendererPool {
       flooding the console at 60fps while still surfacing it once. */
   private trackAudioWarned = new Set<string>();
 
+  /** `${cardId}:${kind}` keys that have already logged a per-frame fault —
+      see warnOnce(). Cleared per card in demote() so the set can't grow for
+      the life of the tab and a re-promoted card can warn afresh. */
+  private faultWarned = new Set<string>();
+
   /* ---------------------------------------------------------------- *
    * Public control
    * ---------------------------------------------------------------- */
@@ -383,6 +388,7 @@ class RendererPool {
     entry.resizeObserver.disconnect();
     entry.controller.abort();
     entry.renderer.dispose();
+    this.clearWarnings(cardId);
     this.entries.delete(cardId);
 
     this.notify(cardId, 'poster', null);
@@ -668,6 +674,64 @@ class RendererPool {
   }
 
   /**
+   * Log a per-frame fault once per (card, kind), not 60 times a second.
+   *
+   * tick() is one loop serving every live card, so any work in it that can
+   * throw has to be contained to the ONE card it belongs to. The rAF is
+   * re-armed on the first line of tick(), so an uncaught throw never killed
+   * the loop itself — but it aborted the `for` over entries at that card, so
+   * every card AFTER it in Map order was skipped for that frame, every
+   * frame, for as long as the fault lasted. Modulation, audio-binding and
+   * audio-source lookups sat outside the per-card try/catch until now.
+   */
+  private warnOnce(cardId: string, kind: string, err: unknown): void {
+    const key = `${cardId}:${kind}`;
+    if (this.faultWarned.has(key)) return;
+    this.faultWarned.add(key);
+    console.error(`[render-pool] ${kind} failed for ${cardId} — continuing without it:`, err);
+  }
+
+  private clearWarnings(cardId: string): void {
+    this.trackAudioWarned.delete(cardId);
+    const prefix = `${cardId}:`;
+    for (const key of this.faultWarned) {
+      if (key.startsWith(prefix)) this.faultWarned.delete(key);
+    }
+  }
+
+  /**
+   * The audio feed for this card's frame, or null. Contained: a throw from
+   * the mic analyser (or anything else in the chain) must not stop the card
+   * rendering, let alone the cards after it.
+   *
+   * Priority (unchanged): this card's own uploaded track (Phase 4.9) first —
+   * see lib/sound/track.ts's file doc for why RenderContext is no longer
+   * genuinely board-wide despite the interface's older "shared analyser"
+   * comment. Mic (Phase 4.9.2) second: an explicitly loaded track is the more
+   * deliberate choice, mic is "react to whatever's happening right now."
+   * getMicFrequencyData() alone isn't enough to gate on — it returns real
+   * data whenever the SHARED stream is live for ANY card (see
+   * lib/sound/mic.ts's top doc), so without the isMicEnabled(cardId) check a
+   * card that never turned Mic on would start silently reacting to it the
+   * instant some OTHER card did. Last, `this.audio`, the board-wide feed the
+   * interface originally described (always null today — nothing calls
+   * setAudio() yet), so a card with none of the three behaves exactly as it
+   * did before any of this existed.
+   */
+  private resolveAudio(entry: Entry): Float32Array | null {
+    try {
+      return (
+        this.safeGetTrackFrequencyData(entry.cardId) ??
+        (isMicEnabled(entry.cardId) ? getMicFrequencyData() : null) ??
+        this.audio
+      );
+    } catch (err) {
+      this.warnOnce(entry.cardId, 'audio-source', err);
+      return null;
+    }
+  }
+
+  /**
    * Defensive wrapper around getTrackFrequencyData() — flagged since rev
    * 10, fixed here per rev 11 (§0/§7 Phase 4.9/§12). track.ts's refresh()
    * calls straight into a live AnalyserNode's getByteFrequencyData(); that
@@ -758,7 +822,13 @@ class RendererPool {
     for (const entry of this.entries.values()) {
       if (!entry.mounted) continue;
 
-      if (resumedFromStall) entry.renderer.resumeFromStall?.();
+      if (resumedFromStall) {
+        try {
+          entry.renderer.resumeFromStall?.();
+        } catch (err) {
+          this.warnOnce(entry.cardId, 'resume-from-stall', err);
+        }
+      }
 
       // Cached by `entry.resizeObserver`, not a fresh
       // getBoundingClientRect() per entry per frame — see the field's doc
@@ -781,32 +851,39 @@ class RendererPool {
         height,
         pixelRatio: window.devicePixelRatio || 1,
         pointer: this.pointer,
-        // This card's own uploaded track (Phase 4.9) takes priority when
-        // present — see lib/sound/track.ts's file doc for why RenderContext
-        // is no longer genuinely board-wide despite the interface's older
-        // "shared analyser" comment. Mic (Phase 4.9.2) is second priority:
-        // an explicitly loaded track is the more deliberate choice, mic is
-        // "react to whatever's happening right now." getMicFrequencyData()
-        // alone isn't enough to gate on — it returns real data whenever the
-        // SHARED stream is live for ANY card (see lib/sound/mic.ts's top
-        // doc), so without the isMicEnabled(entry.cardId) check here, a
-        // card that never turned Mic on would start silently reacting to
-        // it the instant some OTHER card did. Falls back to `this.audio`,
-        // the board-wide feed the interface originally described (always
-        // null today — nothing calls setAudio() yet) so a card with none
-        // of the three behaves exactly as before any of this existed.
-        audio:
-          this.safeGetTrackFrequencyData(entry.cardId) ??
-          (isMicEnabled(entry.cardId) ? getMicFrequencyData() : null) ??
-          this.audio,
+        // Track (Phase 4.9) > mic (Phase 4.9.2) > the board-wide feed — see
+        // resolveAudio() for the priority rules and for why the whole chain
+        // is contained (each source's own doc explains why it exists).
+        audio: this.resolveAudio(entry),
       };
 
-      const modulated = this.applyModulation(entry);
-      this.updateAudioBindings(entry, modulated);
+      // Contained per card. A modulation or audio-binding fault costs THIS
+      // card its modulation for the frame — it still renders, from its base
+      // params — and never reaches the cards after it in the loop. (It is
+      // deliberately not routed to demote(): a bad routing is not a dead
+      // renderer, and demoting would blank a tile over a config problem.)
+      let modulated: Record<string, number> | null = null;
+      try {
+        modulated = this.applyModulation(entry);
+        this.updateAudioBindings(entry, modulated);
+      } catch (err) {
+        this.warnOnce(entry.cardId, 'modulation', err);
+      }
 
       try {
         entry.renderer.render(ctx);
+      } catch (err) {
+        entry.failure = err instanceof Error ? err.message : String(err);
+        this.notify(entry.cardId, entry.state, entry.failure);
+        this.demote(entry.cardId);
+        continue;
+      }
 
+      // Contained separately from render() above: a VFX fault (bad shader,
+      // resized-away canvas, GL hiccup) used to fall into the same catch and
+      // DEMOTE the card, tearing down a perfectly healthy tile over a
+      // post-process problem. Now the tile keeps rendering, un-effected.
+      try {
         // Phase 4.96 — composite the VFX chain over whatever the renderer
         // just drew. Gated on entry.effects.length first (the common
         // case, nothing to do) before touching getCanvas() at all.
@@ -840,9 +917,7 @@ class RendererPool {
           }
         }
       } catch (err) {
-        entry.failure = err instanceof Error ? err.message : String(err);
-        this.notify(entry.cardId, entry.state, entry.failure);
-        this.demote(entry.cardId);
+        this.warnOnce(entry.cardId, 'effects', err);
       }
     }
   };

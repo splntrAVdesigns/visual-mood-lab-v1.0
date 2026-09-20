@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { listAssets } from '@/lib/data/assets';
 import { ingestAsset } from '@/lib/ingest/ingest';
 import { requireUser } from '@/lib/auth';
+import { unauthorizedResponse } from '@/lib/http/api';
 import { sanitizeAssetTags } from '@/lib/validation/asset';
 import type { AssetType } from '@/types/asset';
 
@@ -158,6 +159,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, asset });
   } catch (err) {
+    const denied = unauthorizedResponse(err);
+    if (denied) return denied;
     console.error('[api/assets POST]', err);
     return NextResponse.json({ error: 'Failed to register asset' }, { status: 500 });
   }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getStorage } from '@/lib/storage';
 import { requireUser } from '@/lib/auth';
 import { checkLimits, uploadSignRateLimit } from '@/lib/auth/rate-limit';
+import { badRequest, isPlainRecord, readJsonBody, unauthorizedResponse } from '@/lib/http/api';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,7 +33,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Too many uploads. Try again shortly.' }, { status: 429 });
     }
 
-    const body = (await req.json()) as {
+    const parsed = await readJsonBody(req);
+    if (!parsed.ok) return parsed.response;
+    if (!isPlainRecord(parsed.body)) return badRequest('Expected a JSON object');
+    const body = parsed.body as {
       filename?: string;
       contentType?: string;
       size?: number;
@@ -80,6 +84,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ assetId: id, ...signed });
   } catch (err) {
+    const denied = unauthorizedResponse(err);
+    if (denied) return denied;
     console.error('[api/upload]', err);
     return NextResponse.json({ error: 'Failed to create upload' }, { status: 500 });
   }

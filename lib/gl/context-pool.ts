@@ -513,6 +513,50 @@ export class GLStage {
     return tex;
   }
 
+  /**
+   * Frees one cached texture (and the source reference held for it).
+   *
+   * Nothing released textures before this existed: `textures` and
+   * `lastTextureSource` only ever grew, until the whole context was lost. A
+   * feedback shader's backbuffer, a texture-linked control's poster, and every
+   * VFX relay/echo/source canvas stayed resident on the GPU — and, via
+   * `lastTextureSource`, in CPU memory too — for the life of the tab, for
+   * every card ever promoted. Renderers now call this from dispose().
+   *
+   * Safe to call for a key that isn't cached, and safe to call for a key that
+   * is still in use: uploadTexture() lazily recreates whatever key it is asked
+   * for, which is exactly how textures already self-heal after a context loss
+   * (see `gen`'s doc).
+   */
+  releaseTexture(key: string): void {
+    const tex = this.textures.get(key);
+    this.textures.delete(key);
+    this.lastTextureSource.delete(key);
+    if (tex && !this.isLost) this.gl.deleteTexture(tex);
+  }
+
+  /**
+   * Releases every cached texture whose key starts with `prefix`. Callers pass
+   * an owner id INCLUDING the trailing colon (`"<assetId>:"`, `"<cardId>:"`)
+   * so one owner can never match another whose id merely begins the same way.
+   * Returns how many were freed.
+   */
+  releaseTexturesWithPrefix(prefix: string): number {
+    let freed = 0;
+    for (const key of [...this.textures.keys()]) {
+      if (key.startsWith(prefix)) {
+        this.releaseTexture(key);
+        freed++;
+      }
+    }
+    return freed;
+  }
+
+  /** How many textures are currently cached — for diagnostics and tests. */
+  get textureCount(): number {
+    return this.textures.size;
+  }
+
   /** 1x1 mid-grey, bound wherever a sampler has no asset linked yet. */
   private fallbackTexture: WebGLTexture | null = null;
 
@@ -697,6 +741,15 @@ export function getGLStage(): GLStage | null {
     failure = err instanceof Error ? err.message : String(err);
     return null;
   }
+}
+
+/**
+ * The shared stage if one has already been created, else null — never
+ * creates one. dispose() paths use this: releasing textures on a stage that
+ * doesn't exist must not be the thing that spins up a WebGL context.
+ */
+export function peekGLStage(): GLStage | null {
+  return stage;
 }
 
 export function glUnavailableReason(): string | null {
