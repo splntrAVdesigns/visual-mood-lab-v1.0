@@ -17,9 +17,10 @@ import s from './rollBar.module.css';
  * rather than here: the desktop drawer and the mobile sheet each render a bar,
  * and a listener per bar would fire twice for one keypress.
  */
-export function RollBar({ assetType, variant = 'drawer' }: { assetType: string; variant?: 'drawer' | 'sheet' }) {
+export function RollBar({ variant = 'drawer' }: { variant?: 'drawer' | 'sheet' }) {
   const schema = useInspectorStore((st) => st.schema);
   const assetId = useInspectorStore((st) => st.assetId);
+  const assetType = useInspectorStore((st) => st.assetType);
   const canUndo = useInspectorStore((st) => st.history.past.length > 0);
   const canRedo = useInspectorStore((st) => st.history.future.length > 0);
 
@@ -39,7 +40,7 @@ export function RollBar({ assetType, variant = 'drawer' }: { assetType: string; 
     [schema, assetId, includeToggles],
   );
 
-  if (!isRollableAssetType(assetType) || rollableIds.length === 0) return null;
+  if (!assetType || !isRollableAssetType(assetType) || rollableIds.length === 0) return null;
 
   const lockedCount = rollableIds.filter((id) => locked.has(id)).length;
 

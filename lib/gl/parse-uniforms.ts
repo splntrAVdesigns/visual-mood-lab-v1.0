@@ -36,10 +36,13 @@
  *   @advanced             hide behind the Advanced disclosure
  *   @hidden               parse but do not expose a control
  *   @mod / @nomod         force modulation eligibility on or off
+ *   @roll(min, max)       Roll / Mutate sample this window (sliders & steppers)
+ *   @noroll               Roll / Mutate never touch this control
  *
  * Location: lib/gl/parse-uniforms.ts
  */
 
+import { sanitizeSchema } from '@/lib/schema/sanitize';
 import {
   type Control,
   type ControlSchema,
@@ -70,6 +73,8 @@ export interface Annotations {
   advanced?: boolean;
   hidden?: boolean;
   mod?: boolean;
+  /** @roll(min, max) => window; @noroll => false. Validated by lib/schema/sanitize. */
+  roll?: false | { min: number; max: number };
   /** Render a @select as a compact button strip instead of a dropdown —
       same visual language as the Sound panel's rate/note strips, for a
       small (≤6 or so) set of options where tapping directly is more
@@ -205,11 +210,18 @@ export function parseUniforms(source: string, opts: ParseOptions = {}): ParseRes
     }
   }
 
-  return {
-    schema: createSchema(opts.schemaId ?? 'shader', controls, { groups }),
-    uniforms,
-    warnings,
-  };
+  // Repair anything a typo'd annotation could have produced (reversed range,
+  // default outside its range, empty @select, …) and report it against the
+  // uniform's line so an editor can point at it. A well-formed shader comes
+  // back untouched — see lib/schema/sanitize.ts.
+  const clean = sanitizeSchema(createSchema(opts.schemaId ?? 'shader', controls, { groups }));
+  const lineOf = new Map(uniforms.map((u) => [u.name, u.line] as const));
+  for (const w of clean.warnings) {
+    const named = !w.id.startsWith('(');
+    warnings.push({ level: 'warn', message: w.message, name: named ? w.id : undefined, line: named ? lineOf.get(w.id) : undefined });
+  }
+
+  return { schema: clean.schema, uniforms, warnings };
 }
 
 /* ------------------------------------------------------------------ *
@@ -427,6 +439,14 @@ export function parseAnnotations(text: string): Annotations {
       case 'hidden': a.hidden = true; break;
       case 'mod': a.mod = true; break;
       case 'nomod': a.mod = false; break;
+      case 'roll': {
+        // Kept even when malformed (as NaN) so the sanitizer can WARN about it;
+        // silently dropping a typo'd @roll would leave the author guessing.
+        const nums = arg.split(',').map((x) => Number(x.trim()));
+        a.roll = nums.length === 2 ? { min: nums[0], max: nums[1] } : { min: NaN, max: NaN };
+        break;
+      }
+      case 'noroll': a.roll = false; break;
       case 'strip': a.strip = true; break;
       case 'step': {
         const n = Number(arg);
@@ -519,6 +539,7 @@ function controlFor(
     group: a.group ?? ctx.defaultGroup,
     hint: a.hint,
     advanced: a.advanced,
+    roll: a.roll,
     binding: { target: 'uniform' as const, name: u.name, glslType: type as GlslType },
   };
 

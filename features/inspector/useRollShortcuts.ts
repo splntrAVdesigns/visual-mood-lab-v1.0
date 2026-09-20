@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { selectSelectedAsset, useBoardStore, useInspectorStore } from '@/stores';
+import { useInspectorStore } from '@/stores';
 import { isRollableAssetType, performMutate, performRedo, performRoll, performUndo } from './rollActions';
 
 /** True when the keystroke is meant for a text field (or the code editor) rather than for us. */
@@ -56,8 +56,8 @@ export function useRollShortcuts(): void {
 
       const inspector = useInspectorStore.getState();
       if (!inspector.open || !inspector.schema) return;
-      const asset = selectSelectedAsset(useBoardStore.getState());
-      if (!asset || !isRollableAssetType(asset.type)) return;
+      // From the inspector store, not the board store: a draft that isn't on the board still counts.
+      if (!inspector.assetType || !isRollableAssetType(inspector.assetType)) return;
       if (isTypingTarget(e.target)) return;
       if (blockingDialogOpen()) return;
 

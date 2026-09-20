@@ -191,6 +191,15 @@ interface ControlCommon {
   /** Hidden behind the "Advanced" disclosure in the drawer. */
   advanced?: boolean;
   /**
+   * Author's hint to Roll / Mutate (lib/roll/policy.ts).
+   *   false            — never roll or mutate this control (`@noroll`)
+   *   { min, max }     — roll within this window instead of the automatic one
+   *                      (`@roll(min, max)`; sliders and steppers only)
+   * An explicit window overrides the automatic speed / count windows but NOT the
+   * flash exclusion, which only the maintainer-side override table can lift.
+   */
+  roll?: false | { min: number; max: number };
+  /**
    * Shown but inert — greyed out, its interactive control disabled, with
    * `disabledLabel` (defaults to "Future feature") rendered as a badge
    * next to the field label. For a control that exists in the schema

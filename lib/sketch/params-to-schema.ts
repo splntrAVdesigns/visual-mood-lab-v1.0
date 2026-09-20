@@ -13,6 +13,7 @@
  * Location: lib/sketch/params-to-schema.ts
  */
 
+import { sanitizeSchema } from '@/lib/schema/sanitize';
 import {
   type Control,
   type ControlGroup,
@@ -112,12 +113,18 @@ export function paramsToSchema(
     warnings.push({ level: 'info', message: 'No valid controls found in `params`.' });
   }
 
-  return {
-    schema: createSchema(opts.schemaId ?? 'sketch', controls, {
-      groups: [...BASE_GROUPS, ...extraGroups.values()],
-    }),
-    warnings,
-  };
+  // `{ ...desc }` above copies EVERYTHING the author wrote into the control —
+  // NaN, Infinity, reversed ranges, an invalid color, a `roll` hint. Repair it
+  // here, once, so nothing downstream ever sees it. A well-formed `params`
+  // comes back untouched — see lib/schema/sanitize.ts.
+  const clean = sanitizeSchema(
+    createSchema(opts.schemaId ?? 'sketch', controls, { groups: [...BASE_GROUPS, ...extraGroups.values()] }),
+  );
+  for (const w of clean.warnings) {
+    warnings.push({ level: 'warn', message: w.message, id: w.id.startsWith('(') ? undefined : w.id });
+  }
+
+  return { schema: clean.schema, warnings };
 }
 
 function titleCase(s: string): string {

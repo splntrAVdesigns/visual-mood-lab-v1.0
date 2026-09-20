@@ -18,6 +18,17 @@
 //                within 1/4x .. 1.5x of the default so a Roll can't make a tile
 //                several times heavier than the one you started with.
 //
+// AUTHOR HINTS (approved precedence). A control's author can say how it should
+// be rolled: `@roll(min, max)` (GLSL) / `roll: { min, max }` (sketch) samples that
+// window; `@noroll` / `roll: false` opts the control out. An explicit window
+// beats the automatic speed and count windows below — the author knows their
+// control. It does NOT beat the flash exclusion: nothing an author can type
+// lifts that. Only OVERRIDES (maintainer-side, in this file) can, via
+// `allowFlash`. Roll cannot police authored content in general (a shader can
+// strobe with no flash-named control at all), so the name match is a courtesy,
+// not a guarantee — real protection for user-authored content belongs at
+// share / publish time.
+//
 // These are HEURISTICS on control names, deliberately over-inclusive: a false
 // positive only narrows the variety on one slider; a false negative is what
 // the rules exist to prevent. When Playground lands, explicit `@roll(...)`
@@ -25,6 +36,7 @@
 // leaving OVERRIDES below as the escape hatch.
 
 import type { Control, SliderControl, StepperControl } from '@/renderers/control-schema';
+import { isWellFormed } from '@/lib/schema/sanitize';
 import { isRoleColor } from './color';
 
 /** Control kinds Roll / Mutate can ever touch. Toggles additionally need opt-in. */
@@ -53,6 +65,12 @@ export interface Override {
   skip?: true;
   /** Absolute window [lo, hi] instead of the heuristic one. */
   window?: readonly [number, number];
+  /**
+   * Lifts the automatic flash exclusion (the name match) for this control. The
+   * ONLY way to do so — an author's `@roll` cannot. Reserved for a maintainer
+   * who has reviewed the control and decided its "flicker" is not a flash.
+   */
+  allowFlash?: true;
   /** Why — this table is read by humans reviewing the policy. */
   note: string;
 }
@@ -76,11 +94,11 @@ export const OVERRIDES: Record<string, Record<string, Override>> = {
   },
 };
 
-export type SafetyKind = 'speed' | 'count' | 'override';
+export type SafetyKind = 'speed' | 'count' | 'override' | 'author';
 
 export interface Policy {
   skip: boolean;
-  reason?: 'flash' | 'override';
+  reason?: 'flash' | 'override' | 'author';
   /** Window as a fraction of default, or an absolute override window. */
   safety?: { kind: SafetyKind; window: readonly [number, number]; absolute: boolean };
 }
@@ -90,12 +108,21 @@ const text = (c: Control) => `${c.id} ${c.label}`;
 export function policyFor(control: Control, assetId: string | null | undefined): Policy {
   const override = assetId ? OVERRIDES[assetId]?.[control.id] : undefined;
   if (override?.skip) return { skip: true, reason: 'override' };
-  if (FLASH_RE.test(text(control))) return { skip: true, reason: 'flash' };
+  // Flash first, and unconditionally for authors: `@roll` below can't reach past it.
+  if (FLASH_RE.test(text(control)) && !override?.allowFlash) return { skip: true, reason: 'flash' };
+  if (control.roll === false) return { skip: true, reason: 'author' };
 
   if (control.kind !== 'slider' && control.kind !== 'stepper') return { skip: false };
   const num = control as SliderControl | StepperControl;
 
   if (override?.window) return { skip: false, safety: { kind: 'override', window: override.window, absolute: true } };
+
+  // The author's explicit window — checked here rather than trusted, because a
+  // control that skipped the sanitizer (e.g. hand-built in a test) could carry anything.
+  const r = control.roll;
+  if (r && typeof r === 'object' && Number.isFinite(r.min) && Number.isFinite(r.max) && r.min < r.max) {
+    return { skip: false, safety: { kind: 'author', window: [r.min, r.max], absolute: true } };
+  }
 
   if (num.default > 0 && SPEED_RE.test(text(control)) && !NOT_SPEED_RE.test(control.id)) {
     return { skip: false, safety: { kind: 'speed', window: SPEED_WINDOW, absolute: false } };
@@ -118,6 +145,7 @@ export function isRollableControl(
   opts: { includeToggles?: boolean } = {},
 ): boolean {
   if (!ROLLABLE_KINDS.has(control.kind)) return false;
+  if (!isWellFormed(control)) return false;
   if (control.kind === 'toggle' && !opts.includeToggles) return false;
   if (control.advanced || control.disabled) return false;
   if (policyFor(control, assetId).skip) return false;

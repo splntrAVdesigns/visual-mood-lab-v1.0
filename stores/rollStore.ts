@@ -72,6 +72,8 @@ interface RollState {
   /** Lock (or unlock) several controls at once — the section-level lock. */
   setLocks: (controlIds: readonly string[], locked: boolean) => void;
   clearLocks: () => void;
+  /** Drop locks on controls that no longer exist (a live schema change removed them). */
+  pruneLocks: (validIds: readonly string[]) => void;
   setStrength: (percent: number) => void;
   setIncludeToggles: (on: boolean) => void;
 
@@ -129,6 +131,15 @@ export const useRollStore = create<RollState>()((set, get) => {
       const { assetId } = get();
       set({ locked: new Set() });
       persistLocks(assetId, new Set());
+    },
+
+    pruneLocks: (validIds) => {
+      const { assetId, locked } = get();
+      const valid = new Set(validIds);
+      const next = new Set([...locked].filter((id) => valid.has(id)));
+      if (next.size === locked.size) return; // nothing to drop — keep the same Set (no re-render)
+      set({ locked: next });
+      persistLocks(assetId, next);
     },
 
     setStrength: (percent) => {

@@ -159,7 +159,7 @@ function invariants(c: RunCtx, next: ParamState, changed: string[]): string[] {
 
       // ---- safety windows
       const policy = policyFor(ctl, c.tile.slug);
-      if (policy.safety && policy.safety.kind !== 'override') {
+      if (policy.safety && (policy.safety.kind === 'speed' || policy.safety.kind === 'count')) {
         const w = policy.safety.kind === 'speed' ? SPEED_WINDOW : COUNT_WINDOW;
         const a = Math.max(ctl.min, ctl.default * w[0]);
         const b = Math.min(hi, ctl.default * w[1]);

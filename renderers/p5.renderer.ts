@@ -2,6 +2,8 @@ import type { Asset } from '@/types/asset';
 import type { ControlSchema, ParamState, ParamValue } from './control-schema';
 import { defaultsOf } from './control-schema';
 import { paramsToSchema } from '@/lib/sketch/params-to-schema';
+import { carryParams } from '@/lib/schema/carry';
+import type { SourceSwapResult } from './types';
 import { getFontEntry } from '@/lib/fonts/manifest';
 import {
   BOOT_TIMEOUT_MS,
@@ -54,6 +56,8 @@ export class P5Renderer implements AssetRenderer {
   error: string | null = null;
 
   private frameEl: HTMLIFrameElement | null = null;
+  /** A setSource() waiting for the sandbox to report the new sketch's schema (or an error). */
+  private swap: { resolve: (r: SourceSwapResult) => void; timer: ReturnType<typeof setTimeout> } | null = null;
   private schema: ControlSchema | null = null;
   private params: ParamState = {};
   private paused = false;
@@ -190,20 +194,34 @@ export class P5Renderer implements AssetRenderer {
         break;
 
       case 'schema': {
-        // The sandbox reports the sketch's real params object. Prefer it over
-        // the ingest-time scrape, which had to be conservative.
-        if (msg.params) {
-          const { schema } = paramsToSchema(msg.params, { schemaId: `sketch:${this.assetId}` });
+        // The sandbox posts this after EVERY successful run of a sketch, with
+        // null params when it exports none. Ordinarily only a real params
+        // object matters; while a setSource() is waiting, null counts too (the
+        // new sketch has no controls) and this message is what settles it.
+        const swapping = this.swap !== null;
+        if (msg.params || swapping) {
+          // The sandbox reports the sketch's real params object. Prefer it over
+          // the ingest-time scrape, which had to be conservative.
+          const { schema, warnings } = paramsToSchema(msg.params ?? undefined, { schemaId: `sketch:${this.assetId}` });
+          const previous = this.schema;
           this.schema = schema;
-          this.params = { ...defaultsOf(schema), ...this.params };
+          this.params = swapping ? carryParams(previous, schema, this.params) : { ...defaultsOf(schema), ...this.params };
           this.send({ type: 'params', params: this.params as Record<string, unknown> });
           void this.pushFontsFor(this.params);
+          if (swapping) {
+            this.settleSwap({
+              ok: true,
+              schema,
+              warnings: warnings.filter((w) => w.level === 'warn').map((w) => ({ message: w.message, id: w.id })),
+            });
+          }
         }
         break;
       }
 
       case 'error':
         this.error = msg.message ?? 'Sketch error';
+        this.settleSwap({ ok: false, error: this.error });
         break;
 
       case 'heartbeat':
@@ -502,7 +520,33 @@ export class P5Renderer implements AssetRenderer {
     return this.paused;
   }
 
+  /**
+   * Hot-swap the running sketch. The sandbox re-runs on a second `init` — no
+   * iframe teardown — and answers with `schema` (success) or `error`. One swap
+   * at a time: a newer call supersedes an unanswered older one. Unlike a shader,
+   * a sketch that fails to evaluate has already torn its predecessor down inside
+   * the sandbox, so the caller keeps the last good source to send again.
+   */
+  setSource(source: string): Promise<SourceSwapResult> {
+    if (this.disposed || !this.frameEl) return Promise.resolve({ ok: false, error: 'This sketch is not mounted.' });
+    this.settleSwap({ ok: false, error: 'Superseded by a newer edit.' });
+    return new Promise<SourceSwapResult>((resolve) => {
+      const timer = setTimeout(() => this.settleSwap({ ok: false, error: 'The sketch did not respond.' }), 4000);
+      this.swap = { resolve, timer };
+      this.send({ type: 'init', source, params: this.params as Record<string, unknown> });
+    });
+  }
+
+  private settleSwap(result: SourceSwapResult): void {
+    const pending = this.swap;
+    if (!pending) return;
+    this.swap = null;
+    clearTimeout(pending.timer);
+    pending.resolve(result);
+  }
+
   dispose(): void {
+    this.settleSwap({ ok: false, error: 'This sketch was disposed.' });
     this.disposed = true;
     if (this.onMessage) window.removeEventListener('message', this.onMessage);
     this.onMessage = null;

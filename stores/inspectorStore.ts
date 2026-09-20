@@ -16,6 +16,7 @@ import {
 import type { EffectInstance } from '@/lib/effects/types';
 import { MAX_EFFECTS_PER_CHAIN, createEffectInstance } from '@/lib/effects/types';
 import { defaultEffectParams, getEffectSchema } from '@/lib/effects/registry';
+import { carryParams } from '@/lib/schema/carry';
 import { mutateParams as mutateEngine, rollParams as rollEngine, sameValue } from '@/lib/roll/engine';
 import type { Rng } from '@/lib/roll/rng';
 import { EMPTY_HISTORY, recordHistory, redoHistory, undoHistory } from '@/lib/roll/history';
@@ -64,6 +65,12 @@ interface InspectorState {
   /** Phase 4.96 — the open card's VFX chain. Empty for most cards, same
       as mod above. */
   effects: EffectInstance[];
+  /**
+   * What kind of asset the open inspector belongs to ('shader', 'p5', …). Held
+   * HERE, not looked up in the board store, so Roll / Mutate and their shortcuts
+   * work for an asset that is not on the board — a Playground draft.
+   */
+  assetType: string | null;
 
   openInspector: (
     schema: ControlSchema,
@@ -75,7 +82,21 @@ interface InspectorState {
     isOwned?: boolean,
     sound?: SoundState,
     effects?: EffectInstance[],
+    assetType?: string | null,
   ) => void;
+  /**
+   * Swap the open inspector's schema while it is open — the live-editing case,
+   * where controls appear, disappear and change range as the source is typed.
+   * Keeps the value of every control that survives with the same id AND kind,
+   * resets the rest to defaults, recomputes the modified dots, and prunes locks
+   * for removed controls. Roll's undo history is cleared ONLY when the controls
+   * themselves changed (an old snapshot could hold a value the new range no
+   * longer allows); a label or hint edit leaves it alone.
+   *
+   * Does NOT persist: whoever owns the draft (Playground) owns saving it.
+   * Returns null when no inspector is open.
+   */
+  updateSchema: (schema: ControlSchema) => SchemaSwapSummary | null;
   setModulation: (controlId: string, mod: Modulation | null) => void;
   setSoundState: (sound: SoundState) => void;
   /** Phase 4.96 — VFX rack actions. Each mirrors setSoundState's shape:
@@ -109,6 +130,16 @@ interface InspectorState {
   mutateParams: (strength: number, rng?: Rng) => RollSummary | null;
   undoParams: () => boolean;
   redoParams: () => boolean;
+}
+
+/** What a live schema swap did — for the caller to report ("2 controls added, 1 removed"). */
+export interface SchemaSwapSummary {
+  /** False when only presentational fields (label, hint, group…) differ. */
+  controlsChanged: boolean;
+  added: string[];
+  removed: string[];
+  /** Same id, different kind — the value was reset. */
+  retyped: string[];
 }
 
 /** What a Roll / Mutate did — for the UI's one-line feedback. */
@@ -189,6 +220,29 @@ function applyEffects(
   useBoardStore.getState().updateAssetEffects(itemId, effects);
 }
 
+/** Fields that change how a control LOOKS but not what values it can hold. */
+const PRESENTATIONAL = new Set(['label', 'hint', 'group', 'order', 'disabledLabel', 'unit', 'precision', 'displayStyle', 'axisLabels']);
+
+function controlSignature(c: ControlSchema['controls'][number]): string {
+  return JSON.stringify(c, (key, value) => (PRESENTATIONAL.has(key) ? undefined : value));
+}
+
+function diffSchemas(prev: ControlSchema, next: ControlSchema): SchemaSwapSummary {
+  const before = new Map(prev.controls.map((c) => [c.id, c] as const));
+  const after = new Map(next.controls.map((c) => [c.id, c] as const));
+  const added = [...after.keys()].filter((id) => !before.has(id));
+  const removed = [...before.keys()].filter((id) => !after.has(id));
+  const retyped = [...after.keys()].filter((id) => before.has(id) && before.get(id)!.kind !== after.get(id)!.kind);
+  const sameOrder = prev.controls.length === next.controls.length && prev.controls.every((c, i) => c.id === next.controls[i].id);
+  const changed =
+    added.length > 0 ||
+    removed.length > 0 ||
+    retyped.length > 0 ||
+    !sameOrder ||
+    next.controls.some((c) => controlSignature(c) !== controlSignature(before.get(c.id)!));
+  return { controlsChanged: changed, added, removed, retyped };
+}
+
 interface StoreApi {
   get: () => InspectorState;
   set: (partial: Partial<InspectorState>) => void;
@@ -251,8 +305,9 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
   sound: DEFAULT_SOUND_STATE,
   effects: [],
   history: EMPTY_HISTORY,
+  assetType: null,
 
-  openInspector: (schema, saved, itemId, assetId, isSnapshot = false, mod = {}, isOwned = true, sound = DEFAULT_SOUND_STATE, effects = []) => {
+  openInspector: (schema, saved, itemId, assetId, isSnapshot = false, mod = {}, isOwned = true, sound = DEFAULT_SOUND_STATE, effects = [], assetType = null) => {
     const params = hydrate(schema, saved);
     // normalizeSoundState, not a bare default param: `sound` here is
     // whatever the caller read off the asset row, and `sound` is a JSONB
@@ -268,13 +323,42 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
     // the store's own copy, what the panel actually renders from, was
     // still raw.
     const normalizedSound = normalizeSoundState(sound);
-    set({ open: true, schema, params, dirty: new Set(), itemId, assetId, isSnapshot, isOwned, mod, sound: normalizedSound, effects, history: EMPTY_HISTORY });
+    set({ open: true, schema, params, dirty: new Set(), itemId, assetId, isSnapshot, isOwned, mod, sound: normalizedSound, effects, history: EMPTY_HISTORY, assetType });
     useRollStore.getState().loadFor(assetId);
     getPool().get(itemId)?.setParams(params);
     getPool().setBaseParams(itemId, params);
     getPool().setModState(itemId, mod);
     getPool().setSoundState(itemId, normalizedSound);
     getPool().setEffects(itemId, effects);
+  },
+
+  updateSchema: (next) => {
+    const { schema: prev, params, dirty, itemId } = get();
+    if (!prev) return null;
+
+    const summary = diffSchemas(prev, next);
+    if (!summary.controlsChanged) {
+      set({ schema: next });
+      return summary;
+    }
+
+    // The shared rule (lib/schema/carry.ts): a value survives only with the same
+    // id AND kind, and is re-coerced into any new range.
+    const nextParams = carryParams(prev, next, params);
+    const kindBefore = new Map(prev.controls.map((c) => [c.id, c.kind] as const));
+    const nextDirty = new Set<string>();
+    for (const c of next.controls) {
+      if (c.kind === 'trigger' || !dirty.has(c.id) || kindBefore.get(c.id) !== c.kind) continue;
+      if (!sameValue(nextParams[c.id], c.default as ParamValue)) nextDirty.add(c.id);
+    }
+
+    set({ schema: next, params: nextParams, dirty: nextDirty, history: EMPTY_HISTORY });
+    useRollStore.getState().pruneLocks(next.controls.map((c) => c.id));
+    if (itemId) {
+      getPool().get(itemId)?.setParams(nextParams);
+      getPool().setBaseParams(itemId, nextParams);
+    }
+    return summary;
   },
 
   setModulation: (controlId, mod) => {

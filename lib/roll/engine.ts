@@ -28,6 +28,7 @@ import type {
   XYControl,
 } from '@/renderers/control-schema';
 import { coerce, effectiveMax, isDisabledByState, isVisible } from '@/renderers/control-schema';
+import { isWellFormed } from '@/lib/schema/sanitize';
 import { isRoleColor, mutateColor, rollPalette } from './color';
 import { policyFor, ROLLABLE_KINDS } from './policy';
 import { clamp, gaussian, logUniform, pick, reflect, uniform, type Rng } from './rng';
@@ -125,7 +126,7 @@ interface Bounds {
   lo: number;
   hi: number;
   log: boolean;
-  safety: 'speed' | 'count' | 'override' | null;
+  safety: 'speed' | 'count' | 'override' | 'author' | null;
 }
 
 /**
@@ -199,6 +200,10 @@ function ineligibleReason(
   opts: RollOptions,
 ): string | null {
   if (!ROLLABLE_KINDS.has(control.kind)) return 'kind';
+  // Defence in depth: the parsers sanitize, but Roll must never turn a malformed
+  // control (reversed range, NaN, empty select…) into NaN or an unsaveable value,
+  // whoever built the schema. Skipped, never guessed at.
+  if (!isWellFormed(control)) return 'malformed';
   if (control.kind === 'toggle' && !(mode.kind === 'roll' && opts.includeToggles)) return 'toggle';
   if (control.advanced) return 'advanced';
   if (control.disabled) return 'disabled';

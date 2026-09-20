@@ -415,6 +415,19 @@ export class GLStage {
     return { ok: true, program: compiled, error: null };
   }
 
+  /**
+   * Delete one cached program. compile() caches by KEY, so a caller that swaps
+   * source under fresh keys (live editing) must release the ones it retires, or
+   * every keystroke's compile stays on the GPU. Only release keys you created:
+   * mount-time keys are shared between board items showing the same asset.
+   */
+  releaseProgram(key: string): void {
+    const program = this.programs.get(key);
+    if (!program) return;
+    this.gl.deleteProgram(program.program);
+    this.programs.delete(key);
+  }
+
   private compileStage(kind: number, source: string): WebGLShader | string {
     const { gl } = this;
     const shader = gl.createShader(kind);

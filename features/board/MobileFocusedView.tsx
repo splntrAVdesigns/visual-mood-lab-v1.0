@@ -409,7 +409,7 @@ export function MobileFocusedView() {
           />
         ) : (
           <>
-            <RollBar assetType={asset.type} variant="sheet" />
+            <RollBar variant="sheet" />
             {groups.map(({ group, controls }) => {
               const rows = controls
                 .filter((c) => isVisible(c, params))

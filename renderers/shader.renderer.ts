@@ -1,6 +1,9 @@
 import type { Asset } from '@/types/asset';
 import type { ControlSchema, ParamState, ParamValue, RGBA } from './control-schema';
 import { defaultsOf } from './control-schema';
+import type { SourceSwapResult } from './types';
+import { parseUniforms } from '@/lib/gl/parse-uniforms';
+import { carryParams } from '@/lib/schema/carry';
 import { getGLStage, glUnavailableReason, peekGLStage, type CompiledProgram, type UniformSetter } from '@/lib/gl/context-pool';
 import { getTextureImage } from '@/lib/gl/texture-source';
 import type { AssetRenderer, CaptureOpts, Quality, RenderContext } from './types';
@@ -33,6 +36,8 @@ export class ShaderRenderer implements AssetRenderer {
       context loss — see compiledGeneration's doc below. */
   private source: string | null = null;
   private compileKey: string | null = null;
+  /** The compile key of the last successful setSource() — the only key this instance may release. */
+  private liveKey: string | null = null;
   /** The stage's `generation` at the time `compiled` was last produced.
       GLStage.generation only ticks on webglcontextrestored (see its doc);
       a mismatch here means this instance's `compiled` program handle
@@ -109,6 +114,43 @@ export class ShaderRenderer implements AssetRenderer {
       this.compiled = result.program;
     }
     this.compiledGeneration = stage.generation;
+  }
+
+  /**
+   * Hot-swap the fragment source. Compiles FIRST, off to the side: if the new
+   * source doesn't compile the previous program keeps rendering, so a typo
+   * mid-edit never blanks the preview. On success the program, the schema and
+   * the parameter values all move together (values carried by id + kind).
+   */
+  async setSource(source: string): Promise<SourceSwapResult> {
+    const stage = getGLStage();
+    if (this.disposed || !this.canvas) return { ok: false, error: 'This shader is not mounted.' };
+    if (!stage || stage.isLost) return { ok: false, error: glUnavailableReason() ?? 'WebGL2 is unavailable' };
+
+    // compile() caches by key alone, so the key must change whenever the source does.
+    const key = `${this.assetId}:live:${hashSource(source)}`;
+    const result = stage.compile(key, source);
+    if (!result.ok || !result.program) return { ok: false, error: result.error ?? 'Shader failed to compile' };
+
+    const parsed = parseUniforms(source, { schemaId: this.schema?.id ?? `shader:${this.assetId}` });
+    const retired = this.liveKey;
+
+    this.source = source;
+    this.compileKey = key;
+    this.compiled = result.program;
+    this.compiledGeneration = stage.generation;
+    this.liveKey = key;
+    this.error = null;
+    this.usesBackbuffer = /\bu_prevFrame\b|\bu_backbuffer\b/.test(source);
+    this.params = carryParams(this.schema, parsed.schema, this.params);
+    this.schema = parsed.schema;
+
+    if (retired && retired !== key) stage.releaseProgram(retired);
+    return {
+      ok: true,
+      schema: parsed.schema,
+      warnings: parsed.warnings.filter((w) => w.level === 'warn').map((w) => ({ message: w.message, line: w.line, id: w.name })),
+    };
   }
 
   render(ctx: RenderContext): void {
@@ -361,6 +403,7 @@ export class ShaderRenderer implements AssetRenderer {
     // released these before, so every feedback/texture shader ever promoted
     // kept its texture resident on the GPU for the life of the tab.
     peekGLStage()?.releaseTexturesWithPrefix(`${this.assetId}:`);
+    if (this.liveKey) peekGLStage()?.releaseProgram(this.liveKey);
     this.canvas?.remove();
     this.canvas = null;
     this.ctx2d = null;
@@ -375,4 +418,11 @@ function avg(data: Float32Array, from: number, to: number): number {
   const end = Math.min(to, data.length);
   for (let i = from; i < end; i++) sum += data[i];
   return sum / Math.max(end - from, 1);
+}
+
+/** FNV-1a — a short, stable cache key for a source string. */
+function hashSource(source: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < source.length; i++) h = Math.imul(h ^ source.charCodeAt(i), 16777619);
+  return (h >>> 0).toString(36);
 }

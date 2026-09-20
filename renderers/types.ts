@@ -44,6 +44,28 @@ export interface CaptureOpts {
   type?: 'image/png' | 'image/webp';
 }
 
+/** A problem or note found while swapping a renderer's source (for an editor's problem list). */
+export interface SourceSwapWarning {
+  message: string;
+  /** 1-based line in the source, when known. */
+  line?: number;
+  /** The control it is about, when there is one. */
+  id?: string;
+}
+
+/**
+ * The outcome of AssetRenderer.setSource().
+ *   ok    — the new source is running; `schema` is its controls and parameter
+ *           values have already been carried across (lib/schema/carry.ts).
+ *   !ok   — the new source was rejected. For a shader the previous program keeps
+ *           rendering (the last good frame stays on screen); a sketch that fails
+ *           to evaluate shows the sandbox's own error, and the caller still holds
+ *           the last good source to send again.
+ */
+export type SourceSwapResult =
+  | { ok: true; schema: ControlSchema; warnings: SourceSwapWarning[] }
+  | { ok: false; error: string };
+
 export interface AssetRenderer {
   readonly type: AssetType;
   readonly assetId: string;
@@ -64,6 +86,11 @@ export interface AssetRenderer {
 
   /** Runtime schema. Shaders and media return the one parsed at ingest. */
   getControlSchema(): ControlSchema | null;
+  /**
+   * Hot-swap the running source (code assets only). No caller yet — the
+   * Playground's live editing is the first. Optional: media renderers have none.
+   */
+  setSource?(source: string): Promise<SourceSwapResult>;
 
   setParam(id: string, value: ParamValue): void;
   setParams(params: ParamState): void;

@@ -49,6 +49,10 @@ export function openAssetById(itemId: string, pushUrl = true): void {
       // `asset.sound` are already passed above — same fallback-to-empty
       // shape for the same "nothing saved yet" case.
       asset.effects ?? [],
+      // Roll / Mutate and their shortcuts read the type from the inspector
+      // store, not the board store — so an asset that isn't on the board (a
+      // Playground draft) works the same way. Same value as before: asset.type.
+      asset.type,
     );
 
   if (pushUrl && typeof window !== 'undefined') {

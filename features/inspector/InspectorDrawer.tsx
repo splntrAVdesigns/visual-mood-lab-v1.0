@@ -161,7 +161,7 @@ export function InspectorDrawer() {
               <Badge>{ASSET_TYPE_BADGE[asset.type]}</Badge>
             </div>
           )}
-          {asset && <RollBar assetType={asset.type} />}
+          <RollBar />
 
           {groups.map(({ group, controls }) => {
             const isCollapsed = collapsed.has(group.id) || (group.collapsed && !collapsed.has(`!${group.id}`));

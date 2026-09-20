@@ -69,6 +69,7 @@ async function main(): Promise<void> {
   const { validateParamState } = await import('../lib/validation/tile-state');
   const { mulberry32, sameValue: _same } = await import('../lib/roll').then((m) => ({ mulberry32: m.mulberry32, sameValue: m.sameValue }));
   const { getPool } = await import('../lib/render/pool');
+  const { createSchema } = await import('../renderers/control-schema');
   void _same;
 
   const seed = join(process.cwd(), 'seed');
@@ -91,6 +92,8 @@ async function main(): Promise<void> {
     store.getState().openInspector(schema, {}, `default:u:${slug}`, slug, false, {}, owned);
   };
   const patchesTo = (url: string) => sent.filter((s) => s.url === url);
+  const { useBoardStore } = await import('../stores/boardStore');
+  const boardHas = (itemId: string) => useBoardStore.getState().assets.some((a: { itemId: string }) => a.itemId === itemId);
 
   // A fake live renderer registered in the real pool, so we can see what the store pushes to it.
   const pool = getPool() as any;
@@ -127,6 +130,9 @@ async function main(): Promise<void> {
       resizeObserver: { disconnect() {} },
     });
   };
+
+  group('updateSchema with nothing open');
+  check('updateSchema returns null when no inspector has been opened', useInspectorStore.getState().updateSchema(createSchema('x', [])) === null);
 
   /* ---------------------------------------------------------------- */
   group('Roll is one update, one renderer push, one save');
@@ -274,6 +280,86 @@ async function main(): Promise<void> {
   }
   check('waveShape is rolled on this tile', shapeChanged > 0, shapeChanged);
   check('every time it changed, the sound LFO shape followed', mirrored);
+
+  /* ---------------------------------------------------------------- */
+  group('assetType lives in the inspector store (a draft is not on the board)');
+  open(darkMatter, 'dark-matter', false);
+  check('openInspector without an assetType leaves it null (Roll bar hidden — the safe default)', store.getState().assetType === null);
+  store.getState().openInspector(darkMatter, {}, 'default:u:draft', 'draft-1', false, {}, true, undefined, [], 'shader');
+  check('openInspector records the asset type', store.getState().assetType === 'shader');
+  check('...for an item that is NOT in the board store at all', boardHas('default:u:draft') === false);
+  const draftRoll = store.getState().rollParams(mulberry32(3));
+  check('Roll works on that draft (nothing reads the board store)', !!draftRoll && draftRoll.changed > 0);
+
+  group('live schema swap (updateSchema)');
+  {
+    const slider = (id: string, o: Record<string, unknown> = {}) => ({ id, label: id, kind: 'slider', min: 0, max: 10, default: 1, ...o }) as never;
+    const A = createSchema('A', [slider('keep'), slider('narrow'), slider('retype'), slider('gone'), slider('lockedKeep')]);
+    rolls.setState({ locked: new Set() });
+    store.getState().openInspector(A, {}, 'default:u:sw', 'sw', false, {}, false, undefined, [], 'shader');
+    attachRenderer('default:u:sw');
+    rolls.getState().loadFor('sw');
+    rolls.getState().toggleLock('gone');
+    rolls.getState().toggleLock('lockedKeep');
+    store.getState().rollParams(mulberry32(1)); // one history entry
+    store.getState().setParam('keep', 7);
+    store.getState().setParam('narrow', 9);
+    store.getState().setParam('retype', 7); // valid as a stepper too — so only the carry RULE can reset it
+    await flush();
+
+    // ---- presentational-only change
+    const beforeParams = JSON.stringify(store.getState().params);
+    const A2 = createSchema('A', A.controls.map((c) => ({ ...c, label: `${c.label}!`, hint: 'new hint', group: 'x' }) as never));
+    const cosmetic = store.getState().updateSchema(A2)!;
+    check('a label / hint / group change is NOT a controls change', cosmetic.controlsChanged === false && cosmetic.added.length + cosmetic.removed.length + cosmetic.retyped.length === 0);
+    check('...it keeps Roll\'s undo history', store.getState().history.past.length >= 1);
+    check('...and every value', JSON.stringify(store.getState().params) === beforeParams);
+    check('...and adopts the new schema object', store.getState().schema === A2);
+
+    // ---- real change
+    const B = createSchema('B', [
+      slider('keep'),
+      slider('narrow', { max: 4 }),
+      { id: 'retype', label: 'retype', kind: 'stepper', min: 0, max: 10, default: 1 } as never,
+      slider('lockedKeep'),
+      slider('fresh', { default: 0.5 }),
+    ]);
+    const prev = { ...store.getState().params };
+    sent.length = 0;
+    liveCalls.length = 0;
+    const sum = store.getState().updateSchema(B)!;
+    const now = store.getState().params;
+
+    check('summary lists what was added / removed / retyped', sum.controlsChanged && JSON.stringify(sum.added) === '["fresh"]' && JSON.stringify(sum.removed) === '["gone"]' && JSON.stringify(sum.retyped) === '["retype"]', sum);
+    check('a control that survives (same id + kind) keeps its value', now.keep === prev.keep && now.keep === 7);
+    check('a survivor is clamped into a narrower range (9 -> 4)', now.narrow === 4, now.narrow);
+    check('a control that changed KIND resets even though 7 would be valid — it takes the new default', now.retype === 1, now.retype);
+    check('a new control starts at its default', now.fresh === 0.5);
+    check('a removed control is gone from the state', !('gone' in now));
+    check('Roll\'s undo history is cleared (an old snapshot could hold a value the new range forbids)', store.getState().history.past.length === 0 && store.getState().history.future.length === 0);
+    check('...so Undo does nothing', store.getState().undoParams() === false);
+    check('locks on REMOVED controls are pruned, locks on survivors kept', !rolls.getState().locked.has('gone') && rolls.getState().locked.has('lockedKeep'));
+    check('the modified dots follow: kept-and-still-different stays, retyped and new do not', store.getState().dirty.has('keep') && !store.getState().dirty.has('retype') && !store.getState().dirty.has('fresh') && !store.getState().dirty.has('gone'), [...store.getState().dirty]);
+    check('the live renderer got the new parameters, once', liveCalls.length === 1 && JSON.stringify(liveCalls[0]) === JSON.stringify(now), liveCalls.length);
+    check('...and the modulation base values follow', JSON.stringify(pool.entries.get('default:u:sw').baseParams) === JSON.stringify(now));
+    await flush();
+    check('updateSchema does NOT save — whoever owns the draft owns saving it', sent.length === 0, sent.map((x) => x.url));
+
+    // ---- Roll keeps working on the new schema
+    const lockedBefore = store.getState().params.lockedKeep;
+    for (let i = 0; i < 20; i++) store.getState().rollParams(mulberry32(50 + i));
+    const ids = new Set(B.controls.map((c) => c.id));
+    check('after the swap, Roll only ever produces the NEW schema\'s controls', Object.keys(store.getState().params).every((k) => ids.has(k)));
+    check('...and still honours a lock that survived the swap', store.getState().params.lockedKeep === lockedBefore);
+    check('...within the narrowed range', (store.getState().params.narrow as number) <= 4);
+
+    // ---- pruneLocks in isolation
+    const held = rolls.getState().locked;
+    rolls.getState().pruneLocks(['keep', 'lockedKeep', 'anything']);
+    check('pruneLocks with nothing to drop keeps the SAME Set (no pointless re-render)', rolls.getState().locked === held);
+    rolls.getState().pruneLocks(['keep']);
+    check('pruneLocks drops exactly the ones that no longer exist, and persists that', !rolls.getState().locked.has('lockedKeep') && JSON.parse(storage.get('vml:roll:locks:sw')!).length === 0);
+  }
 
   /* ---------------------------------------------------------------- */
   group('locks and preferences');
