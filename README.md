@@ -186,6 +186,11 @@ will fail once deployed, even though they work fine locally against
 Import the GitHub repo, add `DATABASE_URL` in **Settings → Environment
 Variables** (Blob's token is already there from step 3), and deploy.
 
+`APP_URL` (your public address, e.g. `https://your-app.example`) is optional on
+Vercel — the app falls back to Vercel's own URL — but set it if you use a custom
+domain or need emails to link to a specific address. It feeds the links in
+verification / password-reset emails and the link-preview image URLs.
+
 ### 5. Seed the deployed database
 
 The seed route is **POST-only** and disabled in production by default. To run

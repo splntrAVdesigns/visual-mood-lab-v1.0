@@ -1,7 +1,11 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
+import { siteUrl } from '@/lib/site';
 
 export const metadata: Metadata = {
+  // Resolves the generated Open Graph image (app/opengraph-image.tsx) to an
+  // absolute URL. Unset, Next falls back to http://localhost:3000 — see lib/site.ts.
+  metadataBase: siteUrl(),
   title: 'Visual Mood Lab',
   description:
     'A mood board for shaders, sketches, and motion. Every asset exposes parameters you can tune.',
