@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { SearchIcon } from '@/components/ui';
+import { SearchIcon, useBackdropDismiss } from '@/components/ui';
 import { useBoardStore } from '@/stores';
 import { openAssetById, recordRecentlyViewed } from '@/features/board/openAsset';
 import { ASSET_TYPE_BADGE, type Asset } from '@/types/asset';
@@ -61,10 +61,14 @@ export function CommandPalette() {
     setOpen(false);
   };
 
+  // Only a press AND release on the scrim close it: selecting text in the
+  // input and overshooting onto the scrim used to.
+  const backdropDismiss = useBackdropDismiss(() => setOpen(false));
+
   if (!open) return null;
 
   return (
-    <div className={s.paletteScrim} onClick={() => setOpen(false)}>
+    <div className={s.paletteScrim} {...backdropDismiss}>
       <div
         className={s.palette}
         onClick={(e) => e.stopPropagation()}

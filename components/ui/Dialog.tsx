@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { CloseIcon } from './Icon';
 import { IconButton } from './Button';
 import { useDismissable } from './Drawer';
+import { useBackdropDismiss } from './useBackdropDismiss';
 import s from './ui.module.css';
 import layout from './Dialog.module.css';
 
@@ -81,13 +82,18 @@ export function Dialog({
   // modal behavior so the safe-area overlay remains reliable on phones.
   useDismissable(open, onClose, panelRef, !useSidecar);
 
+  // Backdrop click closes only when the press AND release landed on the
+  // backdrop (selecting text and overshooting used to close it). Modeless
+  // sidecar mode has no scrim interception, so it stays disabled there.
+  const backdropDismiss = useBackdropDismiss(onClose, { enabled: !useSidecar });
+
   if (!open) return null;
 
   const dialog = (
     <div
       className={`${s.dialogScrim}${useSidecar ? ` ${layout.sidecarHost}` : ''}`}
       data-sidecar={useSidecar ? 'true' : undefined}
-      onClick={(e) => !useSidecar && e.target === e.currentTarget && onClose()}
+      {...backdropDismiss}
       style={compact && !useSidecar ? {
         paddingTop: 'calc(12px + env(safe-area-inset-top, 0px))',
         paddingBottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
