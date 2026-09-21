@@ -206,7 +206,10 @@ it once:
      https://your-app.vercel.app/api/seed
    ```
 
-   You should see JSON reporting the created/updated counts.
+   You should see JSON reporting the created/updated counts. If you get
+   `Unauthorized`, open **Logs** in Vercel and search `[seed]`: it says whether
+   the stored secret is missing, a different length, or the same length with
+   different characters (lengths only — never the secret itself).
 3. **Remove `ALLOW_SEED_ROUTE` and `SEED_ADMIN_SECRET` and redeploy.** Don't
    leave the route enabled: it writes to your production database on every
    call, and `?fresh=1` (drop everything) is refused in production regardless.

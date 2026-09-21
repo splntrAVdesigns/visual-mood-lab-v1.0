@@ -14,10 +14,13 @@
  * Exits non-zero on the first failing group so it can gate a commit.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import sharp from 'sharp';
 
 import { clientIpFromHeaders, clientIpKey, ipRateLimitKey } from '../lib/http/client-ip';
 import {
+  describeSeedAuthFailure,
   evaluateSeedRequest,
   isFlagOn,
   MIN_SEED_SECRET_LENGTH,
@@ -172,6 +175,52 @@ function verifySeedGuard(): void {
   check('dev: secret set and supplied -> ok', dev({ adminSecret: SECRET, authorization: `Bearer ${SECRET}` }).ok === true);
   const devCross = dev({ origin: 'https://evil.example' });
   check('dev: cross-origin still blocked (CSRF against localhost)', !devCross.ok && devCross.status === 403);
+  // --- The configured secret is trimmed like the caller's token. A value pasted
+  // into a dashboard can carry a stray space / trailing newline; with only one
+  // side trimmed it could never match, and the failure looked like a wrong secret.
+  for (const [label, stored] of [
+    ['a trailing newline', `${SECRET}\n`],
+    ['a trailing CRLF', `${SECRET}\r\n`],
+    ['leading and trailing spaces', `  ${SECRET}  `],
+    ['a leading tab', `\t${SECRET}`],
+  ] as const) {
+    check(`prod: a stored secret with ${label} still matches the clean token`, decide({ adminSecret: stored }).ok === true);
+  }
+  check('prod: a token with surrounding whitespace still matches too', decide({ authorization: `Bearer   ${SECRET}  ` }).ok === true);
+  const ws = decide({ adminSecret: '   \n\t  ' });
+  check('prod: a whitespace-only secret counts as NOT configured (403)', !ws.ok && ws.status === 403 && /not configured/.test(ws.error));
+  const padded = decide({ adminSecret: ' '.repeat(10) + 'a'.repeat(MIN_SEED_SECRET_LENGTH - 1) });
+  check('prod: the 24-char minimum applies AFTER trimming (padding cannot fake length)', !padded.ok && padded.status === 403);
+  check('prod: exactly the minimum after trimming is accepted', decide({ adminSecret: ` ${'b'.repeat(MIN_SEED_SECRET_LENGTH)}\n`, authorization: `Bearer ${'b'.repeat(MIN_SEED_SECRET_LENGTH)}` }).ok === true);
+  for (const [label, token] of [['one character off', SECRET.slice(0, -1) + 'Q'], ['a prefix', SECRET.slice(0, -1)], ['with an extra character', `${SECRET}x`], ['the wrong case', SECRET.toLowerCase()], ['empty', '']] as const) {
+    const wrong = decide({ adminSecret: `${SECRET}\n`, authorization: `Bearer ${token}` });
+    check(`prod: trimming did not weaken anything — a token that is ${label} -> 401`, !wrong.ok && wrong.status === 401);
+  }
+
+  // --- describeSeedAuthFailure: explains a 401 in the SERVER LOG without ever containing a value.
+  const tokenSeen = 'Z'.repeat(30);
+  const cases: Array<[string, Parameters<typeof describeSeedAuthFailure>[0], RegExp[]]> = [
+    ['no header', { adminSecret: SECRET, authorization: null }, [/server secret: 27 chars/, /no Authorization header/]],
+    ['not a bearer header', { adminSecret: SECRET, authorization: 'Basic abc' }, [/not "Bearer <token>"/]],
+    ['secret not set', { adminSecret: undefined, authorization: `Bearer ${tokenSeen}` }, [/server secret: not set/, /bearer token 30 chars/]],
+    ['different lengths', { adminSecret: SECRET, authorization: `Bearer ${tokenSeen}` }, [/server secret: 27 chars/, /bearer token 30 chars/, /different lengths/]],
+    ['same length, different characters', { adminSecret: SECRET, authorization: `Bearer ${'Q'.repeat(SECRET.length)}` }, [/same length but different characters/]],
+    ['stray whitespace in the stored value', { adminSecret: `${SECRET}\n`, authorization: `Bearer ${tokenSeen}` }, [/1 stray whitespace char, ignored/]],
+    ['several stray characters', { adminSecret: `  ${SECRET}\r\n`, authorization: `Bearer ${tokenSeen}` }, [/4 stray whitespace chars, ignored/]],
+  ];
+  for (const [label, facts, expected] of cases) {
+    const text = describeSeedAuthFailure(facts);
+    check(`log line (${label}) says what it should`, expected.every((re) => re.test(text)), text);
+    check(`log line (${label}) never contains the secret or the token`, !text.includes(SECRET) && !text.includes(tokenSeen) && !text.includes('QQQQ') && !text.includes('a'.repeat(12)), text);
+  }
+  check('the response to the caller is still a bare "Unauthorized" (the detail stays in the log)', (() => { const r = decide({ authorization: `Bearer ${tokenSeen}` }); return !r.ok && r.status === 401 && r.error === 'Unauthorized'; })());
+
+  // --- wiring: the route logs the description on a 401 and never returns it.
+  const routeSrc = readFileSync(join(process.cwd(), 'app/api/seed/route.ts'), 'utf8');
+  check('route: a 401 writes describeSeedAuthFailure(...) to the server log', /decision\.status === 401\)\s*console\.warn\([^)]*describeSeedAuthFailure\(facts\)/.test(routeSrc));
+  check('route: the description is never placed in the response body', !/NextResponse\.json\([^)]*describeSeedAuthFailure/s.test(routeSrc));
+  check('route: the response body is still only decision.error', /\{ error: decision\.error \}/.test(routeSrc));
+
   check('test env behaves like dev', evaluateSeedRequest({ ...base, nodeEnv: 'test', allowSeedRoute: undefined, adminSecret: undefined, authorization: null }).ok === true);
 }
 

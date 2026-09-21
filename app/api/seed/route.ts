@@ -6,7 +6,7 @@ import { and, isNotNull, notInArray, sql } from 'drizzle-orm';
 import { getDb, isLocalDb, schema } from '@/lib/db/client';
 import { ingestAsset } from '@/lib/ingest/ingest';
 import { LIBRARY_OWNER_ID } from '@/lib/data/assets';
-import { evaluateSeedRequest } from '@/lib/security/seed-guard';
+import { describeSeedAuthFailure, evaluateSeedRequest } from '@/lib/security/seed-guard';
 
 /**
  * Seeding over HTTP: POST /api/seed migrates, then loads the starter library.
@@ -116,7 +116,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const fresh = new URL(req.url).searchParams.get('fresh') === '1';
 
-  const decision = evaluateSeedRequest({
+  const facts = {
     nodeEnv: process.env.NODE_ENV,
     allowSeedRoute: process.env.ALLOW_SEED_ROUTE,
     adminSecret: process.env.SEED_ADMIN_SECRET,
@@ -124,8 +124,11 @@ export async function POST(req: Request) {
     origin: req.headers.get('origin'),
     host: req.headers.get('x-forwarded-host') ?? req.headers.get('host'),
     fresh,
-  });
+  };
+  const decision = evaluateSeedRequest(facts);
   if (!decision.ok) {
+    // Server log only (lengths and flags, never a value) — the caller still gets a bare "Unauthorized".
+    if (decision.status === 401) console.warn(`[seed] Unauthorized — ${describeSeedAuthFailure(facts)}`);
     return NextResponse.json(
       { error: decision.error },
       {

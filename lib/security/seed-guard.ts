@@ -17,6 +17,12 @@
 //                in which case it is enforced the same way.
 //   always:      a request carrying an Origin header must be same-origin
 //                (blocks a random web page POSTing at a developer's localhost).
+//
+// The configured secret is TRIMMED before it is used, exactly like the token the
+// caller sends. Env values picked up from a dashboard's paste box often carry a
+// stray space or a trailing newline; with only one side trimmed, such a value can
+// never match anything a client sends, and the failure looks identical to a wrong
+// secret ("Unauthorized") with nothing to point at the cause.
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 
@@ -43,6 +49,12 @@ export function isFlagOn(value: string | undefined): boolean {
   return v !== '' && v !== '0' && v !== 'false' && v !== 'no' && v !== 'off';
 }
 
+/** The configured secret as it is compared: surrounding whitespace removed, empty -> unset. */
+function configuredSecret(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 function digest(value: string): Buffer {
   return createHash('sha256').update(value, 'utf8').digest();
 }
@@ -60,6 +72,7 @@ function bearerToken(authorization: string | null): string | null {
 
 export function evaluateSeedRequest(facts: SeedRequestFacts): SeedDecision {
   const isProd = facts.nodeEnv === 'production';
+  const secret = configuredSecret(facts.adminSecret);
 
   if (facts.origin) {
     let originHost: string | null = null;
@@ -77,7 +90,7 @@ export function evaluateSeedRequest(facts: SeedRequestFacts): SeedDecision {
     if (!isFlagOn(facts.allowSeedRoute)) {
       return { ok: false, status: 403, error: 'Seed route disabled in production' };
     }
-    if (!facts.adminSecret || facts.adminSecret.length < MIN_SEED_SECRET_LENGTH) {
+    if (!secret || secret.length < MIN_SEED_SECRET_LENGTH) {
       return {
         ok: false,
         status: 403,
@@ -86,10 +99,10 @@ export function evaluateSeedRequest(facts: SeedRequestFacts): SeedDecision {
     }
   }
 
-  const secretRequired = isProd || Boolean(facts.adminSecret);
+  const secretRequired = isProd || Boolean(secret);
   if (secretRequired) {
     const provided = bearerToken(facts.authorization);
-    if (!provided || !facts.adminSecret || !secretsMatch(provided, facts.adminSecret)) {
+    if (!provided || !secret || !secretsMatch(provided, secret)) {
       return { ok: false, status: 401, error: 'Unauthorized' };
     }
   }
@@ -105,4 +118,31 @@ export function evaluateSeedRequest(facts: SeedRequestFacts): SeedDecision {
   }
 
   return { ok: true };
+}
+
+/**
+ * A one-line explanation of why authorization failed, for the SERVER LOG only —
+ * never for the response, which stays a bare "Unauthorized". It states lengths
+ * and flags, never a value, so it is safe to leave in production logs and still
+ * answers the question that "Unauthorized" alone can't: is the stored secret
+ * missing, padded with whitespace, a different length, or the same length with
+ * different characters?
+ */
+export function describeSeedAuthFailure(facts: Pick<SeedRequestFacts, 'adminSecret' | 'authorization'>): string {
+  const raw = facts.adminSecret;
+  const secret = configuredSecret(raw);
+  const provided = bearerToken(facts.authorization);
+
+  const parts: string[] = [];
+  if (raw === undefined || !secret) {
+    parts.push('server secret: not set');
+  } else {
+    const stray = raw.length - secret.length;
+    parts.push(`server secret: ${secret.length} chars${stray > 0 ? ` (the stored value had ${stray} stray whitespace char${stray === 1 ? '' : 's'}, ignored)` : ''}`);
+  }
+  if (facts.authorization === null) parts.push('request: no Authorization header');
+  else if (provided === null) parts.push('request: Authorization header is not "Bearer <token>"');
+  else parts.push(`request: bearer token ${provided.length} chars`);
+  if (secret && provided) parts.push(secret.length === provided.length ? 'same length but different characters' : 'different lengths');
+  return parts.join(' · ');
 }
