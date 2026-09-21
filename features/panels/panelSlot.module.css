@@ -1,0 +1,62 @@
+/**
+ * Phase 4.98 — floating sidecar panels.
+ *
+ * Each sidecar panel is wrapped in one `.slot` element that STAYS in the same
+ * place in the React tree (inside .sidecarStack) whether the panel is
+ * stacked or floating. Floating only changes this element's CSS to
+ * `position: fixed`. Because nothing is re-parented, panel-local state
+ * (Modulation's selected tab and expanded row, Sound/VFX UI state) survives
+ * detaching and docking, and keyboard focus stays on the toggle button.
+ *
+ * !! FIXED-POSITION TRAP — do not break this. `position: fixed` resolves
+ * against the viewport ONLY while no ancestor establishes a containing
+ * block for fixed descendants. Adding `transform`, `filter`, `backdrop-filter`,
+ * `perspective`, `contain: layout|paint`, `container-type`, or
+ * `will-change: transform` to .sidecarStack, .focusScrim, or anything between
+ * them and .slot silently turns every floating panel into a panel that is
+ * positioned relative to THAT ancestor and clipped by it. (.focusPanel has
+ * container-type, but it is a SIBLING of the stack, not an ancestor — that
+ * is why this works today.)
+ *
+ * Selectors below that reach the panel's own <aside> use `> aside` because
+ * the panels' classes (.modPanel …) live in a different CSS module.
+ */
+
+/* Stack mode: a plain full-width block, exactly what the bare panel was. */
+.slot {
+  flex: none;
+  width: 100%;
+}
+
+/* Floating mode. left / top / width / z-index / --panel-y come from inline style. */
+.slot[data-mode='float'] {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  /* Room below the panel's top edge; beyond it the panel body scrolls
+     inside itself, so each floating panel scrolls independently. */
+  max-height: calc(100dvh - var(--panel-y, 0px) - 8px);
+}
+
+.slot[data-mode='float'] > aside {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
+/* Drag affordance on the panel header — only when floating is available. */
+.slot[data-floatable='true'] [data-panel-handle] {
+  cursor: grab;
+}
+
+.slot[data-dragging='true'] {
+  user-select: none;
+  /* Promote the panel to its own compositor layer for the length of a drag; the
+     drag moves it with a transform (see FloatablePanel) so no layout runs per
+     frame. Safe here: this is the fixed element ITSELF, not an ancestor of it —
+     the trap above is about ancestors. */
+  will-change: transform;
+}
+
+.slot[data-dragging='true'] [data-panel-handle] {
+  cursor: grabbing;
+}

@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from 'react';
+import { PanelModeButton } from '@/features/panels/PanelModeButton';
+import { usePanelCollapsed } from '@/features/panels/usePanelCollapsed';
 import { Button, ChevronDownIcon, ChevronRightIcon, CloseIcon, Field, IconButton, Select, Slider, Toggle } from '@/components/ui';
 import { getPool } from '@/lib/render/pool';
 import { unlockAudio } from '@/lib/sound/context';
@@ -56,7 +58,7 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
   const mod = useInspectorStore((st) => st.mod);
   const setModulation = useInspectorStore((st) => st.setModulation);
   const params = useInspectorStore((st) => st.params);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, toggleCollapsed] = usePanelCollapsed('sound');
 
   const presets = getCompatiblePresets(schema);
   // Same filter FocusedAssetOverlay/MobileFocusedView use to compute
@@ -535,13 +537,14 @@ export function SoundPanel({ schema, itemId, onClose, embedded = false }: SoundP
 
   return (
     <aside className={s.modPanel} data-collapsed={collapsed ? 'true' : undefined} onClick={(e) => e.stopPropagation()} aria-label="Sound">
-      <header className={s.codeHeader}>
+      <header className={s.codeHeader} data-panel-handle="">
         <IconButton
           label={collapsed ? 'Expand sound' : 'Collapse sound'}
           icon={collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
-          onClick={() => setCollapsed((c) => !c)}
+          onClick={(e) => toggleCollapsed({ additive: e.shiftKey })}
         />
         <span className={s.codeTitle}>Sound</span>
+        <PanelModeButton id="sound" />
         <IconButton label="Close sound" icon={<CloseIcon />} onClick={onClose} />
       </header>
       {body}

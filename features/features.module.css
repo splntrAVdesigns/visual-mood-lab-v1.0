@@ -946,6 +946,20 @@
   overflow-y: auto;
 }
 
+/* Phase 4.98: every open panel is floating, so nothing is left in the stack's
+   flow. The element stays (floating panels keep their place in the React tree
+   inside it) but takes no space and no scroll box — otherwise the fallback
+   width above would push the tile off-center. The floating panels themselves
+   are position: fixed and unaffected.
+   !! Do not add transform / filter / contain / will-change to .sidecarStack
+   or .focusScrim: any of them would trap the fixed panels (see
+   features/panels/panelSlot.module.css). */
+.sidecarStack[data-stacked='false'] {
+  width: 0;
+  min-width: 0;
+  overflow: visible;
+}
+
 .modPanel {
   display: flex;
   flex-direction: column;

@@ -1,14 +1,14 @@
 # Visual Mood Lab — Implementation Plan
 
-**Status:** Phases 0–4 fully shipped, including the audio-input half of the modulation bus. Phase 4.5, 4.6, 4.7 complete. Phase 4.8 (tile sound presets, audio-**out**) Stages 1–2 shipped; Stage 3 remains ongoing content work. Phase 4.9 core is complete and stabilized; Phase 4.9.1 remains planned. Phase 4.95 and Phase 5.5 remain planned. Phase 4.96 is complete. Phase 4.97 is scoped. **Phase 4.98 is split into 4.98A Secure Clean Output and 4.98B Role-Aware Live Session Bus, scheduled before Phase 5. Phase 6.25 Mobile Companion Controller and Phase 6.5 Live Output & External Display remain parked until after Phase 5. Touch XY-pad expansion follows the floating sidecar/drawer and mood-tile host. Spout2/Syphon remains an optional native professional tier, not a replacement for Browser Source.** Detailed execution is defined in `VISUAL_MOOD_LAB_PHASE_4_98A_4_98B_6_5_INTEGRATION_PLAN.md`.
+**Status:** Phases 0–4 fully shipped, including the audio-input half of the modulation bus. Phase 4.5, 4.6, 4.7 complete. Phase 4.8 (tile sound presets, audio-**out**) Stages 1–2 shipped; Stage 3 remains ongoing content work. Phase 4.9 core is complete and stabilized; Phase 4.9.1 remains planned. Phase 4.95 and Phase 5.5 remain planned. Phase 4.96 is complete. **Phase 4.97 code is present in the build through sub-phase 4.97G (repo audit, rev 14); real-hardware QA and exit-criterion sign-off remain to be reconciled.** **Phase 4.98 Floating Sidecar Panels (desktop) is implemented (rev 15) and verified in Chromium; Safari/Firefox preview QA and merge are pending — see `SPRINT_FLOATING_PANELS.md` §11.** **Live Output work (Stage page + pop-out, OBS Browser Source link) and everything that depended on it (Live Session Bus, Mobile Companion Controller, Spout2/Syphon bridge) is deferred as of rev 14; OBS remains usable today through Window/Display Capture.** Design detail is in `VISUAL_MOOD_LAB_FLOATING_PANELS_INTEGRATION_PLAN.md`; the earlier `VISUAL_MOOD_LAB_PHASE_4_98A_4_98B_6_5_INTEGRATION_PLAN.md` is retained as deferred reference.
 
 **Mood tile library is now at 90 assets** (up from 63 at rev 6 / 65 at rev 7), across shader and p5.js renderers.
 
-**Last updated:** 2026-09-20 (rev 13 — expanded 4.98B into a reusable role-aware Live Session Bus; added Phase 6.25 Mobile Companion Controller with explicit pairing, controller grants, Follow Focus/Lock to Tile, and schema-driven Parameters/Modulate/VFX controls; parked touch XY pads until the floating sidecar/drawer and mood tile are complete; and recorded Spout2/Syphon as an optional native Phase 6.5.6 bridge. No application code was changed by this planning revision.)
+**Last updated:** 2026-09-21 (rev 15 — Phase 4.98 Floating Sidecar Panels implemented on `feat/floating-panels` and verified in Chromium (72-check browser suite, 82-check layout verifier, all existing verifiers, build); browser testing found and fixed a header-click-closes-overlay bug; Safari/Firefox preview QA and merge pending. Rev 14 — re-sequenced after a source audit of the current build: Phase 4.98 is now Floating Sidecar Panels (desktop) with a stack accordion; the Live Output slices (Stage page + pop-out, OBS link) and the Live Session Bus, Mobile Companion Controller, and native bridge are deferred with re-entry triggers; stale status items corrected — `getTrackFrequencyData()` is already guarded, the renderer budget is device-scaled at 1–3, and Phase 4.97 code exists through 4.97G. No application code was changed by this planning revision.)
 
 ---
 
-## 0. Current build status at a glance (updated, rev 13)
+## 0. Current build status at a glance (updated, rev 14)
 
 A quick-scan summary for "what's done, what's stable, what still needs work" — the phase-by-phase detail below remains the source of truth, but this section exists so nothing gets lost in a 2,000-line doc.
 
@@ -24,17 +24,14 @@ A quick-scan summary for "what's done, what's stable, what still needs work" —
 **Still needs work (tracked, not yet executed):**
 - **Phase 4.8 Stage 3** — remaining synthesized-tile sound presets (Batch 1: Static Choir, Star Field, Cursor Ripple, Chorus of Eyes; Batch 2: Wound Thread, SVG Particle, Digital Matrix, Grid Snake — Batch 2 still blocked on owner-supplied `.wav` files)
 - **Phase 4.9.1** — sound-panel UX consolidation (two volume sliders, mismatched meter, preset/track mutual-exclusivity) — diagnosed, awaiting build approval
-- **`getTrackFrequencyData()` defensive wrapping** — flagged since rev 10, still not wrapped in its own `try/catch` inside the shared tick loop; unobserved in testing so far but a real latent risk, and explicitly called out again in §9's Phase 4.97 risk note since MIDI/gamepad polling must not repeat this pattern
+- ~~`getTrackFrequencyData()` defensive wrapping~~ — **resolved (verified rev 14):** `safeGetTrackFrequencyData()` in `lib/render/pool.ts` wraps the call, so the earlier "still not wrapped" status was stale. It remains the pattern the control-surface loops must not repeat (§9, §7 Phase 4.97)
 - **Mobile "Save snapshot" wrong-image bug** — still open, still not root-caused, now actively reachable in production (see §15)
 - **Phase 4.95** (Media & Graphic Asset Library) — planned, not started
 - **Phase 5.5** (Blend & Mask Mode) — planned, not started; SVG-mask-rendering decision (§11 #6) still genuinely open
-- **Phase 4.97** (MIDI & Control Surface Integration) — newly scoped this revision, not started; see `MIDI_CONTROL_SURFACE_CONCEPT.md`
-- **Phase 4.98A** (Secure Clean Output Foundation) — next execution phase; source-audited and fully organized
-- **Phase 4.98B** (Role-Aware Live Session Bus) — follows 4.98A and precedes Phase 5; synchronizes OBS now while reserving secure client roles and typed commands for future controllers
-- **Phase 6.25** (Mobile Companion Controller) — paired phone/tablet control for Parameters, Modulate, and VFX, parked until after Phase 5 and the 4.98B production soak
-- **Phase 6.5** (Live Output & External Display) — floating sidecar/drawer and mood tile, pop-out, resize, fullscreen, and multi-display host work parked until after Phase 5
-- **Phase 6.5 touch XY enhancement** — approved direction for Modulate/VFX but explicitly sequenced after the floating host UI is stable
-- **Phase 6.5.6** (Optional Native GPU Output Bridge) — future Windows Spout2/macOS Syphon tier only if measured performance or professional workflow demand justifies native maintenance
+- **Phase 4.97** (MIDI & Control Surface Integration) — **code present through sub-phase 4.97G** (rev 14 repo audit): `lib/control-surface/` MIDI + gamepad runtimes, learn, session-safety boundary; `features/controllers/`; a Controllers tab inside Modulation. The staged roadmap in §7 (Stage 0–5) uses different labels than the in-code 4.97A–G tags — reconcile them and run real-hardware QA before marking the exit criterion met; see `MIDI_CONTROL_SURFACE_CONCEPT.md`
+- **Phase 4.98** (Floating Sidecar Panels, desktop) — **implemented (rev 15), pending Safari/Firefox preview QA and merge.** Detach Sound / VFX / VCapture / Modulation from the fixed left stack into free-floating panels, plus an "expand one, collapse the others" accordion in stack mode. Design: `VISUAL_MOOD_LAB_FLOATING_PANELS_INTEGRATION_PLAN.md` §3; results, deviations, and open items: `SPRINT_FLOATING_PANELS.md` §11
+- **Deferred (rev 14):** **Phase 6.5A** Stage page + pop-out window · **Phase 6.5B** OBS Browser Source link · Live Session Bus (formerly 4.98B) · **Phase 6.25** Mobile Companion Controller · **Phase 6.5.6** Native GPU bridge (Spout2/Syphon). Re-entry triggers: integration plan §6
+- **Touch XY performance pads** (Modulate/VFX) — approved direction; now unblocked by Phase 4.98 rather than by the former floating output tile
 
 ---
 
@@ -159,6 +156,8 @@ visual-mood-lab/
 
 > **Revision note (rev 13):** keep output rendering in `features/live-output/`, but move reusable roles, envelopes, command validation, host leases, and transport adapters into `lib/live-session/`. Future mobile UI belongs in `features/mobile-controller/`. This separation prevents OBS output, mobile control, popup windows, and a possible native Spout2/Syphon bridge from each inventing their own synchronization layer.
 
+> **Revision note (rev 14):** the `features/live-output/`, `lib/live-output/`, `lib/live-session/`, and `features/mobile-controller/` paths above are **deferred, unbuilt** as of rev 14. New planned paths for Phase 4.98: `features/panels/` (`FloatablePanel`, `PanelModeButton`, `useFloatCapable`, `panelSlot.module.css`), `stores/panelLayoutStore.ts`, `lib/panels/` (`layout.ts` pure logic, `config.ts` kill switch), and `scripts/verify-panel-layout.ts`. If Live Output resumes, the Stage page is planned at `app/stage/[itemId]/` (cookie auth) and the OBS route at `app/output/[shareId]/` — see the integration plan §4–5.
+
 ---
 
 ## 5. The renderer contract
@@ -240,6 +239,8 @@ Store code assets as **text in Postgres**, not blobs. They become searchable, di
 > **Revision note (rev 12):** Phase 4.98 adds a separate `OutputGrant` bound to `boardItems.id`, since the selected card's `paramsOverride`, `modOverride`, `soundOverride`, and `effectsOverride` define the output look. Store only the token hash; return the raw bearer secret once on create/rotate. The allowlisted `OutputProjection` contains the resolved render fields. Shader/p5 source is included because the browser renderers require it; owner identity, board inventory, editor state, and write capabilities are excluded.
 
 > **Revision note (rev 13):** Phase 4.98B adds a transient `LiveSession` boundary around the output grant rather than expanding `OutputGrant` into a collaboration model. Each client joins with one role (`workspace-host`, `output-viewer`, future `mobile-controller`, or `display-viewer`). Mobile writes are typed `ControlCommand` envelopes validated by role, session, board-item target, sequence, and payload; the workspace host remains authoritative and returns canonical acknowledgements/revisions. Controller capability tokens are short-lived, same-account, explicitly approved, and separate from OBS bearer URLs.
+
+> **Revision note (rev 14):** the `OutputGrant` and `LiveSession` shapes above are deferred with Live Output. When that work resumes, the smaller `output_links` table in the integration plan §5 (owner, board item, token hash, created, nullable expiry, revoked-at) replaces the larger `OutputGrant` shape, and no `LiveSession` is needed for the first release.
 
 ---
 
@@ -414,7 +415,7 @@ This is the item Phase 4 originally left unchecked (§7 Phase 4, "one audio inpu
 
 **Explicitly not touched in this pass, flagged for awareness:** `meter.ts`'s `getWaveform()` (feeds the p5 `audioWaveform` bridge — e.g. Static Choir) was deliberately **not** gated the same way the level-getters were — it wasn't implicated in the reported bug, and always returning *some* buffer (even a stale one) is safer for that call site than introducing a new `null` case a sketch might not expect. Worth a follow-up pass only if visual staleness is actually observed on those specific tiles after a background/foreground cycle.
 
-**Known sharp edge, still flagged, still not a bug (unchanged from rev 10):** `getTrackFrequencyData()` is called from inside the shared `tick()` loop in `lib/gl/context-pool.ts` — the one `requestAnimationFrame` loop driving every live renderer (§9) — **outside** that loop's per-card `try/catch`. If it ever throws, it takes down the shared tick loop for every live tile, not just the one with the problematic track. Still worth wrapping defensively; still hasn't fired in testing. **Directly relevant to Phase 4.97 (rev 11):** the new control-surface poll loop for MIDI/gamepad must not repeat this exact mistake — see `MIDI_CONTROL_SURFACE_CONCEPT.md` §9, which calls this out explicitly as the reason MIDI/gamepad polling gets its own isolated loop rather than piggybacking on `context-pool.ts`.
+**Known sharp edge — RESOLVED (verified rev 14):** `getTrackFrequencyData()` was flagged (rev 10) as being called inside the shared `tick()` loop outside the per-card `try/catch`. The shared loop lives in `lib/render/pool.ts` (not `lib/gl/context-pool.ts`, as earlier text said), and the call is now wrapped by `safeGetTrackFrequencyData()` — a throw is caught, logged once per card, and treated as "no track data this frame". Kept here as the reason MIDI/gamepad polling still gets its own isolated loop rather than piggybacking on the renderer tick (see `MIDI_CONTROL_SURFACE_CONCEPT.md` §9).
 
 **Exit criterion (4.9 core): met, and now field-hardened.** Mic and uploaded-track audio both reach the modulation bus and drive `@mod`-tagged parameters exactly as an LFO source does, and playback survives the mobile background/foreground and OS-teardown cases that weren't covered when this was first marked core-complete at rev 10.
 
@@ -529,35 +530,45 @@ Shipping the track/mic input fast surfaced a UI debt the original single-source 
 
 **Status check (rev 11):** newly scoped this revision. Not started. Sequenced after Phase 4.9.1, ahead of Phase 5 (Playground), parallel-safe with any remaining Phase 4.8 Stage 3 content work or Phase 4.95.
 
-### Phase 4.98A — Secure Clean Output Foundation (next execution phase)
+**Status check (rev 14):** a repo audit finds code through sub-phase 4.97G already in the build (see §0). The rev 11 status line above and the Stage 0–5 checklist predate it and are kept as the original plan; reconcile them against the in-code 4.97A–G tags and real-hardware QA.
 
-**Purpose:** give OBS and other browser-source consumers a stable, visual-only URL for one selected board item. Setup lives inside the existing VCapture panel. The output page contains only the rendered visual: no tile header, `GLSL`, `Code`, `VFX`, `Modulate`, `Sound`, VCapture, Record, Inspector, navigation, or owner controls.
+### Phase 4.98 — Floating Sidecar Panels, desktop (next execution phase)
 
-The companion plan **`VISUAL_MOOD_LAB_PHASE_4_98A_4_98B_6_5_INTEGRATION_PLAN.md` is the source of truth** for contracts, file placement, API behavior, security, tests, migration, rollback, and stage gates.
+**Purpose:** let people on desktop pull the Sound, VFX, VCapture, and Modulation (including Controllers) sidecar panels out of the fixed left stack and place them anywhere in the app frame, and stop the stack from scrolling endlessly when several are open. Desktop only (≥ 821 px wide, fine pointer). The Inspector stays as is. Panels still close automatically when the person leaves the tile.
 
-- [ ] **A0 — Contract spike:** prove the standalone `/output/[shareId]` route against shader, p5, image/SVG, and video assets at OBS-sized viewports; verify `cover`/`contain`, transparency, resize, and authenticated owner setup
-- [ ] **A1 — Grant model:** add an `OutputGrant` bound to `boardItems.id`; store only the bearer-token hash; expose raw token only at create/rotate; support revoke and expiry
-- [ ] **A2 — Allowlisted projection:** resolve the board item's saved overrides into an `OutputProjection`; include shader/p5 source because browser rendering requires executable source; exclude owner identity, board inventory, editor state, and every write capability
-- [ ] **A3 — Visual-only runtime:** build `OutputSurface` and `/output/[shareId]` around the renderer registry/pool contract without importing `FocusedAssetOverlay` or any control surface; disable projection sound by default
-- [ ] **A4 — VCapture UX:** add Create, Copy OBS URL, Open output, Rotate link, Revoke, status, and concise OBS setup guidance inside `CapturePanel.tsx`; do not add another mood-tile header action
-- [ ] **A5 — Security and OBS verification:** constant-time hash validation, explicit authorization on every output API, redacted logs, rate limits, no token in analytics/referrers, OBS Browser Source test matrix, and resize/context-loss soak
+The companion documents are the source of truth: **`VISUAL_MOOD_LAB_FLOATING_PANELS_INTEGRATION_PLAN.md` §3** (behavior spec, architecture, edge cases) and **`SPRINT_FLOATING_PANELS.md`** (task breakdown, gates, QA matrix, git workflow).
 
-**Exit:** a user can create one revocable OBS URL from VCapture, load it without an app login in OBS, and see only the selected board item's resolved visual at arbitrary Browser Source dimensions. Reloading the URL restores the same authorized projection. Independent playback is acceptable in 4.98A; synchronized state is deliberately the next stage.
+**Decisions (rev 14, source-audited against `79bdfc0`):**
 
-### Phase 4.98B — Role-Aware Live Session Bus (immediately after 4.98A)
+- **Float in place, no portal.** The panel's existing wrapper becomes `position: fixed`; it never moves in the React tree, so panel-local state (Modulation's selected tab and expanded row, Sound/VFX UI state) survives detaching and docking, and keyboard focus stays on the toggle. A portal (which remounts on container change) plus lifted state is the documented fallback if the P0 spike fails on any browser.
+- **Accordion in stack mode.** Expanding a stacked panel collapses the other stacked panels; opening a panel expands it and collapses the rest; Shift-click expands additively; floating panels are exempt both ways.
+- **Fix Modulation's collapse.** Today `.modPanel[data-collapsed]` hides only `.modPanelList`; Modulation's SIGNALS/CONTROLLERS tabs and Controllers view (`ui.desktopBody`) stay visible when collapsed, so the accordion needs that fixed on both tabs.
+- **Persistence:** position, width, and mode per device in `localStorage` (`vml:panel-layout-v1`, versioned, defensively parsed); open and collapsed state are session-only.
+- **Scope edges:** the Code panel stays docked (it drives the tile's shrink layout); MIDI stays inside Modulation's Controllers tab and floats with it.
+- **Kill switch:** `NEXT_PUBLIC_FLOATING_PANELS=off` disables floating; the stack path is behavior-identical when nothing is floated.
+- **Non-goals:** docking framework, tabs/splits/layout presets, corner-resize (v1.1), mobile, pop-out windows, OBS, any pool/renderer/sandbox/API/DB change.
+- **Learned in browser testing (rev 15):** the pointer is captured only after the drag threshold (capturing on press made a plain header click close the whole overlay); detached panels are at least 320 px wide and the minimum width is 240; an inline *Dock all panels* header button exists because the overflow menu is invisible at desktop widths.
 
-**Purpose:** make the clean output follow owner-side live state without coupling the renderer-only page to the editor UI, while establishing one reusable session layer for future mobile controllers and external displays. Keep the 4.98A URL and projection contract stable; add client roles, an authenticated publish/command boundary, monotonic sequence numbers, snapshots, acknowledgements, heartbeats, reconnect behavior, and a measured transport adapter.
+- [~] **P0 — Spike + baseline:** *(Chromium only; Safari/Firefox outstanding)* prove fixed-in-stack positioning on Chrome, Safari, and Firefox; record a `LiveIndicator` fps baseline on the heaviest shader
+- [x] **P1 — Pure logic, store, verifier:** `lib/panels/`, `stores/panelLayoutStore.ts`, `npm run verify:panel-layout`
+- [x] **P2 — FloatablePanel, drag, snap, keyboard:** `features/panels/`, three icons, slot CSS; drag-release-over-scrim must not close the overlay
+- [x] **P3 — Accordion, panel edits, overlay wiring:** lift collapse state into the store in all four panels; Modulation collapse fix; stacked-only `data-*` flags and spacer; *Dock all panels* in the header overflow menu
+- [x] **P4 — Persistence, resize clamp, edge cases:** hydrate + clamp, resize re-clamp, kill switch, narrow/coarse-pointer behavior
+- [~] **P5 — QA matrix on Chrome/Safari/Firefox** via a Vercel preview deployment — *Chromium passed (72-check suite + mobile, touch-tablet, kill-switch runs); Safari and Firefox outstanding*
+- [~] **P6 — Docs and copy:** docs updated (rev 15); optional onboarding/About line not done; mark fully shipped after preview QA
 
-- [ ] **B0 — Transport spike on the deployed Vercel topology:** compare the available WebSocket path with a managed realtime backplane and SSE fallback; measure reconnect, fan-out, cross-instance delivery, idle behavior, and cost before selecting production transport
-- [ ] **B1 — Canonical session envelopes:** publish only allowlisted render state (`params`, modulation result or compact inputs, VFX, quality/fit, pause/timebase); reserve typed controller commands and canonical acknowledgements; reject stale or duplicated sequence numbers
-- [ ] **B2 — Owner publisher:** publish from the focused board item's authoritative state with batching/coalescing; never stream raw audio, FFT arrays, cookies, database rows, or editor payloads
-- [ ] **B3 — Output receiver:** fetch a fresh snapshot first, apply live deltas second, reconnect with backoff, and show a visual-only stale/offline state that does not expose controls
-- [ ] **B4 — Roles, ownership, and contention:** one authoritative workspace-host lease, explicit takeover, heartbeat expiry, read-only output/display roles, future `mobile-controller` role with allowlisted commands, audit events, and rate limits
-- [ ] **B5 — Soak and failure recovery:** verify long-running OBS sessions, network interruption, token rotation/revocation, owner disconnect, cross-instance delivery, and state convergence
+**Exit:** with Sound, VFX, VCapture, and Modulation open, a person can drag any panel by its header out of the stack, place it anywhere in the app frame clear of the Inspector, move it with the keyboard, dock it back, and dock all; the focused tile never shifts; expanding a stacked panel collapses the others (Modulation on either tab included); a reload restores positions; leaving or switching tiles closes every panel; mobile is unchanged; the tile's frame rate is unaffected by dragging; `typecheck`, `lint`, `verify:panel-layout`, and `build` pass.
 
-**Exit:** OBS converges to the latest authorized state after refresh or reconnect, stale events cannot rewind it, and loss of the owner/editor connection has a defined freeze/reconnect policy. The session layer can later admit an explicitly paired mobile controller and validate typed commands without changing the output projection. Frame-perfect lockstep is not promised by browser transport; phase alignment is best-effort unless a later product requirement justifies a dedicated clock protocol.
+**Status check (rev 15):** implemented on `feat/floating-panels`; typecheck, lint (no new warnings), `verify:panel-layout` (82), all existing verifiers, and `build` pass; a 72-check Chromium browser suite passes. Owner review (local testing) led to two changes before merge: panels now detach anchored by their right edge and widen leftward, away from the tile (button also shifts 32 px left); and drag moves by transform instead of left/top (layout passes during a scripted drag: 89 → 1). **Open:** Safari/Firefox preview QA, and frame rate on a real GPU (the build sandbox renders in software). Unblocks the Phase 5.5 Blend sidecar (as a fifth panel) and the deferred touch XY pads.
 
-**Required sequence:** complete 4.98A, then 4.98B, then run the Phase 5 compatibility gate. This order establishes a small, secure output boundary before realtime complexity and prevents Playground from creating new asset forms that the output contract cannot render.
+#### Deferred — Live Output (rev 14)
+
+The former Phase 4.98A (Secure Clean Output) and 4.98B (Role-Aware Live Session Bus) are deferred and re-scoped: **6.5A** Stage page + pop-out window, **6.5B** OBS Browser Source link; the session bus and mobile controller are parked. Reasons and re-entry triggers are in `VISUAL_MOOD_LAB_FLOATING_PANELS_INTEGRATION_PLAN.md` §4–6. The full rev 2 design stays in `VISUAL_MOOD_LAB_PHASE_4_98A_4_98B_6_5_INTEGRATION_PLAN.md` (bannered as deferred) as the reference for contracts, security requirements, and the test matrix. Findings from the rev 14 source audit that any future Live Output work must carry forward:
+
+- The renderer pool holds **one entry per tile, in one host**; a second host for the same tile tears the first down. A pop-out therefore cannot simply share the tile — it should be a separate page with its own pool.
+- p5 sandboxes message the host `window` (`e.source === frame.contentWindow`); an iframe moved into a popup document would post to the popup, so "portal the tile into a popup" breaks every p5 tile.
+- The shared GL stage is capped at 1280 px per side (`STAGE_ABSOLUTE_MAX_DIM`, set deliberately after a 2304 px regression), so fullscreen and any 1080p+ output are upscaled; a standalone single-renderer page can use its own higher ceiling — measure first.
+- OBS Window/Display Capture works today; pressing **F** fullscreens the tile and hides the sidecars and header actions (the title bar with fullscreen/close remains).
 
 ### Phase 5 — Playground (est. 1.5 weeks)
 
@@ -580,7 +591,7 @@ The companion plan **`VISUAL_MOOD_LAB_PHASE_4_98A_4_98B_6_5_INTEGRATION_PLAN.md`
 
 > **Revision note (rev 11):** with Phase 4.97 now sequenced ahead of this phase, add one more reason to the list above: control-surface binding (MIDI/gamepad) will already be a property of the control-schema pipeline by the time Playground ships, so every sketch or shader a user authors here is automatically wireable to a controller with zero extra authoring work — a nice, free capability to point to in Playground's own onboarding copy once it exists.
 
-> **Phase 4.98 compatibility gate (rev 12):** before Phase 5 exits, every starter template and saved/forked asset must render through the same `OutputProjection`/`OutputSurface` contract used by OBS. If Playground introduces a new runtime dependency, source form, or schema field, the projection allowlist and renderer contract change in the same pull request. This keeps clean output from becoming a second-class renderer that drifts behind user-authored content.
+> **Output compatibility gate (rev 12; deferred in rev 14):** when Live Output work resumes (Phase 6.5A/6.5B), every starter template and saved/forked Playground asset must render through the same renderer-registry path the Stage page uses, and any new runtime dependency, source form, or schema field must update the output projection allowlist in the same pull request. Until then, Playground needs only the standard renderer contract.
 
 ### Phase 5.5 — Blend & Mask Mode (est. 1.5–2 weeks) — planned, not started
 
@@ -604,6 +615,8 @@ The companion plan **`VISUAL_MOOD_LAB_PHASE_4_98A_4_98B_6_5_INTEGRATION_PLAN.md`
 
 **Status check (rev 11):** not started. No change since rev 10.
 
+> **Revision note (rev 14):** build the Blend sidecar as a fifth panel on the Phase 4.98 `FloatablePanel` host (add `'blend'` to `PanelId`, one panel shell, one overlay flag) rather than as a bespoke third drawer — it then gets float/dock and the stack accordion for free. **Budget check needed at kickoff:** a blended pair counts as 2 against `MAX_LIVE_RENDERERS`, which is device-scaled at 3 / 2 / 1 (§9). On a ≤4-core machine that is the entire budget, and on a low-core coarse-pointer device blending cannot run at all. Decide the fallback (for example, gate Blend on a budget of at least 2, or render the second source as a poster) before building.
+
 ### Phase 6 — Export & polish (est. 1 week)
 
 - [ ] PNG capture at 1×/2×/4×
@@ -617,7 +630,9 @@ The companion plan **`VISUAL_MOOD_LAB_PHASE_4_98A_4_98B_6_5_INTEGRATION_PLAN.md`
 
 > **Revision note (rev 10):** unchanged in scope, but now sits after Phase 5.5 rather than immediately after Playground. This is arguably an improvement to the original sequencing rationale in §7 Phase 5, point 3 ("Export is most useful once people have made something worth exporting") — a blended/masked composite is exactly the kind of thing worth exporting at 4×, more so than either source tile alone.
 
-### Phase 6.25 — Mobile Companion Controller (parked; after Phase 5 and 4.98B soak)
+### Phase 6.25 — Mobile Companion Controller (DEFERRED, rev 14; depends on the deferred Live Session Bus)
+
+> **Deferred (rev 14):** parked until the Live Session Bus is approved, which itself waits on demand for live-drag mirroring or a phone controller. Re-entry triggers: integration plan §6. The design below is retained unchanged.
 
 **Purpose:** let an authenticated phone or tablet become a focused wireless touch controller for the mood tile running on a desktop/laptop. Same Wi-Fi improves locality but is optional and never establishes trust. The desktop workspace remains authoritative; mobile sends typed commands and receives canonical acknowledgements/state through the 4.98B Live Session Bus.
 
@@ -629,17 +644,19 @@ The companion plan **`VISUAL_MOOD_LAB_PHASE_4_98A_4_98B_6_5_INTEGRATION_PLAN.md`
 
 **Security boundary:** the controller cannot create output links, inspect source code, delete assets, change account settings, or submit arbitrary store/database patches. Every command is checked against role, session, board-item target, sequence, command kind, and payload schema.
 
-**Deferred enhancement:** touch XY pads for Modulate and the VFX rack are approved but intentionally excluded from the first controller sprint. Build them only after Phase 6.5.1 delivers the floating sidecar/drawer and floating mood-tile interaction model, then reuse one normalized XY command contract across desktop and mobile.
+**Deferred enhancement:** touch XY pads for Modulate and the VFX rack are approved but intentionally excluded from the first controller sprint. Build them after Phase 4.98 (Floating Sidecar Panels) ships — they no longer wait on a floating output tile — then reuse one normalized XY command contract across desktop and mobile.
 
 **Exit:** an explicitly paired mobile device controls Parameters, Modulate, and VFX for the followed or locked tile; desktop, phone, OBS, and other outputs converge to one canonical revision after normal interaction and reconnect.
 
-### Phase 6.5 — Live Output & External Display (parked expansion; starts after Phase 5 and 4.98B soak)
+### Phase 6.5 — Live Output & External Display (DEFERRED, rev 14; re-scoped)
+
+> **Re-scoped (rev 14):** the near-term slices are **6.5A Stage page + pop-out window** and **6.5B OBS Browser Source link** (integration plan §4–5). The in-app floating *panel* work originally listed as 6.5.1 moved forward to **Phase 4.98**. The items below are the original longer-range scope and stay parked until their re-entry triggers (integration plan §6).
 
 **Purpose:** turn the secure output foundation into a coherent multi-window and multi-display workflow. Browser windows can be opened and resized by the user and moved across monitors by the operating system. The app may request a popup from a direct user gesture, but browsers retain control over popup permission and final placement. Native NDI output is outside the browser-only scope; NDI workflows continue through OBS or another capture/bridge application.
 
 - [ ] **6.5.0 — Shared host contract:** make `OutputSurface` the sole visual host used by the OBS route, in-app floating panel, popup, and fullscreen modes
-- [ ] **6.5.1 — In-app floating sidecar/drawer and mood tile:** draggable and resizable inside the browser viewport, collapsible without disturbing the board, with bounds, minimum size, aspect presets, remembered geometry, keyboard resize/move affordances, and a one-action return to the workspace
-- [ ] **Post-6.5.1 — Touch XY performance surfaces:** reusable XY pads for Modulate and VFX on desktop and mobile, with axis assignment, reset/center, pickup/takeover, final-value flush, accessible numeric alternatives, and optional control pinning
+- [ ] **6.5.1 — In-app floating output tile:** *(rev 14: the floating sidecar/drawer half moved to Phase 4.98.)* draggable and resizable inside the browser viewport with aspect lock, snap guides, remembered geometry, and keyboard alternatives — deferred with Live Output
+- [ ] **Post-4.98 — Touch XY performance surfaces (unblocked by Phase 4.98, rev 14):** reusable XY pads for Modulate and VFX on desktop and mobile, with axis assignment, reset/center, pickup/takeover, final-value flush, accessible numeric alternatives, and optional control pinning
 - [ ] **6.5.2 — Popup window:** user-gesture `window.open`, clear popup-blocked recovery, renderer-only chrome, user-resizable window, and synchronized state through the 4.98B transport rather than `BroadcastChannel` alone
 - [ ] **6.5.3 — Fullscreen and multi-display:** Fullscreen API plus progressive enhancement with the Window Management API where permission and browser support exist; always retain manual placement and normal fullscreen fallback
 - [ ] **6.5.4 — External workflow presets:** OBS resolution/aspect presets, transparent/opaque background, `cover`/`contain`, quality/FPS choices, safe-area test frame, and copyable setup guidance
@@ -648,7 +665,7 @@ The companion plan **`VISUAL_MOOD_LAB_PHASE_4_98A_4_98B_6_5_INTEGRATION_PLAN.md`
 
 **Exit:** the same board item can move between in-app float, popup, fullscreen/external display, and OBS output without changing its visual contract or exposing editor controls. Each surface restores useful state after reload or disconnect and degrades clearly when browser permissions or display APIs are unavailable.
 
-> **Sequencing note (rev 13):** Phase 6.25 and 6.5 reuse 4.98A security/projection and the 4.98B Live Session Bus. Do not build mobile-, popup-, or native-bridge-only rendering/messaging paths. Begin after Phase 5 compatibility is proven and 4.98B has completed a production soak. Complete the floating sidecar/drawer and mood-tile host before the XY-pad enhancement. Spout2/Syphon remains optional and must pass a measured demand/performance gate before implementation.
+> **Sequencing note (rev 14):** everything in Phase 6.25 and 6.5 is deferred. When resumed, reuse one renderer/projection contract (the Stage page) across pop-out and OBS, and add the Live Session Bus only if live-drag mirroring or the mobile controller is approved. Do not build mobile-, popup-, or native-bridge-only rendering/messaging paths. Spout2/Syphon remains optional and must pass a measured demand/performance gate before implementation.
 
 ---
 
@@ -858,7 +875,7 @@ Hard numbers. Treat a regression as a build failure.
 
 | Metric | Budget |
 |---|---|
-| Concurrent live renderers | ≤ 6 |
+| Concurrent live renderers | Device-scaled: **3** (desktop, >4 cores) · **2** (≤4 cores or coarse pointer) · **1** (coarse pointer and ≤4 cores) — `MAX_LIVE_RENDERERS` / `detectRendererBudget()` in `stores/playbackStore.ts` (earlier plan text said ≤ 6) |
 | WebGL2 contexts | 1 shared (fallback pool ≤ 4) |
 | Board scroll | 60fps with 40 cards |
 | Initial JS (board route) | Framework baseline + **≤ 60KB app code**, gzipped |
@@ -877,6 +894,8 @@ Hard numbers. Treat a regression as a build failure.
 > **Revision note (rev 10):** Phase 5.5's blend compositing doesn't get its own budget line. A blended tile pair counts as **2** against "Concurrent live renderers ≤ 6" — two source renderers plus one compositing pass sharing the existing single WebGL2 context — rather than introducing a second, parallel set of numbers to keep in sync with this one.
 
 > **Revision note (rev 11):** Phase 4.97's MIDI/gamepad control-surface polling likewise doesn't get its own budget line, but for the opposite reason — it's explicitly **not** allowed to run inside the shared renderer tick loop at all (see §7 Phase 4.97 and `MIDI_CONTROL_SURFACE_CONCEPT.md` §9), so it never competes against the ≤6 renderer budget in the first place. It gets its own small, isolated `requestAnimationFrame` loop instead. Worth stating explicitly here so it isn't later folded into the renderer count by mistake.
+
+> **Revision note (rev 14):** the "≤ 6" figure in the rev 10 note above and in §12 predates the shipped, device-scaled budget (3 / 2 / 1). Treat the code as authoritative. The "blended pair counts as 2" rule stands, but see the Phase 5.5 rev 14 note for what it means at a budget of 2 or 1.
 
 **Techniques:** posters as static `<img>` until promoted; `content-visibility: auto` on offscreen cards; shader programs cached by source hash; a single `requestAnimationFrame` loop driving every renderer (never one per card); `OffscreenCanvas` where supported.
 
@@ -947,10 +966,11 @@ Resolve these before Phase 2. Each one cascades.
 | 7 | Graphic-pack commerce timing | Add `packId`/`isPremium` now, unbuilt commerce **vs** wait until commerce is actually scoped | Phase 4.95 data model |
 | 8 *(new, rev 11)* | MIDI pick-parameter targeting scope | **RESOLVED:** focused tile only, v1 | Phase 4.97 |
 | 9 *(new, rev 11)* | MIDI/gamepad fan-out (one slot → multiple params) | **RESOLVED:** yes, in v1 — see `MIDI_CONTROL_SURFACE_CONCEPT.md` §5 | Phase 4.97 |
-| 10 *(new, rev 12)* | Output identity and bearer security | **RESOLVED:** grant targets `boardItems.id`; store token hash only; raw token appears only at create/rotate; revoke and expiry supported | Phase 4.98A |
-| 11 *(new, rev 12)* | Production synchronization transport | **OPEN:** select after a deployed Vercel spike comparing WebSocket/realtime-backplane behavior and SSE fallback against reconnect, cross-instance, idle, fan-out, and cost requirements | Phase 4.98B |
-| 12 *(new, rev 13)* | Mobile-controller transport and trust | **RESOLVED DIRECTION:** selected server-mediated 4.98B transport is baseline; same Wi-Fi is optional and never grants trust; WebRTC DataChannel is a future low-latency adapter with signaling/relay fallback, not a v1 dependency | Phase 6.25 |
-| 13 *(new, rev 13)* | Spout2/Syphon versus Browser Source | **RESOLVED DIRECTION:** Browser Source remains universal; native bridge is additive and begins only after measured performance limits or validated professional GPU-sharing demand | Phase 6.5.6 |
+| 10 *(new, rev 12)* | Output identity and bearer security | **RESOLVED:** grant targets `boardItems.id`; store token hash only; raw token appears only at create/rotate; revoke and expiry supported | Phase 4.98A → 6.5B (deferred, rev 14) |
+| 11 *(new, rev 12)* | Production synchronization transport | **OPEN:** select after a deployed Vercel spike comparing WebSocket/realtime-backplane behavior and SSE fallback against reconnect, cross-instance, idle, fan-out, and cost requirements | Phase 4.98B (parked, rev 14) |
+| 12 *(new, rev 13)* | Mobile-controller transport and trust | **RESOLVED DIRECTION:** selected server-mediated 4.98B transport is baseline; same Wi-Fi is optional and never grants trust; WebRTC DataChannel is a future low-latency adapter with signaling/relay fallback, not a v1 dependency | Phase 6.25 (deferred, rev 14) |
+| 13 *(new, rev 13)* | Spout2/Syphon versus Browser Source | **RESOLVED DIRECTION:** Browser Source remains universal; native bridge is additive and begins only after measured performance limits or validated professional GPU-sharing demand | Phase 6.5.6 (parked, rev 14) |
+| 14 *(new, rev 14)* | Floating-panel mechanism | **RESOLVED:** float in place via `position: fixed` on the panel's existing wrapper (no portal, no remount) so panel-local state survives; portal plus lifted state is the documented fallback if the P0 spike fails on any browser | Phase 4.98 |
 
 Recommended defaults if you want to move now: **1** shared context, **2** single-user, **3** bundled, **4** WebM only, **5** deferred, **6** leaning GL texture for consistency with the rest of the compositing pipeline — everything else in Phase 5.5 already lives inside the shared WebGL2 context, and a second, DOM-based masking path is one more thing to keep behaviorally consistent with the GL one (blend modes, mix amount, modulation) for no clear benefit; worth a quick prototype of both before fully committing, since native SVG alpha via `clip-path` is genuinely simpler if it turns out to be good enough, **7** flag now — it's free today and expensive to retrofit, matching the schema-drift risk already tracked in §12.
 
@@ -970,7 +990,7 @@ Recommended defaults if you want to move now: **1** shared context, **2** single
 | Mobile GPU can't run heavier shaders | Medium | Low | Quality tiers; posters-only mode below a device-capability threshold |
 | Hand-authored SVG packs carry inconsistent viewBox/fill conventions | High | Low | `verify-media-assets.ts` validation pass at ingest (§7 Phase 4.95); `currentColor` normalization before first tint/mask use |
 | Blend compositing doubles live-renderer cost per blended pair | Medium | Medium | Count each blended pair as 2 against the existing ≤6 renderer budget (§9); no video blend sources in v1 |
-| `getTrackFrequencyData()` runs outside the shared tick loop's per-card `try/catch` (§7 Phase 4.9) | Low (unobserved so far) | High (would take down every live renderer, not just one card) | Wrap the call defensively before Phase 5.5 or Phase 4.97 add more consumers of the same modulation bus / tick loop pattern — **still not done as of rev 11, see §0** |
+| ~~`getTrackFrequencyData()` runs outside the shared tick loop's per-card `try/catch` (§7 Phase 4.9)~~ | — | — | **Resolved (verified rev 14):** wrapped by `safeGetTrackFrequencyData()` in `lib/render/pool.ts` |
 | *(new, rev 11)* Web MIDI browser support is inconsistent, especially iOS/Safari | High (platform-driven, not fixable) | Medium | Explicit feature detection in Settings > MIDI & Controllers with a clear "not available in this browser" state, rather than a silent no-op (§7 Phase 4.97) |
 | *(new, rev 11)* Device Profiles rely on MIDI device **name** matching, since Web MIDI has no stable ID across replug on every OS | Low | Low | Documented as a known limitation with a one-line caveat in the Settings UI for the "two identical controllers" edge case, rather than attempting a more complex identity scheme for v1 |
 | *(new, rev 11)* Gamepad polling requires its own render loop, separate from the shared GL tick loop, or it repeats the exact unguarded-call pattern already flagged above for `getTrackFrequencyData()` | Medium (real risk if not deliberately avoided) | High | Isolated, defensively-wrapped `requestAnimationFrame` loop for control-surface polling, explicitly decoupled from `context-pool.ts` and the ≤6 renderer budget (§9, §7 Phase 4.97) |
@@ -985,6 +1005,14 @@ Recommended defaults if you want to move now: **1** shared context, **2** single
 | *(new, rev 13)* Full renderer on mobile causes heat, battery drain, context loss, and poor touch latency | High | Medium | Poster/low-rate lightweight preview by default; measure thermals and input latency; make full preview optional and capability-gated |
 | *(new, rev 13)* Mobile, MIDI, Inspector, and future XY pads create separate mutation paths | Medium | High | One normalized control-command layer targeting the existing schema/store/pool path; inputs differ but canonical state mutation does not |
 | *(new, rev 13)* Native Spout2/Syphon bridge creates an OS-specific support burden before demand exists | Medium | High | Keep Browser Source primary; require measured gate; reuse output/session contracts; separately scope installers, signing/notarization, updates, GPU/driver and OBS compatibility |
+| *(new, rev 14)* `position: fixed` inside the sidecar stack behaves differently on Safari or Firefox, or an ancestor gains `transform`/`filter`/`contain` and traps it | Low | Medium | P0 spike on Chrome, Safari, and Firefox before building; comment at the CSS; portal fallback documented |
+| *(new, rev 14)* A drag released over the scrim closes the whole focused overlay (scrim `onClick`) | High if unhandled | High | Pointer capture plus a one-shot capture-phase click suppressor; explicit QA case |
+| *(new, rev 14)* The accordion surprises people who want several panels expanded | Medium | Low | Floating panels are exempt; Shift-click expands additively; tooltip mentions it |
+| *(new, rev 14)* A floating panel is lost off-screen after a monitor or viewport change | Medium | Medium | Clamp on hydrate and on resize; *Dock all panels* in the header overflow menu |
+| *(new, rev 14)* Floating panels grow into a docking framework | Medium | Medium | Explicit non-goals; docking library parked with a re-entry trigger |
+| *(new, rev 14)* Modulation's collapse hides only its signal list, not its tabs or Controllers view | High (present today) | Medium | Fixed in Phase 4.98 P3; acceptance on both tabs |
+
+> Rows tagged *(new, rev 12)* and *(new, rev 13)* belong to the Live Output work deferred in rev 14. They stay registered so they are not lost when that work resumes.
 
 ---
 
@@ -998,7 +1026,18 @@ Recommended defaults if you want to move now: **1** shared context, **2** single
 - [ ] No console warnings in a clean session
 - [ ] Performance budget re-measured, not assumed
 
-**Additional gates for Phase 4.98A / 4.98B / 6.25 / 6.5:**
+**Additional gates for Phase 4.98 (Floating Sidecar Panels):**
+
+- [x] The stack path is behavior-identical when nothing is floated; the tile never shifts when panels float, dock, or collapse *(Chromium)*
+- [x] Accordion verified on all four panels, including Modulation's Signals and Controllers tabs; floating panels exempt; Shift-click additive *(Chromium)*
+- [x] A drag released over the scrim, the tile, or the Inspector edge never closes the overlay *(Chromium)*
+- [x] Persisted layout validated by `npm run verify:panel-layout`; corrupt storage falls back to defaults; floating panels re-clamp on resize
+- [ ] Keyboard-movable and keyboard-dockable with visible focus; no new animation
+- [ ] Verified on Chrome, Safari, and Firefox via a preview deployment; mobile and kill-switch-off unchanged
+- [ ] Focused-tile frame rate during drag is within noise of the pre-change baseline
+- [x] The diff touches no pool, renderer, sandbox, API route, schema, or security-header code
+
+**Additional gates for the deferred Live Output work (6.5A / 6.5B / session bus / 6.25) — apply when that work resumes (rev 14):**
 
 - [ ] Output page renders the visual only; automated checks find no app navigation, tile toolbar, Inspector, setup, or mutation controls
 - [ ] Grant creation, rotation, revocation, expiry, and unauthorized access are integration-tested; raw bearer tokens are never persisted or logged
@@ -1008,7 +1047,7 @@ Recommended defaults if you want to move now: **1** shared context, **2** single
 - [ ] Mobile tests cover QR/code pairing, approval, revoke, Follow Focus, Lock to Tile, base/effective value separation, final-value convergence, background/foreground, wake-lock fallback, and one-controller contention policy
 - [ ] Long-running OBS and popup sessions stay within measured CPU/GPU/memory and reconnect budgets
 - [ ] Phase 6.5 fallback behavior is usable when popups, fullscreen, or multi-display permissions are denied or unsupported
-- [ ] Touch XY pads do not begin until the floating sidecar/drawer and floating mood-tile gate is complete
+- [ ] Touch XY pads do not begin until Phase 4.98 (Floating Sidecar Panels) has shipped
 - [ ] Spout2/Syphon work does not begin without a documented demand/performance decision and native release/support scope
 
 ---
@@ -1026,6 +1065,8 @@ Ordered by leverage, not by appeal.
 7. **Media playback controls for uploaded image/video assets** — LUTs, auto hue-cycling, playback speed. A natural extension of the `BASE_CONTROLS`-plus-type-specific-extras concept already named in §5, scoped entirely to the upload pipeline. Considered and deliberately deferred during the Phase 5 readiness review (rev 7): pairs more naturally with Phase 6's export/color work than with anything Playground needs. Worth a second look once Phase 4.95 ships — a Media page full of static shapes is also a natural home for basic hue/LUT controls on imported video, if that phase's scope has room once its core exit criterion is met.
 8. *(new, rev 11)* **Board/session-level "Show Control"** — cross-tile MIDI/gamepad mapping and scene switching (blackout, crossfade), explicitly scoped out of Phase 4.97 v1 as a different data shape from per-tile binding. See `MIDI_CONTROL_SURFACE_CONCEPT.md` §12.
 9. *(new, rev 11)* **Webcam hand-tracking as a control-surface source** — the owner's own stated future direction, following MIDI/gamepad. `lib/control-surface/`'s `ControlSurfaceSource` union is deliberately designed to accommodate a `webcam-gesture` variant later without rework — see `MIDI_CONTROL_SURFACE_CONCEPT.md` §12. Not scoped, not estimated; flagged here so it isn't forgotten once Phase 4.97 ships.
+10. *(new, rev 14)* **Live Output — Stage page + pop-out window, then OBS Browser Source link** — deferred from the former Phase 4.98A/6.5; full design in `VISUAL_MOOD_LAB_FLOATING_PANELS_INTEGRATION_PLAN.md` §4–5. OBS Window/Display Capture works today.
+11. *(new, rev 14)* **Live Session Bus, Mobile Companion Controller, Spout2/Syphon bridge, multi-display placement, shader transparency, docking library / layout presets** — parked with re-entry triggers in the same document, §6.
 
 ---
 
@@ -1070,7 +1111,7 @@ A cluster of regressions surfaced after the auth work landed — fullscreen, upl
 ### Audio / modulation (rev 10 addition)
 
 - **Uploading a track blacked out every live tile on the board, not just the one with the track:** buffer-size mismatch between `track.ts`'s `waveAnalyser` and `meter.ts`'s existing analyser. Both now share `fftSize = 256`. Fix confirmed from source. See §7 Phase 4.9.
-- **Not yet a bug, but flagged:** `getTrackFrequencyData()` runs inside the shared `tick()` loop in `lib/gl/context-pool.ts` outside that loop's per-card `try/catch` — a future throw there would take down every live renderer at once, not just the offending card. See §12. **Still unwrapped as of rev 11 — see §0.**
+- **Flagged in rev 10, resolved (verified rev 14):** `getTrackFrequencyData()` ran inside the shared `tick()` loop (in `lib/render/pool.ts`, not `lib/gl/context-pool.ts` as this entry originally said) outside the per-card `try/catch`. It is now wrapped by `safeGetTrackFrequencyData()`; a throw is logged once per card and treated as no track data for that frame.
 
 ### Modulation stability (new, rev 11 addition)
 
@@ -1087,4 +1128,4 @@ A cluster of regressions surfaced after the auth work landed — fullscreen, upl
 
 - **Mobile "Save snapshot" captures the wrong image** (an error placeholder, not the real captured frame). **Priority raised (rev 5):** originally filed when `MobileFocusedView.tsx` existed but was never mounted anywhere, meaning no one could actually hit this path through the app. As of Phase 4.5, `MobileFocusedView` is wired into `AppShell` and live in production on every phone-width session — this is no longer a theoretical gap in an unreachable component, it's an active bug real users can hit today. Root cause still not investigated; needs `features/board/MobileFocusedView.tsx` and/or the mobile-specific capture call path. **Still open as of rev 11** — not touched this revision. Worth picking up before or alongside Phase 5 given it's now reachable, even though it isn't formally blocking Playground.
 - **Sound panel UX debt:** see §7 Phase 4.9.1 in full — not a single bug but a cluster of layout/state issues left behind by shipping track/mic input fast. Diagnosed, not yet coded. **Still open as of rev 11.**
-- **`getTrackFrequencyData()` unwrapped in the shared tick loop:** see §12 and §7 Phase 4.9. **Still open as of rev 11**, and now additionally relevant as a pattern to explicitly avoid repeating in Phase 4.97's control-surface poll loop.
+- ~~`getTrackFrequencyData()` unwrapped in the shared tick loop~~ — **resolved (verified rev 14)**; see §12 and §7 Phase 4.9. Still the pattern to avoid repeating in Phase 4.97's control-surface poll loop.

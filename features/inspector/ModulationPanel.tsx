@@ -1,6 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { PanelModeButton } from '@/features/panels/PanelModeButton';
+import { usePanelCollapsed } from '@/features/panels/usePanelCollapsed';
 import { Button, Field, IconButton, Select, Slider, formatValue } from '@/components/ui';
 import { CloseIcon, ChevronDownIcon, ChevronRightIcon, ResetIcon } from '@/components/ui';
 import { MOD_SOURCES, defaultAmountFor, defaultSmoothingFor, sourceMeta } from '@/lib/modulation/bus';
@@ -36,7 +38,7 @@ export function ModulationPanel({ controls, itemId, onClose, embedded = false }:
   const micEnabled = useMicEnabled(itemId);
   const controllerDocument = useControllerDocument();
   const [expanded, setExpanded] = useState<string | null>(controls[0]?.id ?? null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, toggleCollapsed] = usePanelCollapsed('mod');
   const [view, setView] = useState<ModulationView>('signals');
 
   const controllerById = useMemo(() => {
@@ -93,11 +95,11 @@ export function ModulationPanel({ controls, itemId, onClose, embedded = false }:
 
   return (
     <aside className={s.modPanel} data-collapsed={collapsed ? 'true' : undefined} onClick={(e) => e.stopPropagation()} aria-label="Modulation">
-      <header className={s.codeHeader}>
+      <header className={s.codeHeader} data-panel-handle="">
         <IconButton
           label={collapsed ? 'Expand modulation' : 'Collapse modulation'}
           icon={collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
-          onClick={() => setCollapsed((current) => !current)}
+          onClick={(e) => toggleCollapsed({ additive: e.shiftKey })}
         />
         <span className={s.codeTitle}>Modulation</span>
         <span className={s.codeMeta}>
@@ -111,9 +113,13 @@ export function ModulationPanel({ controls, itemId, onClose, embedded = false }:
             disabled={routedIds.length === 0}
           />
         )}
+        <PanelModeButton id="mod" />
         <IconButton label="Close modulation" icon={<CloseIcon />} onClick={onClose} />
       </header>
-      <div className={ui.desktopBody}>{tabs}{content}</div>
+      <div className={ui.desktopBody} data-collapsed={collapsed ? 'true' : undefined}>
+        {tabs}
+        {content}
+      </div>
     </aside>
   );
 }
