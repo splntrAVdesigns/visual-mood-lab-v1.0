@@ -1,6 +1,8 @@
 import type { Asset, CardState } from '@/types/asset';
 import type { AssetRenderer, RenderContext } from '@/renderers/types';
 import { createRenderer } from '@/renderers/registry';
+import { installSoakStats } from '@/lib/debug/soak-stats';
+import { peekGLStage } from '@/lib/gl/context-pool';
 import { getModBus } from '@/lib/modulation/bus';
 import { applyModulation, defaultsOf, type ModState, type ParamState, type SoundState } from '@/renderers/control-schema';
 import { MAX_LIVE_RENDERERS } from '@/stores/playbackStore';
@@ -343,6 +345,13 @@ class RendererPool {
    * Ownership makes that impossible by construction rather than relying on
    * the two stages coordinating.
    */
+  /** Read-only counters for the soak test and its `?soak=1` hook (lib/debug/soak-stats.ts). */
+  stats(): { live: number; focused: number; preview: number; cap: number } {
+    let focused = 0;
+    for (const e of this.entries.values()) if (e.state === 'focused') focused++;
+    return { live: this.entries.size, focused, preview: this.entries.size - focused, cap: MAX_LIVE_RENDERERS };
+  }
+
   demote(cardId: string, owner?: HTMLElement): void {
     const entry = this.entries.get(cardId);
     if (!entry) return;
@@ -929,5 +938,8 @@ export function getPool(): RendererPool {
   if (!pool) pool = new RendererPool();
   return pool;
 }
+
+// The soak test's read-only stats hook. A no-op unless the page URL has ?soak.
+if (typeof window !== 'undefined') installSoakStats(() => getPool().stats(), () => peekGLStage());
 
 export type { RendererPool };

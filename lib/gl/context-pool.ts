@@ -566,6 +566,11 @@ export class GLStage {
   }
 
   /** How many textures are currently cached — for diagnostics and tests. */
+  /** Compiled programs currently cached (read-only; used by the soak test). */
+  get programCount(): number {
+    return this.programs.size;
+  }
+
   get textureCount(): number {
     return this.textures.size;
   }

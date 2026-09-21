@@ -149,6 +149,41 @@ Overwrites the Phase 1 placeholder posters with real renders. Playwright stays o
 
 ---
 
+## Soak test — does anything leak?
+
+`npm run soak` drives the **real board** in a real browser: it clicks every tile
+open, waits for its renderer to go live, holds it, closes it — then does that
+again, N times. After each full pass it forces a garbage collection and checks the
+page is back where it started: no extra live renderers, GL textures, sandbox
+iframes or canvases; a heap and DOM that are not climbing; a compiled-program
+cache that stopped growing after the first pass. It exits `0` (no leak), `1`
+(a leak or a failure) or `2` (couldn't run). It also prints the frame cost of the
+heaviest tiles — the baseline for any adaptive-resolution work — but that is
+informational and never fails a run.
+
+```bash
+npx playwright install chromium        # once per machine
+
+# a production build is the representative target:
+npm run build && npm start &
+SOAK_URL=http://localhost:3000 SOAK_EMAIL=you@example.com SOAK_PASSWORD=… npm run soak
+
+# the live site (it only opens and closes tiles; it edits nothing):
+SOAK_URL=https://your-site SOAK_EMAIL=… SOAK_PASSWORD=… SOAK_CYCLES=3 npm run soak
+
+# a phone-sized viewport, or a quick subset:
+SOAK_MOBILE=1 SOAK_TILES=12 SOAK_CYCLES=2 …  npm run soak
+SOAK_ONLY="Feedback Trails,Flow Field" …      npm run soak
+```
+
+Use a dedicated test account. Every setting is documented at the top of
+`scripts/soak.ts` (`SOAK_TILES`, `SOAK_HOLD_MS`, `SOAK_HEADLESS=0` to watch it,
+`SOAK_SOFTWARE_GL=1` for machines without a GPU, `SOAK_SESSION_COOKIE` instead of a
+password). The board lazy-renders its cards, so a full run takes a few minutes per
+cycle. The numbers come from a read-only hook that only exists when the page URL has
+`?soak=1` (`lib/debug/soak-stats.ts`); it exposes counts, never content. The
+verdict logic is unit-tested by `npm run verify:soak`.
+
 ## Deploying to Vercel
 
 ### 1. Push to GitHub
