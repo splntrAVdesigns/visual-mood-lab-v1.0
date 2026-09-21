@@ -1,9 +1,12 @@
 # Visual Mood Lab — Live Output Integration Plan
 
+> **DEFERRED — superseded in sequencing by `VISUAL_MOOD_LAB_FLOATING_PANELS_INTEGRATION_PLAN.md` (rev 3, 2026-09-20).**
+> After a source audit of the current build, the next execution phase is **Phase 4.98 — Floating Sidecar Panels (desktop)**, organized in `SPRINT_FLOATING_PANELS.md`. The execution order in §1 below **no longer applies**. Phase 4.98A/4.98B and Phase 6.5 are re-scoped as **6.5A Stage page + pop-out** and **6.5B OBS Browser Source link** (both deferred); the Live Session Bus (4.98B), Mobile Companion Controller (6.25), and native Spout2/Syphon bridge (6.5.6) are parked with re-entry triggers. OBS Window/Display Capture works today. Read this document for the deferred designs, not for scheduling.
+
 **Scope:** Phase 4.98A Clean Output → Phase 4.98B Role-Aware Live Session Bus → Phase 6.25 Mobile Companion Controller → Phase 6.5 Live Output & External Display  
 **Prepared:** 2026-09-20 (rev 2)  
 **Source baseline reviewed:** `splntrAVdesigns/visual-mood-lab-v1.0` at commit `4fc1677249173b801136862dcf13c00a208484ee`  
-**Status:** Architecture and execution plan complete; application code not yet changed by this document.
+**Status:** **DEFERRED (rev 14, 2026-09-20).** Architecture and execution plan complete; application code not changed by this document. Retained as the reference for the contracts, security requirements, and test matrix that deferred Live Output work will need.
 
 ---
 

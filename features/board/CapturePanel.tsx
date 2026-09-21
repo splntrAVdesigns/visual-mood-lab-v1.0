@@ -6,7 +6,8 @@ import {
   CAPTURE_MIN_DURATION_SEC,
   type CaptureFormat,
 } from '@/lib/capture/types';
-import { useState } from 'react';
+import { PanelModeButton } from '@/features/panels/PanelModeButton';
+import { usePanelCollapsed } from '@/features/panels/usePanelCollapsed';
 import s from '../features.module.css';
 
 interface CapturePanelProps {
@@ -51,7 +52,7 @@ export function CapturePanel({
   onClose,
   embedded = false,
 }: CapturePanelProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, toggleCollapsed] = usePanelCollapsed('capture');
 
   const body = (
     <div className={embedded ? s.modPanelListEmbedded : s.modPanelList}>
@@ -118,14 +119,15 @@ export function CapturePanel({
       onClick={(e) => e.stopPropagation()}
       aria-label="Video export"
     >
-      <header className={s.codeHeader}>
+      <header className={s.codeHeader} data-panel-handle="">
         <IconButton
           label={collapsed ? 'Expand video export' : 'Collapse video export'}
           icon={collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
-          onClick={() => setCollapsed((c) => !c)}
+          onClick={(e) => toggleCollapsed({ additive: e.shiftKey })}
         />
         <span className={s.codeTitle}>VCapture</span>
         <span className={s.codeMeta}>{format.toUpperCase()} · {durationSec}s</span>
+        <PanelModeButton id="capture" />
         <IconButton label="Close video export" icon={<CloseIcon />} onClick={onClose} />
       </header>
       {body}

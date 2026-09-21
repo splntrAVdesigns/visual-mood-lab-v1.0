@@ -149,6 +149,32 @@ export const FullscreenIcon = ({ on, ...p }: IconProps & { on?: boolean }) => (
   </Svg>
 );
 
+/* Phase 4.98 — floating sidecar panels. */
+
+/** A window lifted over another: "float this panel". */
+export const PanelFloatIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="2.5" y="6.5" width="7" height="7" rx="1" />
+    <path d="M6.5 6.5V4a1 1 0 0 1 1-1H13a1 1 0 0 1 1 1v5.5a1 1 0 0 1-1 1h-3.5" />
+  </Svg>
+);
+
+/** A frame with a left rail: "dock this panel back into the stack". */
+export const PanelDockIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="2.5" y="2.5" width="11" height="11" rx="1" />
+    <path d="M6.5 2.5v11" />
+  </Svg>
+);
+
+/** Four-way arrows: "move this panel" (drag, or arrow keys when focused). */
+export const MoveIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M8 2v12M2 8h12" />
+    <path d="M6.5 3.5 8 2l1.5 1.5M6.5 12.5 8 14l1.5-1.5M3.5 6.5 2 8l1.5 1.5M12.5 6.5 14 8l-1.5 1.5" />
+  </Svg>
+);
+
 export const SearchIcon = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="7" cy="7" r="4.25" />

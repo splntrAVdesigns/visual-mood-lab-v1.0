@@ -9,10 +9,17 @@ import {
   DownloadIcon,
   FullscreenIcon,
   IconButton,
+  PanelDockIcon,
   Tooltip,
   VCaptureIcon,
 } from '@/components/ui';
-import { selectSelectedAsset, useBoardStore, useInspectorStore, usePlaybackStore } from '@/stores';
+import {
+  selectSelectedAsset,
+  useBoardStore,
+  useInspectorStore,
+  usePanelLayoutStore,
+  usePlaybackStore,
+} from '@/stores';
 import { ASSET_TYPE_BADGE } from '@/types/asset';
 import { RendererStage } from './RendererStage';
 import { CodePanel } from './CodePanel';
@@ -22,6 +29,10 @@ import { HeaderOverflowMenu, type OverflowMenuItem } from './HeaderOverflowMenu'
 import { ModulationPanel } from '../inspector/ModulationPanel';
 import { SoundPanel } from '../inspector/SoundPanel';
 import { VfxPanel } from '../inspector/VfxPanel';
+import { FloatablePanel } from '../panels/FloatablePanel';
+import { useFloatCapable } from '../panels/useFloatCapable';
+import { useViewport } from '../panels/viewport';
+import { PANEL_ORDER, type PanelId } from '@/lib/panels/layout';
 import { getCompatiblePresets } from '@/lib/sound/presets';
 import { closeAsset, openAssetById } from './openAsset';
 import {
@@ -70,6 +81,13 @@ export function FocusedAssetOverlay() {
   const [savedNote, setSavedNote] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // Phase 4.98 — floating sidecar panels. Modes are read reactively so the
+  // stack/float split re-renders the layout; every action goes through
+  // getState() at call time and never subscribes this component to them.
+  const floatCapable = useFloatCapable();
+  const panelModes = usePanelLayoutStore((st) => st.modes);
+  const viewport = useViewport();
+
   useEffect(() => {
     setShowCode(false);
     setShowMod(false);
@@ -84,7 +102,17 @@ export function FocusedAssetOverlay() {
     // hiding its header actions until fullscreen was toggled once to
     // force a resync via the fullscreenchange listener below.
     setIsFullscreen(false);
+    // Collapsed state and stacking order are per-tile, like the open flags
+    // above. Position and mode persist (per device); those are layout, not
+    // tile state.
+    usePanelLayoutStore.getState().resetSession();
   }, [asset?.itemId]);
+
+  // Keep every floating panel reachable when the window shrinks or moves to a
+  // smaller display, and on the first open after a layout saved on a bigger one.
+  useEffect(() => {
+    if (open) usePanelLayoutStore.getState().clampAll(viewport);
+  }, [open, viewport]);
 
   useEffect(() => {
     if (!savedNote) return;
@@ -105,6 +133,32 @@ export function FocusedAssetOverlay() {
       usePlaybackStore.getState().bumpEpoch();
     };
   }, [open]);
+
+  /**
+   * One toggle for Sound / VFX / VCapture / Modulate, shared by the header
+   * buttons and the overflow-menu items so the two can never drift apart.
+   * Keeps the existing rule that opening a panel closes Code (the Code panel
+   * has its own layout), and tells the layout store when a panel opens so the
+   * stack accordion can expand it and collapse the others.
+   */
+  const panelOpenFlags: Record<PanelId, boolean> = {
+    sound: showSound,
+    vfx: showVfx,
+    capture: showCapture,
+    mod: showMod,
+  };
+  const panelSetters: Record<PanelId, (open: boolean) => void> = {
+    sound: setShowSound,
+    vfx: setShowVfx,
+    capture: setShowCapture,
+    mod: setShowMod,
+  };
+  const togglePanel = (id: PanelId) => {
+    const opening = !panelOpenFlags[id];
+    panelSetters[id](opening);
+    setShowCode(false);
+    if (opening) usePanelLayoutStore.getState().noteOpened(id);
+  };
 
   // 'F' toggles fullscreen on the panel itself while an asset is open.
   /**
@@ -231,6 +285,25 @@ export function FocusedAssetOverlay() {
   // here needs to change.
   const canCapture = !asset.isSnapshot && asset.type === 'shader';
 
+  // Which panels are actually showing, and where. Floating panels are out of
+  // the stack's flow, so the layout attributes and the counterweight spacer
+  // below count STACKED panels only — with every panel floating, the tile
+  // sits exactly where it does with nothing open.
+  const modeOf = (id: PanelId) => (floatCapable ? panelModes[id] : 'stack');
+  const soundOpen = showSound && canSound && Boolean(schema);
+  const vfxOpen = showVfx && canVfx;
+  const captureOpen = showCapture && canCapture;
+  const modOpen = showMod && canModulate;
+  const anyPanelOpen = soundOpen || vfxOpen || captureOpen || modOpen;
+  const soundStacked = soundOpen && modeOf('sound') === 'stack';
+  const vfxStacked = vfxOpen && modeOf('vfx') === 'stack';
+  const captureStacked = captureOpen && modeOf('capture') === 'stack';
+  const modStacked = modOpen && modeOf('mod') === 'stack';
+  const anyStacked = soundStacked || vfxStacked || captureStacked || modStacked;
+  const anyFloatingOpen =
+    (soundOpen && !soundStacked) || (vfxOpen && !vfxStacked) || (captureOpen && !captureStacked) || (modOpen && !modStacked);
+  const anyFloatSaved = floatCapable && PANEL_ORDER.some((id) => panelModes[id] === 'float');
+
   const closeOverlay = () => {
     // Exiting fullscreen from the X takes two steps if left to the browser
     // — leave fullscreen, THEN close, or the tab is stuck in a fullscreen
@@ -325,20 +398,14 @@ export function FocusedAssetOverlay() {
     overflowItems.push({
       id: 'sound',
       label: showSound ? 'Hide Sound' : 'Sound',
-      onClick: () => {
-        setShowSound((v) => !v);
-        setShowCode(false);
-      },
+      onClick: () => togglePanel('sound'),
     });
   }
   if (canCapture) {
     overflowItems.push({
       id: 'vcapture',
       label: showCapture ? 'Hide VCapture' : 'VCapture',
-      onClick: () => {
-        setShowCapture((v) => !v);
-        setShowCode(false);
-      },
+      onClick: () => togglePanel('capture'),
     });
   }
   if (!asset.isSnapshot) {
@@ -347,6 +414,15 @@ export function FocusedAssetOverlay() {
       label: saving ? 'Saving…' : 'Save snapshot',
       onClick: () => void saveSnapshot(),
       disabled: saving,
+    });
+  }
+  if (anyFloatSaved) {
+    // The inline Dock-all button below covers wide headers; this is the
+    // same action for the narrow tier, where the header collapses into this menu.
+    overflowItems.push({
+      id: 'dock-panels',
+      label: 'Dock all panels',
+      onClick: () => usePanelLayoutStore.getState().dockAll(),
     });
   }
   if (asset.isSnapshot) {
@@ -401,10 +477,10 @@ export function FocusedAssetOverlay() {
     <div
       className={s.focusScrim}
       data-code={showCode ? 'true' : undefined}
-      data-mod={showMod ? 'true' : undefined}
-      data-sound={showSound ? 'true' : undefined}
-      data-vfx={showVfx ? 'true' : undefined}
-      data-capture={showCapture ? 'true' : undefined}
+      data-mod={modStacked ? 'true' : undefined}
+      data-sound={soundStacked ? 'true' : undefined}
+      data-vfx={vfxStacked ? 'true' : undefined}
+      data-capture={captureStacked ? 'true' : undefined}
       onClick={closeOverlay}
     >
       {/* Real sidecar now renders BEFORE focusPanel in DOM — it appears to
@@ -417,25 +493,38 @@ export function FocusedAssetOverlay() {
           docked against it, so it's genuinely open space. No flex `order`
           needed: DOM order directly matches visual order in this simple
           a flex row (see .focusScrim), so this swap alone moves it. */}
-      {((showMod && canModulate) || (showSound && canSound && schema) || (showVfx && canVfx) || (showCapture && canCapture)) && (
-        <div className={s.sidecarStack}>
-          {showSound && canSound && schema && (
-            <SoundPanel schema={schema} itemId={asset.itemId} onClose={() => setShowSound(false)} />
+      {/* Present whenever ANY panel is open, stacked or floating: a floating
+          panel keeps its place in the tree (inside this element) and only its
+          CSS changes, so its state survives detaching and docking. With
+          nothing stacked this collapses to zero width — see
+          .sidecarStack[data-stacked='false'] and panelSlot.module.css. */}
+      {anyPanelOpen && (
+        <div className={s.sidecarStack} data-stacked={anyStacked ? 'true' : 'false'}>
+          {soundOpen && schema && (
+            <FloatablePanel id="sound">
+              <SoundPanel schema={schema} itemId={asset.itemId} onClose={() => setShowSound(false)} />
+            </FloatablePanel>
           )}
-          {showVfx && canVfx && (
-            <VfxPanel itemId={asset.itemId} onClose={() => setShowVfx(false)} />
+          {vfxOpen && (
+            <FloatablePanel id="vfx">
+              <VfxPanel itemId={asset.itemId} onClose={() => setShowVfx(false)} />
+            </FloatablePanel>
           )}
-          {showCapture && canCapture && (
-            <CapturePanel
-              format={captureFormat}
-              durationSec={captureDuration}
-              onFormatChange={setCaptureFormat}
-              onDurationChange={setCaptureDuration}
-              onClose={() => setShowCapture(false)}
-            />
+          {captureOpen && (
+            <FloatablePanel id="capture">
+              <CapturePanel
+                format={captureFormat}
+                durationSec={captureDuration}
+                onFormatChange={setCaptureFormat}
+                onDurationChange={setCaptureDuration}
+                onClose={() => setShowCapture(false)}
+              />
+            </FloatablePanel>
           )}
-          {showMod && canModulate && (
-            <ModulationPanel controls={modulatableControls} itemId={asset.itemId} onClose={() => setShowMod(false)} />
+          {modOpen && (
+            <FloatablePanel id="mod">
+              <ModulationPanel controls={modulatableControls} itemId={asset.itemId} onClose={() => setShowMod(false)} />
+            </FloatablePanel>
           )}
         </div>
       )}
@@ -487,10 +576,7 @@ export function FocusedAssetOverlay() {
                 <Button
                   variant="ghost"
                   active={showVfx}
-                  onClick={() => {
-                    setShowVfx((v) => !v);
-                    setShowCode(false);
-                  }}
+                  onClick={() => togglePanel('vfx')}
                 >
                   VFX
                 </Button>
@@ -500,10 +586,7 @@ export function FocusedAssetOverlay() {
                 <Button
                   variant="ghost"
                   active={showMod}
-                  onClick={() => {
-                    setShowMod((v) => !v);
-                    setShowCode(false);
-                  }}
+                  onClick={() => togglePanel('mod')}
                 >
                   Modulate
                 </Button>
@@ -524,10 +607,7 @@ export function FocusedAssetOverlay() {
                   <Button
                     variant="ghost"
                     active={showSound}
-                    onClick={() => {
-                      setShowSound((v) => !v);
-                      setShowCode(false);
-                    }}
+                    onClick={() => togglePanel('sound')}
                   >
                     Sound
                   </Button>
@@ -538,10 +618,7 @@ export function FocusedAssetOverlay() {
                     <Button
                       variant="ghost"
                       active={showCapture}
-                      onClick={() => {
-                        setShowCapture((v) => !v);
-                        setShowCode(false);
-                      }}
+                      onClick={() => togglePanel('capture')}
                     >
                       <VCaptureIcon />
                       VCapture
@@ -584,6 +661,19 @@ export function FocusedAssetOverlay() {
               )}
 
               <HeaderOverflowMenu items={overflowItems} />
+
+              {/* Escape hatch for floating panels: visible only while one is
+                  floating, kept outside the collapse group so it is reachable
+                  at every width (the More menu only exists on narrow headers). */}
+              {anyFloatingOpen && (
+                <Tooltip content="Dock all floating panels back into the stack">
+                  <IconButton
+                    label="Dock all panels"
+                    icon={<PanelDockIcon />}
+                    onClick={() => usePanelLayoutStore.getState().dockAll()}
+                  />
+                </Tooltip>
+              )}
 
               {isDeletableUpload && (
                 <Tooltip content="Download this file">
@@ -639,9 +729,7 @@ export function FocusedAssetOverlay() {
           Modulate opens. Now on the right, mirroring the real sidecar's
           move to the left — same counterweight technique, opposite side.
           See .sidecarSpacer's CSS doc. */}
-      {((showMod && canModulate) || (showSound && canSound && schema) || (showVfx && canVfx) || (showCapture && canCapture)) && (
-        <div className={s.sidecarSpacer} aria-hidden="true" />
-      )}
+      {anyStacked && <div className={s.sidecarSpacer} aria-hidden="true" />}
 
       {showCode && hasSource && <CodePanel asset={asset} onClose={() => setShowCode(false)} />}
     </div>

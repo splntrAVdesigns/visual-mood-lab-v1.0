@@ -30,6 +30,14 @@
   flex-direction: column;
   overflow: hidden;
 }
+/* Phase 4.98: the shared .modPanel[data-collapsed] rule only hides
+   .modPanelList, which is the Signals list. Modulation's tabs and its
+   Controllers view live outside that list, so a collapsed Modulation used to
+   keep showing them — which also defeated the stack accordion. Collapse the
+   whole desktop body. */
+.desktopBody[data-collapsed='true'] {
+  display: none;
+}
 .embeddedRoot {
   display: flex;
   flex-direction: column;

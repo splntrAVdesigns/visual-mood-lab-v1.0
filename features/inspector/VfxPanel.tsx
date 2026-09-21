@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
+import { PanelModeButton } from '@/features/panels/PanelModeButton';
+import { usePanelCollapsed } from '@/features/panels/usePanelCollapsed';
 import {
   Button,
   ChevronDownIcon,
@@ -64,7 +66,7 @@ export function VfxPanel({ itemId, onClose, embedded = false }: VfxPanelProps) {
 
   const trackLoaded = useTrackLoaded(itemId);
   const micEnabled = useMicEnabled(itemId);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, toggleCollapsed] = usePanelCollapsed('vfx');
   const [browsing, setBrowsing] = useState(false);
   const [expandedMod, setExpandedMod] = useState<{ instanceId: string; paramId: string } | null>(null);
 
@@ -142,14 +144,15 @@ export function VfxPanel({ itemId, onClose, embedded = false }: VfxPanelProps) {
 
   return (
     <aside className={s.modPanel} data-collapsed={collapsed ? 'true' : undefined} onClick={(event) => event.stopPropagation()} aria-label="VFX">
-      <header className={s.codeHeader}>
+      <header className={s.codeHeader} data-panel-handle="">
         <IconButton
           label={collapsed ? 'Expand VFX' : 'Collapse VFX'}
           icon={collapsed ? <ChevronRightIcon /> : <ChevronDownIcon />}
-          onClick={() => setCollapsed((current) => !current)}
+          onClick={(e) => toggleCollapsed({ additive: e.shiftKey })}
         />
         <span className={s.codeTitle}>VFX</span>
         <span className={s.codeMeta}>{effects.length} of {MAX_EFFECTS_PER_CHAIN}</span>
+        <PanelModeButton id="vfx" />
         <IconButton label="Close VFX" icon={<CloseIcon />} onClick={onClose} />
       </header>
       {body}
