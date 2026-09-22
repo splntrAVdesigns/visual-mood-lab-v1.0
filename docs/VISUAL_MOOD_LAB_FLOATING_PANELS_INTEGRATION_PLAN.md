@@ -3,7 +3,7 @@
 **Scope:** Phase 4.98 Floating Sidecar Panels (next) · Phase 6.5A Stage page + pop-out (deferred) · Phase 6.5B OBS Browser Source link (deferred) · Parked backlog from the earlier Live Output plan  
 **Prepared:** 2026-09-20 (rev 3 of the Live Output integration plan; supersedes rev 2's sequencing)  
 **Source baseline reviewed:** `splntrAVdesigns/visual-mood-lab-v1.0` @ `79bdfc0` (`main`)  
-**Status:** Design complete; **Slice 1 implemented (rev 15) and verified in Chromium — Safari/Firefox preview QA and merge pending.** Sprint and results: `SPRINT_FLOATING_PANELS.md` (§11).
+**Status:** Design complete; **Slice 1 fully SHIPPED (rev 18)** — merged to `main` as `a3cfbe9`, owner-verified on the Vercel preview in Safari and Firefox. A related pre-existing backdrop-click bug was found, fixed, owner-tested, and merged, merged to `main` as `f6566f6` on 2026-09-21 (owner-tested on the preview, then merged); the fix commit is `eaa609a` on top of the Phase 4.98 merge `a3cfbe9`. Slices 2–3 remain deferred. Sprint and results: `SPRINT_FLOATING_PANELS.md` (§11–12).
 
 ---
 

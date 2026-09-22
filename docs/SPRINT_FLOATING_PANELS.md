@@ -3,7 +3,7 @@
 **Design source of truth:** `VISUAL_MOOD_LAB_FLOATING_PANELS_INTEGRATION_PLAN.md` §3  
 **Blocks:** nothing (independent of Phase 5). Sequenced ahead of Phase 5 Playground.  
 **Est:** 4–5 working days (revised up from the earlier 2–3-day core estimate once keyboard access, validated persistence, and the browser QA matrix are counted)  
-**Status:** **Shipped (rev 17) — merged to `main` as `a3cfbe9` on 2026-09-21.** All of P0–P6 done; owner-verified on the Vercel preview in Safari and Firefox. Owner testing then surfaced a pre-existing backdrop-click bug (not caused by this sprint); fixed on `fix/scrim-click`, not yet merged — see §12.  
+**Status:** **Fully shipped (rev 18).** Phase 4.98 merged to `main` as `a3cfbe9` on 2026-09-21; all of P0–P6 done; owner-verified on the Vercel preview in Safari and Firefox. Owner testing then surfaced a pre-existing backdrop-click bug (not caused by this sprint); fixed, owner-tested on its own preview, and merged as merged to `main` as `f6566f6` on 2026-09-21 (owner-tested on the preview, then merged); the fix commit is `eaa609a` on top of the Phase 4.98 merge `a3cfbe9` — see §12.  
 **Branch:** `feat/floating-panels` (from `main`)
 
 ---
@@ -284,4 +284,4 @@ Regression status after both changes: typecheck clean; lint 0 errors / 53 warnin
 - No regressions: the Phase 4.98 browser suite (72/72), the mobile/tablet run (9/9), typecheck, lint (0 errors, the same 53 warnings, none in the new files), and every other verifier including `verify:soak` (68) all still pass.
 - **Not tested:** Safari and Firefox (Chromium only in the build sandbox). The onboarding guide's scrim shares the same code pattern but is a sibling of its panel rather than an ancestor, and the bug did not reproduce there in testing — left unchanged.
 
-**Status:** built on branch `fix/scrim-click` (based on the merged `main`, `a3cfbe9`); **not yet merged.**
+**Status:** **shipped.** Merged to `main` as `f6566f6` on 2026-09-21 (owner-tested on the preview, then merged); the fix commit is `eaa609a` on top of the Phase 4.98 merge `a3cfbe9`. Owner confirmed the merged result passed testing.
