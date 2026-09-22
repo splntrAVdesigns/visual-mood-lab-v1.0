@@ -14,5 +14,5 @@
  */
 export const latestUpdate = {
   date: '2026-09-21',
-  items: ['Floating Sidecar Panels', 'Backdrop-click fix'],
+  items: ['MIDI Control Surface', 'Floating Sidecar Panels', 'Backdrop-click fix'],
 };

@@ -42,6 +42,14 @@ const CROSSING_FRACTION = 0.65;
  * scrolls the update items right to left and pauses off-screen between
  * passes, and a dismiss button.
  *
+ * Dismissing it collapses it to a slim clickable tab rather than removing
+ * it from the page. Clicking that tab re-expands the full banner, any
+ * time — this only sets local `expanded` state; it does NOT clear the
+ * underlying dismissal, so a fresh page load after dismissing still starts
+ * collapsed (no nagging on every visit), but there is always something in
+ * that spot to click if you want to see it again. Only the dismiss button
+ * itself writes the dismissal.
+ *
  * Deliberately its own full-width bar in normal flow, not a corner overlay
  * on the hero or an addition to the header:
  *   - The hero has no free corner on mobile — its subtitle already reaches
@@ -49,28 +57,30 @@ const CROSSING_FRACTION = 0.65;
  *   - The header is already at capacity: search and the onboarding CTA are
  *     both dropped below 720px just to keep it from overflowing.
  * A full-width bar has neither problem and needs no per-breakpoint
- * corner logic — see docs/... for the fuller writeup.
+ * corner logic.
  *
- * Reappears automatically the next time `latestUpdate.date` in content.ts
- * is bumped, even for someone who dismissed a previous update — see
- * lib/updates/dismissal.ts.
+ * The collapsed tab (like the full banner) reappears automatically the
+ * next time `latestUpdate.date` in content.ts is bumped, even for someone
+ * who dismissed a previous update — see lib/updates/dismissal.ts.
  */
 export function UpdateTicker() {
   // Two-phase mount: render nothing until the client has read localStorage,
   // so the server output (nothing) matches the first client render (also
-  // nothing) — no hydration mismatch, and no flash of a banner that turns
-  // out to already be dismissed.
-  const [dismissedDate, setDismissedDate] = useState<string | null>(null);
+  // nothing) — no hydration mismatch, and no flash of the full banner for
+  // someone who already dismissed it.
   const [hydrated, setHydrated] = useState(false);
+  // Session-only: whether the FULL ticker is showing right now, as opposed
+  // to the collapsed tab. Seeded once from the persisted dismissal below;
+  // toggled afterwards by the collapsed tab (expand) and the dismiss
+  // button (collapse) without re-reading storage.
+  const [expanded, setExpanded] = useState(false);
   const windowRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {
-    setDismissedDate(readDismissedDate());
+    setExpanded(shouldShowUpdate(latestUpdate.date, readDismissedDate()));
     setHydrated(true);
   }, []);
-
-  const visible = hydrated && shouldShowUpdate(latestUpdate.date, dismissedDate);
 
   // Measure the window and text widths and derive the scroll distance and
   // duration from them, so the pass always starts fully off the window's
@@ -79,7 +89,7 @@ export function UpdateTicker() {
   // entirely under reduced motion — the CSS media query already turns the
   // scroll off and truncates the text instead, so there's nothing to measure.
   useLayoutEffect(() => {
-    if (!visible) return;
+    if (!hydrated || !expanded) return;
     const windowEl = windowRef.current;
     const trackEl = trackRef.current;
     if (!windowEl || !trackEl) return;
@@ -98,9 +108,23 @@ export function UpdateTicker() {
     const ro = new ResizeObserver(measure);
     ro.observe(windowEl);
     return () => ro.disconnect();
-  }, [visible]);
+  }, [hydrated, expanded]);
 
-  if (!visible) return null;
+  if (!hydrated) return null;
+
+  if (!expanded) {
+    return (
+      <button
+        type="button"
+        className={s.collapsed}
+        onClick={() => setExpanded(true)}
+        aria-label={`Show latest update — ${formatUpdateDate(latestUpdate.date)}`}
+      >
+        <span className={s.collapsedDot} aria-hidden="true" />
+        Latest update
+      </button>
+    );
+  }
 
   return (
     <div className={s.ticker} role="group" aria-label="Latest update">
@@ -118,7 +142,7 @@ export function UpdateTicker() {
         className={s.dismiss}
         onClick={() => {
           writeDismissedDate(latestUpdate.date);
-          setDismissedDate(latestUpdate.date);
+          setExpanded(false);
         }}
       />
     </div>

@@ -31,7 +31,10 @@
 }
 
 .date {
-  color: var(--accent);
+  /* Same colour as the "Latest update:" label it's part of — the accent
+     colour is reserved for the scrolling item text below, so it reads as
+     the one animated/highlighted thing in the strip, not the date too. */
+  color: inherit;
 }
 
 /* The recessed "screen" — a small dark panel distinct from the bar around
@@ -81,6 +84,45 @@
   100% {
     transform: translate(var(--ticker-end, -100%), -50%);
   }
+}
+
+/*
+ * Collapsed state after dismissing (see UpdateTicker.tsx) — a slim, always-
+ * present tab in the same spot the full bar occupies, so there is
+ * somewhere to click to bring it back without waiting for the next
+ * release. Styled after .footerCredit's existing small-mono-dim-text
+ * treatment for consistency with the app's other minimal persistent marks.
+ */
+.collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-mute);
+  font-family: var(--font-mono);
+  font-size: var(--step--2);
+  letter-spacing: var(--tracking-mono);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease);
+}
+
+.collapsed:hover,
+.collapsed:focus-visible {
+  color: var(--text-dim);
+}
+
+.collapsedDot {
+  flex: none;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
 .dismiss {
