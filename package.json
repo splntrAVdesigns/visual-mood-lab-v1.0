@@ -32,7 +32,8 @@
     "backfill:posters": "tsx --env-file=.env.local scripts/backfill-posters.ts",
     "verify:panel-layout": "tsx scripts/verify-panel-layout.ts",
     "verify:backdrop-dismiss": "tsx scripts/verify-backdrop-dismiss.ts",
-    "verify:update-ticker": "tsx scripts/verify-update-ticker.ts"
+    "verify:update-ticker": "tsx scripts/verify-update-ticker.ts",
+    "verify:shape-source": "tsx scripts/verify-shape-source.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",

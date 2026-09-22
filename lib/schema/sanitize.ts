@@ -298,6 +298,7 @@ export function repairControl(input: Control): Repair {
       break;
 
     case 'texture':
+    case 'file':
       if (!(typeof c.default === 'string' || c.default === null)) {
         patch.default = null;
         notes.push('default must be a string or null — using none');
@@ -349,6 +350,12 @@ export function repairControl(input: Control): Repair {
       remove.add('roll');
       notes.push('@roll(min, max) only applies to sliders and steppers — ignored (use @noroll to exclude a control)');
     }
+  }
+
+  // `autoFire` — a trigger's beat auto-fire must name a control id.
+  if (c.kind === 'trigger' && c.autoFire !== undefined && (typeof c.autoFire !== 'string' || !c.autoFire)) {
+    remove.add('autoFire');
+    notes.push('autoFire must name a toggle control — ignored');
   }
 
   // `midi` — only `false` means anything (it hides the MIDI pill).

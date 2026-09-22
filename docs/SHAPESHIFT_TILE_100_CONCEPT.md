@@ -1,6 +1,6 @@
 # Shapeshift — Mood Tile #100 & the Shape Source Primitive
 
-**Status:** concept, decisions locked, not started. No code in the repo yet.
+**Status:** implemented (2026-09-22) — see §14 for what shipped vs. this plan.
 **Roadmap slot:** Phase 4.99 — lands **after 4.97 MIDI** (mostly shipped; gamepad QA this week) and **before 4.95 Media Library**, 5 Playground, and 5.5 Blend & Mask.
 **Companion artifact:** `shapeshift-mockup.html` — interactive WebGL2 prototype of the full pipeline, used to tune motion feel before any GLSL enters `seed/`.
 
@@ -314,3 +314,23 @@ Reminder from the seed playbook: seeding upserts `assets` only. Existing boards 
 3. Is `u_fft` / `u_audioTexture` populated for shader tiles today, or reserved only?
 4. Texture-unit allocation strategy in `pool.ts` vs. the VFX compositor.
 5. Blob lifecycle when a tile holding an uploaded file is deleted.
+
+---
+
+## 14. Implementation notes (as built)
+
+- **Edge quality fix.** The mockup thresholded coverage to 1 bit before the distance transform, which stair-stepped every curve once magnified. Shape Source now seeds the transform from antialiased coverage (TinySDF method) at 1024², with a two-channel field (R fine ±16 px, G coarse ±128 px). Measured on an analytic circle: mean contour error 0.63 → 0.12 px, max 1.00 → 0.55 px. `npm run verify:shape-source` re-checks this.
+- **Contract additions (smaller than §6 predicted — sampler binding already existed):**
+  - `@shape` on a `sampler2D` → the Source control group is injected by `parse-uniforms.ts` (fixed ids `shapeSource`, `shapeText`, `shapeFont`, `shapeLeading`, `shapeJustify`, `shapeUpper`, `shapeFile`, `shapeKey`, `shapeThreshold`, `shapeKeyInvert`, `shapeLibrary`), host-bound, `showIf` per source, never rolled.
+  - `@trigger(toggleId)` on a `vec2` → a uniform-bound trigger; the renderer writes `[fireCount, secondsSinceFire]`; the named toggle enables bass-transient auto-fire.
+  - New control kind `file` (per-tile upload → Vercel Blob URL, SVG sanitised client-side before upload).
+- **Renderer.** `ShaderRenderer.bindShape()` rebuilds the spec from params per frame, requests a new field only after 140 ms of stability (typing debounce), and keeps the previous shape on screen until the new one is ready.
+- **Worker.** `lib/shape-source/sdf.worker.ts` builds the field off-thread; falls back to the main thread if a worker can't start.
+- **Fonts.** The curated manifest set; text renders at each face's heaviest weight. Default: Inter.
+- **Library.** Original shapes: Vessel, Orbit, Bolt, Arch, Burst.
+
+## 15. Sprint 100.1 — items 1 & 2 (as built)
+
+- **Performance.** Motion runs once per pixel; only the front layer is filled; back layers are one-texture-read silhouettes composited front-to-back with early exit; edge-wobble noise is computed once and shared. Measured in CPU-emulated WebGL (relative only): stack 10 ×3.0, stack 16 + Mesh + chroma ×4.8. Depth stack default 10 → 4, Roll window 1–6.
+- **Element grid.** Rows/Columns → Density (12–120, Roll 24–80) + Cell aspect. Neighbouring cells are searched when elements are larger than their cell, so sizes above 1 overlap instead of clipping. Depth sizing is normalised to each shape's deepest point (`u_shapeDepth`, host-fed from the distance-field builder). New: Grid follows shape, Extrude elements (off by default — elements stay flat). Mesh gets its own Mesh lines control.
+- **Migration.** Saved `u_rows`/`u_cols` values are dropped by `hydrate()` (keys the schema no longer declares), so existing tiles pick up the new Density defaults.

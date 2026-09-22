@@ -176,7 +176,7 @@ export type Binding =
 
 export type ControlKind =
   | 'slider' | 'stepper' | 'toggle' | 'color' | 'select'
-  | 'xy' | 'vec3' | 'text' | 'trigger' | 'texture';
+  | 'xy' | 'vec3' | 'text' | 'trigger' | 'texture' | 'file';
 
 interface ControlCommon {
   /** Unique within a schema. Also the key in ParamState. */
@@ -345,6 +345,12 @@ export interface TriggerControl extends ControlCommon {
   event: string;
   /** Renders in the destructive style. */
   danger?: boolean;
+  /**
+   * Id of a toggle control. While that toggle is on, the renderer fires this
+   * trigger itself on every audio transient (`@trigger(u_beatCut)` in GLSL).
+   * Only meaningful for a uniform-bound trigger — see ShaderRenderer.
+   */
+  autoFire?: string;
 }
 
 /** Picks another library asset (or an upload) to feed a sampler. */
@@ -376,10 +382,22 @@ export interface FontControl extends ControlCommon {
   category?: 'sans' | 'mono' | 'display' | 'serif' | 'any';
 }
 
+/**
+ * A file uploaded into THIS tile only (Shapeshift's shape upload). Unlike
+ * TextureControl it does not pick another board asset: the file goes straight
+ * to storage and the control's value is its public URL, or null for none.
+ */
+export interface FileControl extends ControlCommon {
+  kind: 'file';
+  default: string | null;
+  /** MIME types the picker offers, e.g. ['image/svg+xml', 'image/png']. */
+  accept?: string[];
+}
+
 export type Control =
   | SliderControl | StepperControl | ToggleControl | ColorControl
   | SelectControl | XYControl | Vec3Control | TextControl
-  | TriggerControl | TextureControl | FontControl;
+  | TriggerControl | TextureControl | FontControl | FileControl;
 
 /* ------------------------------------------------------------------ *
  * Schema
@@ -651,6 +669,8 @@ export function coerce(control: Control, value: ParamValue, state?: ParamState):
       return control.maxLength ? s.slice(0, control.maxLength) : s;
     }
     case 'texture':
+      return typeof value === 'string' || value === null ? value : control.default;
+    case 'file':
       return typeof value === 'string' || value === null ? value : control.default;
     case 'font':
       // Deliberately not checked against lib/fonts/manifest.ts here — this
