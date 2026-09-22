@@ -39,11 +39,22 @@
  *   @roll(min, max)       Roll / Mutate sample this window (sliders & steppers)
  *   @noroll               Roll / Mutate never touch this control
  *   @nomidi               hide the MIDI pill on this control's inspector row
+ *   @shape                on a sampler2D: the host feeds it a Shape Source
+ *                          distance field (typed text / uploaded SVG or PNG /
+ *                          library shape) and the whole source control group
+ *                          is added automatically — see shapeSourceControls()
+ *                          below and lib/shape-source/. `@default(TEXT)` seeds
+ *                          the starting text.
+ *   @trigger(toggleId)    on a vec2: a fire-and-forget button. The renderer
+ *                          writes [fireCount, secondsSinceFire]. The optional
+ *                          argument names a toggle control that, while on,
+ *                          re-fires it on every audio transient.
  *
  * Location: lib/gl/parse-uniforms.ts
  */
 
 import { sanitizeSchema } from '@/lib/schema/sanitize';
+import { LIBRARY_SHAPES, DEFAULT_LIBRARY_ID } from '@/lib/shape-source/library';
 import {
   type Control,
   type ControlSchema,
@@ -84,6 +95,10 @@ export interface Annotations {
       natural than opening a dropdown. See SelectControl.displayStyle in
       control-schema.ts. */
   strip?: boolean;
+  /** @shape on a sampler2D — host-fed Shape Source texture. */
+  shape?: boolean;
+  /** @trigger[(toggleId)] on a vec2 — fire-and-forget uniform. */
+  trigger?: { autoFire?: string };
 }
 
 export interface ParsedUniform {
@@ -172,6 +187,7 @@ export function parseUniforms(source: string, opts: ParseOptions = {}): ParseRes
   const uniforms = extractUniforms(source, reserved, warnings);
   const controls: Control[] = [];
   const seen = new Set<string>();
+  let shapeSamplers = 0;
 
   for (const u of uniforms) {
     if (seen.has(u.name)) {
@@ -201,6 +217,25 @@ export function parseUniforms(source: string, opts: ParseOptions = {}): ParseRes
       continue;
     }
     if (u.annotations.hidden) continue;
+
+    if (u.annotations.shape) {
+      if (u.glslType !== 'sampler2D') {
+        warnings.push({
+          level: 'warn', name: u.name, line: u.line,
+          message: `@shape only applies to a sampler2D — "${u.name}" is a ${u.glslType} and was mapped normally.`,
+        });
+      } else if (shapeSamplers > 0) {
+        warnings.push({
+          level: 'warn', name: u.name, line: u.line,
+          message: 'Only one @shape sampler per shader — the Shape Source controls already belong to an earlier one.',
+        });
+        continue;
+      } else {
+        shapeSamplers++;
+        controls.push(...shapeSourceControls(u, defaultGroup));
+        continue;
+      }
+    }
 
     const control = controlFor(u, { defaultGroup, modDefault }, warnings);
     if (control) controls.push(control);
@@ -452,6 +487,8 @@ export function parseAnnotations(text: string): Annotations {
       case 'noroll': a.roll = false; break;
       case 'nomidi': a.midi = false; break;
       case 'strip': a.strip = true; break;
+      case 'shape': a.shape = true; break;
+      case 'trigger': a.trigger = { autoFire: arg || undefined }; break;
       case 'step': {
         const n = Number(arg);
         if (Number.isFinite(n)) a.step = n;
@@ -549,6 +586,25 @@ function controlFor(
   };
 
   const modulatable = a.mod ?? ctx.modDefault;
+
+  // A @trigger vec2 is a button, not an XY pad: the renderer owns both
+  // components (fire count, seconds since the last fire) — see
+  // ShaderRenderer.emit(). Declared as vec2 rather than float so a shader can
+  // ease out of a fire without the host having to hand it a second uniform.
+  if (a.trigger) {
+    if (type !== 'vec2') {
+      warnings.push({
+        level: 'warn', name: u.name, line: u.line,
+        message: `@trigger only applies to a vec2 — "${u.name}" is a ${type} and was mapped normally.`,
+      });
+    } else {
+      return {
+        ...common, kind: 'trigger', default: null,
+        event: `trigger:${u.name}`,
+        autoFire: a.trigger.autoFire,
+      };
+    }
+  }
 
   // A @select on a numeric uniform wins over the type's usual mapping.
   if (a.select && (type === 'float' || type === 'int' || type === 'uint')) {
@@ -659,6 +715,82 @@ function controlFor(
     default:
       return null;
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * @shape — the Shape Source control group
+ * ------------------------------------------------------------------ */
+
+/** Default face for text shapes: a heavy grotesk reads best as a mask. */
+export const SHAPE_DEFAULT_FONT = 'inter';
+
+/**
+ * One `@shape` sampler expands into the whole source UI: pick Text / Upload /
+ * Library, then only that source's own controls are shown (showIf). Ids are
+ * fixed — a shader has at most one shape sampler — because they are saved in
+ * tile params and read by ShaderRenderer. Every one is host-bound (no uniform
+ * of its own) and never rolled (Roll must not throw away someone's typed text
+ * or uploaded file). MIDI visibility is left to ControllerBindButton's own
+ * per-kind rules — `midi: false` is reserved for seed controls (see
+ * verify-schema-fuzz §9).
+ */
+function shapeSourceControls(u: ParsedUniform, defaultGroup: string): Control[] {
+  const a = u.annotations;
+  const group = a.group ?? defaultGroup;
+  const binding = { target: 'host' as const, property: `shape:${u.name}` };
+  const base = { group, binding, roll: false as const };
+  const isText = { equals: ['shapeSource', 'text'] as [string, string] };
+  const isFile = { equals: ['shapeSource', 'upload'] as [string, string] };
+  const isLibrary = { equals: ['shapeSource', 'library'] as [string, string] };
+  const defaultText = typeof a.default === 'string' && a.default.trim() ? a.default.trim() : 'SHAPE SHIFT';
+
+  return [
+    {
+      ...base, id: 'shapeSource', kind: 'select', label: a.label ?? 'Source',
+      default: 'text', displayStyle: 'strip',
+      options: [
+        { value: 'text', label: 'Text' },
+        { value: 'upload', label: 'Upload' },
+        { value: 'library', label: 'Library' },
+      ],
+    },
+    {
+      ...base, id: 'shapeText', kind: 'text', label: 'Text', default: defaultText,
+      multiline: true, maxLength: 240, hint: 'Every space starts a new line.', showIf: isText,
+    },
+    { ...base, id: 'shapeFont', kind: 'font', label: 'Font', default: SHAPE_DEFAULT_FONT, showIf: isText },
+    {
+      ...base, id: 'shapeLeading', kind: 'slider', label: 'Leading', default: 0.92,
+      min: 0.6, max: 1.4, step: 0.01, modulatable: false, showIf: isText,
+    },
+    { ...base, id: 'shapeJustify', kind: 'toggle', label: 'Justify each line', default: true, showIf: isText },
+    { ...base, id: 'shapeUpper', kind: 'toggle', label: 'Uppercase', default: true, showIf: isText },
+    {
+      ...base, id: 'shapeFile', kind: 'file', label: 'Shape file', default: null,
+      accept: ['image/svg+xml', 'image/png', 'image/webp', 'image/jpeg'],
+      hint: 'SVG, transparent PNG, WebP or JPG.', showIf: isFile,
+    },
+    {
+      ...base, id: 'shapeKey', kind: 'select', label: 'Key', default: 'auto', displayStyle: 'strip',
+      options: [
+        { value: 'auto', label: 'Auto' },
+        { value: 'alpha', label: 'Alpha' },
+        { value: 'luma', label: 'Luminance' },
+      ],
+      showIf: isFile,
+    },
+    {
+      ...base, id: 'shapeThreshold', kind: 'slider', label: 'Threshold', default: 0.5,
+      min: 0.05, max: 0.95, step: 0.01, modulatable: false, showIf: isFile,
+    },
+    { ...base, id: 'shapeKeyInvert', kind: 'toggle', label: 'Invert key', default: false, showIf: isFile },
+    {
+      ...base, id: 'shapeLibrary', kind: 'select', label: 'Shape', default: DEFAULT_LIBRARY_ID,
+      displayStyle: 'strip',
+      options: Object.entries(LIBRARY_SHAPES).map(([value, v]) => ({ value, label: v.label })),
+      showIf: isLibrary,
+    },
+  ];
 }
 
 /* ------------------------------------------------------------------ *

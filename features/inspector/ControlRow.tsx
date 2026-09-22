@@ -19,6 +19,7 @@ import { TextControlRow } from './controls/TextControl';
 import { TriggerControlRow } from './controls/TriggerControl';
 import { TextureControlRow } from './controls/TextureControl';
 import { FontControlRow } from './controls/FontControl';
+import { FileControlRow } from './controls/FileControl';
 
 interface ControlRowProps {
   control: Control;
@@ -106,5 +107,7 @@ function ControlBody({
       return <TextureControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />;
     case 'font':
       return <FontControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />;
+    case 'file':
+      return <FileControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />;
   }
 }

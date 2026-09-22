@@ -6,6 +6,7 @@ import { parseUniforms } from '@/lib/gl/parse-uniforms';
 import { carryParams } from '@/lib/schema/carry';
 import { getGLStage, glUnavailableReason, peekGLStage, type CompiledProgram, type UniformSetter } from '@/lib/gl/context-pool';
 import { getTextureImage } from '@/lib/gl/texture-source';
+import { getShapeCanvas, getShapeDepth, specKey, type ShapeSpec, type ShapeKey } from '@/lib/shape-source';
 import type { AssetRenderer, CaptureOpts, Quality, RenderContext } from './types';
 
 /**
@@ -61,6 +62,23 @@ export class ShaderRenderer implements AssetRenderer {
    * this when it mounts a renderer.
    */
   textureSources: Record<string, string> = {};
+
+  /**
+   * `@trigger` vec2 uniforms: fire count + when it last fired. Written as
+   * [count, secondsSinceFire] every frame so a shader can ease out of a fire
+   * (Shapeshift's Re-cut snaps its shards back in over ~250 ms).
+   */
+  private triggers = new Map<string, { count: number; firedAt: number }>();
+  /** Transient detector for `@trigger(toggleId)` beat auto-fire. */
+  private beat = { baseline: 0, prev: 0, lastFire: 0 };
+
+  /** `@shape` sampler state — see bindShape(). */
+  private shape: {
+    canvas: HTMLCanvasElement | null;
+    shownKey: string | null;
+    wantKey: string | null;
+    wantSince: number;
+  } = { canvas: null, shownKey: null, wantKey: null, wantSince: 0 };
 
   constructor(assetId: string) {
     this.assetId = assetId;
@@ -264,6 +282,7 @@ export class ShaderRenderer implements AssetRenderer {
       set('u_mid', avg(ctx.audio, 8, 32));
       set('u_high', avg(ctx.audio, 32, 64));
       set('u_rms', avg(ctx.audio, 0, 64));
+      this.detectBeat(avg(ctx.audio, 0, 8));
     }
 
     const back = this.backbuffer
@@ -283,6 +302,8 @@ export class ShaderRenderer implements AssetRenderer {
 
   private applyParams(set: UniformSetter, stage: NonNullable<ReturnType<typeof getGLStage>>): void {
     if (!this.schema) return;
+
+    this.bindShape(set, stage);
 
     for (const control of this.schema.controls) {
       const binding = control.binding;
@@ -322,14 +343,126 @@ export class ShaderRenderer implements AssetRenderer {
           if (tex) set(binding.name, tex);
           break;
         }
-        case 'trigger':
+        case 'trigger': {
+          // Only `@trigger` vec2 uniforms reach here (a plain trigger has no
+          // uniform binding and was skipped above).
+          const t = this.triggers.get(binding.name);
+          const age = t ? (performance.now() - t.firedAt) / 1000 : 1e4;
+          set(binding.name, [t?.count ?? 0, Math.min(age, 1e4)]);
           break;
+        }
         default:
           if (typeof value === 'number' || typeof value === 'boolean' || Array.isArray(value)) {
             set(binding.name, value as number | boolean | number[]);
           }
       }
     }
+  }
+
+  /**
+   * Feeds a `@shape` sampler from Shape Source (lib/shape-source). The spec is
+   * rebuilt from this tile's shape* params every frame (cheap: a string key),
+   * but a NEW distance field is only requested once the key has been stable
+   * for SHAPE_SETTLE_MS — so typing a word builds one shape, not one per
+   * keystroke — and the previous shape keeps rendering until the new one is
+   * ready, so the tile never blanks mid-edit.
+   */
+  private bindShape(set: UniformSetter, stage: NonNullable<ReturnType<typeof getGLStage>>): void {
+    const control = this.schema?.controls.find(
+      (c) => c.binding?.target === 'host' && c.binding.property.startsWith('shape:'),
+    );
+    if (!control || control.binding?.target !== 'host') return;
+    const sampler = control.binding.property.slice('shape:'.length);
+
+    const spec = this.shapeSpec();
+    const key = specKey(spec);
+    const now = performance.now();
+    const st = this.shape;
+
+    if (key !== st.wantKey) {
+      st.wantKey = key;
+      st.wantSince = now;
+    }
+    const settled = !st.canvas || now - st.wantSince >= SHAPE_SETTLE_MS;
+    if (key !== st.shownKey && settled) {
+      const canvas = getShapeCanvas(spec);
+      if (canvas) {
+        st.canvas = canvas;
+        st.shownKey = key;
+      }
+    }
+
+    const tex = st.canvas
+      ? stage.uploadTexture(`${this.assetId}:shape:${sampler}`, st.canvas)
+      : stage.getFallbackTexture();
+    if (tex) set(sampler, tex);
+    // `<sampler>Depth` (e.g. u_shapeDepth), if the shader declares it: the
+    // shape's deepest inside distance, so depth effects normalise per shape.
+    set(`${sampler}Depth`, st.canvas ? getShapeDepth(st.canvas) : 0);
+  }
+
+  private shapeSpec(): ShapeSpec {
+    const p = this.params;
+    const str = (id: string, d: string) => (typeof p[id] === 'string' ? (p[id] as string) : d);
+    const num = (id: string, d: number) => (typeof p[id] === 'number' ? (p[id] as number) : d);
+    const bool = (id: string, d: boolean) => (typeof p[id] === 'boolean' ? (p[id] as boolean) : d);
+
+    switch (str('shapeSource', 'text')) {
+      case 'upload': {
+        const url = str('shapeFile', '');
+        if (!url) return { kind: 'empty' };
+        const key = str('shapeKey', 'auto');
+        return {
+          kind: 'file', url,
+          key: (key === 'alpha' || key === 'luma' ? key : 'auto') as ShapeKey,
+          threshold: num('shapeThreshold', 0.5),
+          invert: bool('shapeKeyInvert', false),
+        };
+      }
+      case 'library':
+        return { kind: 'library', id: str('shapeLibrary', 'vessel') };
+      default:
+        return {
+          kind: 'text',
+          text: str('shapeText', ''),
+          fontId: str('shapeFont', 'inter'),
+          upper: bool('shapeUpper', true),
+          justify: bool('shapeJustify', true),
+          leading: num('shapeLeading', 0.92),
+        };
+    }
+  }
+
+  private fireTrigger(uniform: string): void {
+    const t = this.triggers.get(uniform) ?? { count: 0, firedAt: 0 };
+    t.count += 1;
+    t.firedAt = performance.now();
+    this.triggers.set(uniform, t);
+  }
+
+  /**
+   * Bass transient -> fire every `@trigger(toggleId)` whose toggle is on.
+   * Baseline-deviation, not ratio-to-peak (see BandAutoGain for why): a hit
+   * is a rise well above the slow running level, with a cooldown so one kick
+   * drum is one fire.
+   */
+  private detectBeat(bass: number): void {
+    const b = this.beat;
+    const now = performance.now();
+    const rising = bass > b.prev;
+    const onset = rising && bass > b.baseline * 1.35 + 0.04 && now - b.lastFire > BEAT_COOLDOWN_MS;
+    b.baseline += (bass - b.baseline) * 0.03;
+    b.prev = bass;
+    if (!onset || !this.schema) return;
+
+    let fired = false;
+    for (const c of this.schema.controls) {
+      if (c.kind !== 'trigger' || !c.autoFire || c.binding?.target !== 'uniform') continue;
+      if (this.params[c.autoFire] !== true) continue;
+      this.fireTrigger(c.binding.name);
+      fired = true;
+    }
+    if (fired) b.lastFire = now;
   }
 
   /** True once a texture control actually points at an asset. */
@@ -384,6 +517,8 @@ export class ShaderRenderer implements AssetRenderer {
     this.pendingEvents.push(event);
     // Bumping the seed is what a shader-side "reseed" actually means.
     if (event === 'reseed') this.seed = Math.random() * 1000;
+    // `@trigger` uniforms dispatch as `trigger:<uniformName>`.
+    else if (event.startsWith('trigger:')) this.fireTrigger(event.slice('trigger:'.length));
   }
 
   setQuality(q: Quality): void { this.quality = q; }
@@ -412,6 +547,11 @@ export class ShaderRenderer implements AssetRenderer {
     this.compiled = null;
   }
 }
+
+/** Settle time before a changed shape source is rebuilt (typing debounce). */
+const SHAPE_SETTLE_MS = 140;
+/** Minimum gap between beat auto-fires. */
+const BEAT_COOLDOWN_MS = 280;
 
 function avg(data: Float32Array, from: number, to: number): number {
   let sum = 0;

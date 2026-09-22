@@ -1142,6 +1142,20 @@
         "mesh",
         "glow"
       ]
+    },
+    {
+      "slug": "shapeshift",
+      "type": "shader",
+      "file": "shaders/shapeshift.frag",
+      "title": "Shapeshift",
+      "tags": [
+        "shape",
+        "type",
+        "svg",
+        "mask",
+        "audio-reactive",
+        "generative"
+      ]
     }
   ]
 }
