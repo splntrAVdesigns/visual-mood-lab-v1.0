@@ -3,7 +3,7 @@
 **Design source of truth:** `VISUAL_MOOD_LAB_FLOATING_PANELS_INTEGRATION_PLAN.md` §3  
 **Blocks:** nothing (independent of Phase 5). Sequenced ahead of Phase 5 Playground.  
 **Est:** 4–5 working days (revised up from the earlier 2–3-day core estimate once keyboard access, validated persistence, and the browser QA matrix are counted)  
-**Status:** **Built (rev 15) — awaiting Safari/Firefox preview QA and merge.** P0–P4 implemented and verified in Chromium; see §11 for results, deviations, and what remains.  
+**Status:** **Shipped (rev 17) — merged to `main` as `a3cfbe9` on 2026-09-21.** All of P0–P6 done; owner-verified on the Vercel preview in Safari and Firefox. Owner testing then surfaced a pre-existing backdrop-click bug (not caused by this sprint); fixed on `fix/scrim-click`, not yet merged — see §12.  
 **Branch:** `feat/floating-panels` (from `main`)
 
 ---
@@ -250,7 +250,7 @@ Implemented on branch `feat/floating-panels`. P0–P4 are built and verified in 
 ### Observations for the owner's decision (not changed)
 
 - ~~Floating a panel with the button leaves it exactly where it was~~ — **resolved after owner review:** panels now detach anchored by their right edge, widen leftward away from the tile, and the button adds a 32 px leftward shift (see "Post-review changes" below). One remaining trade-off: the rest of the stack still reflows up into the floated panel's old row, so a floated top panel can partly cover the next one until it is dragged away.
-- **Pre-existing, unrelated to floating:** a mouse press that starts inside any sidecar panel and is released over the bare scrim closes the overlay (the browser sends the `click` to the common ancestor, the scrim). It is unchanged with floating off. Worth a separate look, since it also affects slider drags that end outside a panel.
+- ~~Pre-existing, unrelated to floating: a mouse press that starts inside any sidecar panel and is released over the bare scrim closes the overlay~~ — **fixed, see §12.** (The original note here additionally claimed this affected slider drags ending outside their panel; that was incorrect — `Slider` captures the pointer, so its drags were never affected. Only presses on plain content, such as panel text or the tile, were.)
 
 ### Post-review changes (owner local testing, 2026-09-21)
 
@@ -260,3 +260,28 @@ Owner testing on a heavy p5 tile confirmed floating and the accordion work as in
 2. **Drag speed.** Baseline on an identical 90-move scripted drag: 89 layout passes, 94 style recalcs (43 ms), 8.6 ms layout. Now: **1** layout pass, 94 recalcs (**17.7 ms**), **0.1 ms** layout. Mechanism: transform-only movement, one clamp/snap per frame from the latest sample, `left`/`top` written once on release, cached Inspector-width lookup. The remaining per-frame cost is one cheap inline-style update. On a very heavy tile the drag is still bounded by that tile's frame rate, since both share the main thread.
 
 Regression status after both changes: typecheck clean; lint 0 errors / 53 warnings (baseline; none in new files); `verify:panel-layout` 82; all other verifiers unchanged; browser suite 72/72; mobile and touch-tablet runs 9/9. Still unverified: Safari, Firefox, real-GPU frame rate.
+
+## 12. Scrim-click fix (rev 17, 2026-09-21)
+
+**Owner report (verbatim intent):** clicking a panel isn't limited to floating panels — pressing anywhere inside the focused view's content and releasing over the bare background closed the entire view.
+
+**Root cause.** Every dismissible backdrop in the app (`FocusedAssetOverlay`'s scrim, `CommandPalette`'s scrim, the shared `Dialog`) closed on `onClick` when `e.target === e.currentTarget` — the standard "did the click land on the backdrop" check. But the backdrop is an ANCESTOR of its panel, and when a mouse press begins on content and the release lands on the bare backdrop, the browser fires the resulting `click` event on the nearest common ancestor of the two targets — the backdrop itself. The check passed even though neither the press nor the release actually happened on empty backdrop.
+
+**Correction to the note added in rev 16.** That note said this "also affects a slider drag that ends outside the panel." Verified false: `Slider` calls `setPointerCapture` on `pointerdown`, so every subsequent `pointermove`/`pointerup` for that gesture is delivered to the slider regardless of where the pointer physically is, and the panel's own `onClick={(e) => e.stopPropagation()}` then absorbs the resulting click. A slider drag never triggered this bug. What did: a press on plain panel content (body text, the "Kept for this session" notice, etc.) or on the tile itself, released over the bare scrim.
+
+**Fix.**
+
+- **`lib/ui/backdrop-dismiss.ts`** (new): pure decision logic — dismiss only if the pointer sequence's press AND release both landed on the backdrop, tracked from `pointerdown`/`pointerup` and consulted on `click`. A click with no observed pointer sequence (keyboard activation, assistive technology, or a press that began inside a cross-origin iframe such as the p5 sandbox, which never reports to this document) falls back to the click-target check — the pre-existing behavior, unchanged for those paths.
+- **`components/ui/useBackdropDismiss.ts`** (new): a small hook wrapping that logic — `onPointerDownCapture`/`onPointerUpCapture`/`onPointerCancelCapture`/`onClick`, spread onto a backdrop element. Capture-phase, so it sees every press and release beneath it even when a descendant panel calls `stopPropagation`.
+- **Adopted by all three backdrops:** `FocusedAssetOverlay` (with an `isBackdrop` override so the sidecar stack's gaps and the counterweight spacer still count as backdrop — clicking between two stacked panels still closes the view, unchanged), `CommandPalette`, and `Dialog` (disabled in `Dialog`'s modeless sidecar mode, which has no scrim interception to begin with).
+- **`scripts/verify-backdrop-dismiss.ts`** (new) + `verify:backdrop-dismiss` npm script: 21 checks — every press/release/click combination exhaustively enumerated (exactly 1 of 8 dismisses), the no-pointer-sequence fallback, an unobserved release, and that no gesture's state leaks into the next click.
+
+**Verification.**
+
+- Reproduced first: a Playwright suite against unfixed `main` failed 6 of 25 checks — press on panel text, press on the tile, press on the backdrop released on the tile, the command palette, and the Upload dialog. (The slider check was in that batch too; it passed even on the unfixed build, confirming sliders were never affected.)
+- After the fix: all 25 browser checks pass, including everything that must still close the view (a plain backdrop click, a click in the gap between two stacked panels, Escape, the X button, a touch tap on a coarse-pointer tablet) and everything that must not (any of the four backdrops, in both press/release orders, plus a slider drag as a sanity check that dragging itself is unaffected).
+- `verify:backdrop-dismiss`: 21/21. Mutation-tested with four injected bugs — including reintroducing the exact original bug (click-target-only) — each caught.
+- No regressions: the Phase 4.98 browser suite (72/72), the mobile/tablet run (9/9), typecheck, lint (0 errors, the same 53 warnings, none in the new files), and every other verifier including `verify:soak` (68) all still pass.
+- **Not tested:** Safari and Firefox (Chromium only in the build sandbox). The onboarding guide's scrim shares the same code pattern but is a sibling of its panel rather than an ancestor, and the bug did not reproduce there in testing — left unchanged.
+
+**Status:** built on branch `fix/scrim-click` (based on the merged `main`, `a3cfbe9`); **not yet merged.**

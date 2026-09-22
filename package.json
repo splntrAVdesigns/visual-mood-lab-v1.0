@@ -30,7 +30,8 @@
     "db:push": "node --env-file=.env.local ./node_modules/.bin/drizzle-kit push",
     "db:migrate": "tsx --env-file=.env.local scripts/migrate.ts",
     "backfill:posters": "tsx --env-file=.env.local scripts/backfill-posters.ts",
-    "verify:panel-layout": "tsx scripts/verify-panel-layout.ts"
+    "verify:panel-layout": "tsx scripts/verify-panel-layout.ts",
+    "verify:backdrop-dismiss": "tsx scripts/verify-backdrop-dismiss.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",

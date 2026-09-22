@@ -11,6 +11,7 @@ import {
   IconButton,
   PanelDockIcon,
   Tooltip,
+  useBackdropDismiss,
   VCaptureIcon,
 } from '@/components/ui';
 import {
@@ -46,6 +47,21 @@ import { getPool } from '@/lib/render/pool';
 import { isVisible } from '@/renderers/control-schema';
 import { CAPTURE_DEFAULT_DURATION_SEC, type CaptureFormat } from '@/lib/capture/types';
 import s from '../features.module.css';
+
+/**
+ * What counts as "the backdrop" for the focused view: the scrim itself and any
+ * of its transparent non-content children (the sidecar stack's gaps, the
+ * counterweight spacer). The tile, every sidecar panel (stacked or floating),
+ * and the Code panel are content: a press or release there is never a backdrop
+ * click.
+ */
+const FOCUSED_CONTENT = '[role="dialog"], aside, [data-panel-id]';
+function isFocusedBackdrop(target: Element | null, backdrop: Element): boolean {
+  if (!target) return false;
+  if (target === backdrop) return true;
+  const content = target.closest(FOCUSED_CONTENT);
+  return !(content && backdrop.contains(content));
+}
 
 /**
  * The enlarge-on-click view: a centered panel over a dimmed board, showing
@@ -243,6 +259,22 @@ export function FocusedAssetOverlay() {
     };
   }, [open]);
 
+  const closeOverlay = () => {
+    // Exiting fullscreen from the X takes two steps if left to the browser
+    // — leave fullscreen, THEN close, or the tab is stuck in a fullscreen
+    // context showing nothing once the panel unmounts.
+    if (document.fullscreenElement) void document.exitFullscreen();
+    closeAsset();
+  };
+
+  // Backdrop click closes the view — but only when the press AND the release
+  // both landed on the backdrop. A press that starts on the tile or inside a
+  // panel (text selection, a drag that overshoots) and ends over the bare
+  // scrim used to close everything, because the browser fires that click on
+  // the scrim, their common ancestor. Declared above the early return so the
+  // hook order never changes.
+  const backdropDismiss = useBackdropDismiss(closeOverlay, { isBackdrop: isFocusedBackdrop });
+
   if (!open || !asset) return null;
 
   const hasSource = Boolean(asset.source);
@@ -303,14 +335,6 @@ export function FocusedAssetOverlay() {
   const anyFloatingOpen =
     (soundOpen && !soundStacked) || (vfxOpen && !vfxStacked) || (captureOpen && !captureStacked) || (modOpen && !modStacked);
   const anyFloatSaved = floatCapable && PANEL_ORDER.some((id) => panelModes[id] === 'float');
-
-  const closeOverlay = () => {
-    // Exiting fullscreen from the X takes two steps if left to the browser
-    // — leave fullscreen, THEN close, or the tab is stuck in a fullscreen
-    // context showing nothing once the panel unmounts.
-    if (document.fullscreenElement) void document.exitFullscreen();
-    closeAsset();
-  };
 
   /**
    * Save the current parameters as a new snapshot card AND bounce a PNG of
@@ -481,7 +505,7 @@ export function FocusedAssetOverlay() {
       data-sound={soundStacked ? 'true' : undefined}
       data-vfx={vfxStacked ? 'true' : undefined}
       data-capture={captureStacked ? 'true' : undefined}
-      onClick={closeOverlay}
+      {...backdropDismiss}
     >
       {/* Real sidecar now renders BEFORE focusPanel in DOM — it appears to
           the tile's LEFT. Moved from the right (where it used to render
