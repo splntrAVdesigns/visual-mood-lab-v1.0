@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { BoardGrid } from '@/features/board/BoardGrid';
 import { Hero } from '@/features/board/Hero';
+import { UpdateTicker } from '@/features/updates/UpdateTicker';
 import { InspectorDrawer } from '@/features/inspector/InspectorDrawer';
 import { FocusedAssetOverlay } from '@/features/board/FocusedAssetOverlay';
 import { MobileFocusedView } from '@/features/board/MobileFocusedView';
@@ -113,6 +114,7 @@ export function AppShell({ assets, needsSeed = false, focusItemId, user = null }
       <AppChrome assets={assets} needsSeed={needsSeed} user={user} />
 
       <main className={s.main} data-inspector-open={inspectorOpen ? 'true' : 'false'}>
+        <UpdateTicker />
         <Hero />
         <BoardGrid />
       </main>

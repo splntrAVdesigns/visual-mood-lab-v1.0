@@ -1,0 +1,118 @@
+/**
+ * "Latest Update" ticker — a thin strip between the header and the hero.
+ * See UpdateTicker.tsx for why this is its own full-width bar rather than
+ * a hero corner overlay or an addition to the header.
+ *
+ * The bar itself spans the full width so it works identically at every
+ * breakpoint with no corner logic to get right on mobile, but the actual
+ * "LED window" that scrolls — .window / .track below — is capped at a
+ * fixed max-width, so the animation stays a small, contained feature of
+ * the bar rather than moving across the whole section.
+ */
+
+.ticker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 32px;
+  padding: 0 var(--space-4);
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.label {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  letter-spacing: var(--tracking-mono);
+  color: var(--text-dim);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.date {
+  color: var(--accent);
+}
+
+/* The recessed "screen" — a small dark panel distinct from the bar around
+   it, echoing the LED Display tile's own black background. Everything that
+   scrolls is clipped to this box; it never grows to fill the bar. */
+.window {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 380px;
+  height: 20px;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.track {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translate(var(--ticker-start, 100%), -50%);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  letter-spacing: var(--tracking-mono);
+  color: var(--accent);
+  white-space: nowrap;
+  will-change: transform;
+  animation-name: ticker-scroll;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-duration: var(--ticker-duration, 14s);
+}
+
+/*
+ * 0–65%: the text actually crosses the window, start to end, at the intended
+ * reading speed (see UpdateTicker.tsx — duration is computed from measured
+ * pixel widths so this holds regardless of message length or window width).
+ * 65–100%: it sits fully off-screen to the left — the "moments later" pause
+ * before the pass repeats, rather than a tight back-to-back loop.
+ */
+@keyframes ticker-scroll {
+  0% {
+    transform: translate(var(--ticker-start, 100%), -50%);
+  }
+  65%,
+  100% {
+    transform: translate(var(--ticker-end, -100%), -50%);
+  }
+}
+
+.dismiss {
+  flex: none;
+  margin-left: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .track {
+    animation: none !important;
+    position: static;
+    transform: none !important;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .window {
+    display: flex;
+    align-items: center;
+    padding: 0 var(--space-2);
+  }
+}
+
+@media (max-width: 600px) {
+  .ticker {
+    padding: 0 var(--space-3);
+    gap: var(--space-2);
+  }
+  .label {
+    font-size: var(--step--2);
+  }
+  .window {
+    max-width: none;
+  }
+}
