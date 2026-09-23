@@ -139,7 +139,7 @@ function loadImage(url: string, cors: boolean): Promise<HTMLImageElement> {
   });
 }
 
-interface Rect { x0: number; y0: number; x1: number; y1: number }
+export interface Rect { x0: number; y0: number; x1: number; y1: number }
 
 function drawContain(ctx: CanvasRenderingContext2D, img: HTMLImageElement): Rect {
   const iw = img.naturalWidth || img.width || SHAPE_RES;
@@ -173,65 +173,100 @@ async function rasterFile(spec: Extract<ShapeSpec, { kind: 'file' }>): Promise<U
   const { ctx } = makeCanvas();
   const rect = drawContain(ctx, await loadImage(spec.url, !spec.url.startsWith('blob:') && !spec.url.startsWith('data:')));
   const px = ctx.getImageData(0, 0, SHAPE_RES, SHAPE_RES).data;
-  const n = SHAPE_RES * SHAPE_RES;
+  return keyCoverage(px, SHAPE_RES, rect, spec.key, spec.threshold, spec.invert);
+}
+
+/**
+ * RGBA pixels (square, `res`², image fitted inside `rect`) -> 0..1 coverage
+ * as 0..255. Pure, so scripts/verify-shape-source.ts can exercise it without
+ * a DOM.
+ *
+ * AUTO picks Alpha when the image's own frame has transparency, else
+ * Luminance (100.0 scanned the whole raster, whose transparent fit margin
+ * made every opaque JPG/PNG look transparent).
+ *
+ * ALPHA (100.3): the silhouette is the alpha channel, and Threshold trims it
+ * BY BRIGHTNESS. A clean cutout's alpha is 0 or 1 everywhere except its 1-2
+ * px antialiased edge, so the 100.0 alpha ramp moved coverage by ~1.4 % across
+ * the whole slider — Threshold read as dead, and Alpha looked identical to
+ * Auto. Now the centre (0.5) keeps the whole silhouette, left of centre trims
+ * the lighter parts of the image away, right of centre trims the darker parts.
+ *
+ * LUMINANCE: ink is whatever contrasts with the ground; Threshold is the
+ * brightness cut. The ground is read from the image border — and, 100.3, when
+ * that border is TRANSPARENT the ground is taken as the opposite of the
+ * image's own average ink brightness. 100.0 counted transparent as light
+ * paper, so every light or mid-tone logo on a transparent PNG keyed to
+ * nothing at all (the "Luminance makes my upload disappear" bug).
+ */
+export function keyCoverage(
+  px: Uint8ClampedArray,
+  res: number,
+  rect: Rect,
+  keyMode: ShapeKey,
+  threshold: number,
+  invert: boolean,
+): Uint8ClampedArray {
+  const n = res * res;
   const lumAt = (j: number) => (0.299 * px[j] + 0.587 * px[j + 1] + 0.114 * px[j + 2]) / 255;
 
-  // Inspect ONLY the image's own frame. 100.0 scanned the whole raster,
-  // whose transparent fit margin made every opaque JPG/PNG look like it had
-  // an alpha channel -> Auto picked Alpha -> the whole rectangle became the
-  // shape.
-  let transparent = 0, opaque = 0;
+  let transparent = 0, opaque = 0, inkSum = 0, inkN = 0;
   for (let y = rect.y0; y < rect.y1; y += 2) {
     for (let x = rect.x0; x < rect.x1; x += 2) {
-      const a = px[(y * SHAPE_RES + x) * 4 + 3];
-      if (a < 250) transparent++; else opaque++;
+      const j = (y * res + x) * 4;
+      if (px[j + 3] < 250) transparent++; else opaque++;
+      if (px[j + 3] > 128) { inkSum += lumAt(j); inkN++; }
     }
   }
   const hasAlpha = transparent > (transparent + opaque) * 0.005;
-  const key = spec.key === 'auto' ? (hasAlpha ? 'alpha' : 'luma') : spec.key;
+  const key = keyMode === 'auto' ? (hasAlpha ? 'alpha' : 'luma') : keyMode;
 
-  // Luminance polarity from the image border: dark ink on a light ground, or
-  // light ink on a dark ground, both key the INK as the shape (100.0 always
-  // took dark, so light-on-dark logos came out inverted).
-  let borderSum = 0, borderN = 0;
+  // Ground brightness from the frame border; transparent border samples are
+  // counted separately and, if they dominate, the ground is inferred from the
+  // ink instead (dark ink -> light ground and vice versa).
+  let borderSum = 0, borderN = 0, borderClear = 0;
   const sample = (x: number, y: number) => {
-    const j = (y * SHAPE_RES + x) * 4;
-    // Transparent border pixels count as light "paper": a transparent logo
-    // keyed by Luminance still reads its dark ink as the shape.
-    borderSum += px[j + 3] > 8 ? lumAt(j) : 1;
-    borderN++;
+    const j = (y * res + x) * 4;
+    if (px[j + 3] > 8) { borderSum += lumAt(j); borderN++; } else borderClear++;
   };
   for (let x = rect.x0; x < rect.x1; x += 4) { sample(x, rect.y0); sample(x, rect.y1 - 1); }
   for (let y = rect.y0; y < rect.y1; y += 4) { sample(rect.x0, y); sample(rect.x1 - 1, y); }
-  const lightGround = borderN === 0 || borderSum / borderN >= 0.5;
+  const inkMean = inkN > 0 ? inkSum / inkN : 0;
+  const lightGround = borderClear > borderN
+    ? inkMean < 0.5
+    : borderN === 0 || borderSum / borderN >= 0.5;
+
+  // Alpha-mode brightness trim. The 1.12 / 0.12 stretch puts the cut just
+  // outside 0..1 at the centre, so 0.5 keeps even pure white / pure black
+  // whole and the slider is continuous through it.
+  const trimLight = threshold < 0.5;
+  const cut = trimLight ? (threshold / 0.5) * 1.12 : ((threshold - 0.5) / 0.5) * 1.12 - 0.12;
 
   const out = new Uint8ClampedArray(n);
   for (let i = 0, j = 0; i < n; i++, j += 4) {
     const a = px[j + 3] / 255;
     let c: number;
     if (key === 'alpha') {
-      c = ramp(a, spec.threshold);
+      const lum = lumAt(j);
+      const keep = trimLight ? ramp(1 - lum, 1 - cut) : ramp(lum, cut);
+      c = ramp(a, 0.5) * keep;
     } else {
       // Ink = whatever contrasts with the ground. Threshold is the brightness
       // cut: pixels darker (light ground) or brighter (dark ground) than it.
       const lum = lumAt(j);
-      c = a > 0.03 ? (lightGround ? ramp(1 - lum, 1 - spec.threshold) : ramp(lum, spec.threshold)) : 0;
+      c = a > 0.03 ? (lightGround ? ramp(1 - lum, 1 - threshold) : ramp(lum, threshold)) : 0;
     }
-    if (spec.invert) {
+    if (invert) {
       // Invert inside the image's own frame only — flipping the margin too
       // would turn every inverted shape into a filled square.
-      const x = i % SHAPE_RES;
-      const y = (i - x) / SHAPE_RES;
+      const x = i % res;
+      const y = (i - x) / res;
       c = x >= rect.x0 && x < rect.x1 && y >= rect.y0 && y < rect.y1 ? 1 - c : 0;
     }
     out[i] = Math.round(c * 255);
   }
   return out;
 }
-
-/* ------------------------------------------------------------------ *
- * Entry
- * ------------------------------------------------------------------ */
 
 export async function rasterizeCoverage(spec: ShapeSpec): Promise<Uint8ClampedArray> {
   switch (spec.kind) {

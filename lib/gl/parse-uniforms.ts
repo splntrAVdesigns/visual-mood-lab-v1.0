@@ -885,6 +885,7 @@ function shapeSourceControls(u: ParsedUniform, defaultGroup: string): Control[] 
     {
       ...base, id: 'shapeThreshold', kind: 'slider', label: 'Threshold', default: 0.5,
       min: 0.05, max: 0.95, step: 0.01, modulatable: false, showIf: isFile,
+      hint: 'Trims by brightness. With Alpha, the centre keeps the whole shape.',
     },
     { ...base, id: 'shapeKeyInvert', kind: 'toggle', label: 'Invert key', default: false, showIf: isFile },
     {

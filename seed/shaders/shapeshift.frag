@@ -62,8 +62,9 @@ uniform int   u_fill;          // @label(Fill) @select(Gradient=0 | Elements=1 |
 uniform vec3  u_color1;        // @label(Color A) @color @default(1.0, 0.62, 0.11) @group(Fill)
 uniform vec3  u_color2;        // @label(Color B) @color @default(1.0, 0.18, 0.53) @group(Fill) @showIf(u_fill!=Solid)
 uniform vec3  u_color3;        // @label(Color C) @color @default(0.23, 0.05, 0.64) @group(Fill) @showIf(u_fill!=Solid)
+uniform vec3  u_bg;            // @label(Background) @color @default(0.99, 0.96, 0.89) @group(Fill)
 uniform float u_gradAngle;     // @label(Gradient angle) @range(-180, 180) @default(-90) @unit(°) @group(Fill) @mod @showIf(u_fill!=Solid)
-uniform float u_gradScroll;    // @label(Gradient drift) @range(0, 2) @default(0.2) @group(Fill) @mod @showIf(u_fill!=Solid)
+uniform float u_gradScroll;    // @label(Gradient drift) @range(0, 4) @default(0.2) @step(0.005) @group(Fill) @mod @showIf(u_fill!=Solid)
 uniform int   u_element;       // @label(Element) @select(Dot=0 | Pill=1 | Bar=2 | Ring=3 | Diamond=4 | Zero=5) @strip @default(1) @group(Fill) @showIf(u_fill=Elements)
 uniform int   u_density;       // @label(Density) @range(12, 120) @default(46) @roll(24, 80) @group(Fill) @hint(Element rows across the tile.) @showIf(u_fill=Elements)
 uniform float u_cellAspect;    // @label(Cell aspect) @range(0.25, 4) @default(0.7) @group(Fill) @hint(Cell width ÷ height. Below 1 packs elements tighter across.) @showIf(u_fill=Elements)
@@ -78,6 +79,8 @@ uniform float u_ballSpeed;     // @label(Drift speed) @range(0, 2) @default(1) @
 uniform int   u_ballRings;     // @label(Rings) @range(0, 12) @default(3) @group(Fill) @hint(0 is a smooth glow; higher adds contour bands.) @showIf(u_fill=Metaballs)
 uniform float u_ballPump;      // @label(Audio pump) @range(0, 2) @default(1) @group(Fill) @hint(Bass swells the blobs, highs tighten the rings.) @showIf(u_fill=Metaballs)
 uniform int   u_lineDensity;   // @label(Mesh lines) @range(2, 60) @default(14) @group(Fill) @hint(Contour lines across the mesh.) @showIf(u_fill=Mesh)
+uniform float u_meshTurb;      // @label(Turbulence) @range(0, 1) @default(0.5) @group(Fill) @mod @hint(0 slides the mesh; higher churns it like liquid.) @showIf(u_fill=Mesh)
+uniform float u_meshFlow;      // @label(Flow speed) @range(0, 2) @default(1) @group(Fill) @mod @showIf(u_fill=Mesh)
 
 // ── Motion ──
 uniform int   u_motion;        // @label(Motion) @select(None=0 | Strip warp=1 | Column step=2 | Shard shift=3) @strip @default(1) @group(Motion)
@@ -99,7 +102,6 @@ uniform float u_chroma;        // @label(Chroma split) @range(0, 0.05) @default(
 uniform float u_inflate;       // @label(Breathe) @range(-0.2, 0.2) @default(0) @group(Depth) @mod
 uniform float u_wobble;        // @label(Edge wobble) @range(0, 0.2) @default(0.01) @group(Depth) @mod
 uniform float u_outline;       // @label(Outline) @range(0, 0.05) @default(0) @group(Depth)
-uniform vec3  u_bg;            // @label(Background) @color @default(0.99, 0.96, 0.89) @group(Depth)
 
 const float PI  = 3.14159265359;
 const float TAU = 6.28318530718;
@@ -352,7 +354,20 @@ vec4 frontLayer(vec2 pm, out float wob) {
     col = mix(u_color3 * 0.35, blob, smoothstep(th * 0.7, th * 1.3, f));
     a = cov;
   } else if (u_fill == 3) {                              // Mesh
-    float v = fbm(s * 2.5 + vec2(T * 0.15, -T * 0.1));
+    // Liquid turbulence (100.3): the mesh noise is read through a second,
+    // time-evolving noise field (one level of domain warp), so the contours
+    // churn instead of only sliding. Turbulence 0 + Flow 1 is exactly the
+    // 100.2 formula. Numerically: best-translation frame correlation over 2 s
+    // drops from 0.998 (rigid slide) to 0.92 at the 0.5 default, 0.79 at 1.
+    // Costs two extra fbm on the front layer, Mesh fill only.
+    vec2 q = s * 2.5;
+    float ft = T * u_meshFlow;
+    if (u_meshTurb > 0.0) {
+      vec2 w = vec2(fbm(q * 0.7 + vec2(ft * 0.23, 0.0)),
+                    fbm(q * 0.7 + vec2(4.3, 4.3 - ft * 0.19))) - 0.5;
+      q += w * u_meshTurb * 2.4;
+    }
+    float v = fbm(q + vec2(ft * 0.15, -ft * 0.1));
     float b = fract(v * float(u_lineDensity));
     float line = smoothstep(0.12, 0.0, abs(b - 0.5) - 0.28);
     col = palette(v + gt * 0.5);

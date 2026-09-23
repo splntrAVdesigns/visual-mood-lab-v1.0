@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildSdfRGBA, signedDistance, FINE_SPREAD, COARSE_SPREAD } from '../lib/shape-source/sdf';
+import { keyCoverage } from '../lib/shape-source/raster';
 import { parseUniforms } from '../lib/gl/parse-uniforms';
 import { defaultsOf, isVisible } from '../renderers/control-schema';
 
@@ -144,6 +145,19 @@ console.log('\nShapeshift schema');
 
   const two = parseUniforms('uniform sampler2D a; // @shape\nuniform sampler2D b; // @shape\n');
   check('second @shape sampler refused with a warning', two.warnings.some((w) => /Only one @shape/.test(w.message)));
+  // 100.3: Mesh turbulence, background placement, gradient drift range.
+  const meshIds = ['u_lineDensity', 'u_meshTurb', 'u_meshFlow'];
+  check('Mesh turbulence + flow shown only for Mesh',
+    shown(meshIds, fillIs('Mesh')) && hidden(['u_meshTurb', 'u_meshFlow'], fillIs('Metaballs')) && hidden(['u_meshTurb', 'u_meshFlow'], fillIs('Gradient')));
+  check('Mesh turbulence defaults to 0.5, flow to 1', state.u_meshTurb === 0.5 && state.u_meshFlow === 1);
+  const order = schema.controls.map((c) => c.id);
+  check('Background sits in Fill, directly under Color C',
+    byId.get('u_bg')?.group === 'Fill' && order.indexOf('u_bg') === order.indexOf('u_color3') + 1);
+  check('Background stays visible for every fill (Solid included)', isVisible(byId.get('u_bg')!, fillIs('Solid')));
+  const drift = byId.get('u_gradScroll');
+  check('Gradient drift range 0..4 with a fine step, default unchanged',
+    drift?.kind === 'slider' && drift.min === 0 && drift.max === 4 && (drift.step ?? 1) <= 0.005 && state.u_gradScroll === 0.2);
+
   // @showIf parser contract.
   const sel = 'uniform int m; // @label(M) @select(A=0 | B=1 | C=2) @default(0)\n';
   const byLabel = parseUniforms(sel + 'uniform float x; // @label(X) @showIf(m=B)\n');
@@ -164,6 +178,56 @@ console.log('\nShapeshift schema');
     badVal.warnings.some((w) => /not valid/.test(w.message)) && !badVal.schema.controls.find((c) => c.id === 'x')!.showIf);
   const wrong = parseUniforms('uniform float x; // @trigger\n');
   check('@trigger on a non-vec2 warns and maps normally', wrong.schema.controls[0]?.kind === 'slider' && wrong.warnings.length > 0);
+}
+
+/* 5. upload keying (100.3) ------------------------------------------ */
+console.log('\nUpload keying');
+{
+  const R = 64;
+  const rect = { x0: 0, y0: 0, x1: R, y1: R };
+  // A transparent image: a ring of flat ink, left half dark (lum 0.2), right half light (lum 0.85).
+  const img = (inkLeft: number, inkRight: number, bg: number | null) => {
+    const px = new Uint8ClampedArray(R * R * 4);
+    for (let y = 0; y < R; y++) for (let x = 0; x < R; x++) {
+      const j = (y * R + x) * 4;
+      const r = Math.hypot(x - R / 2 + 0.5, y - R / 2 + 0.5);
+      const ink = r > 12 && r < 24;
+      const l = ink ? (x < R / 2 ? inkLeft : inkRight) : bg ?? 0;
+      px[j] = px[j + 1] = px[j + 2] = Math.round(l * 255);
+      px[j + 3] = ink || bg !== null ? 255 : 0;
+    }
+    return px;
+  };
+  const cover = (out: Uint8ClampedArray) => out.reduce((s, v) => s + (v > 127 ? 1 : 0), 0) / out.length;
+  const two = img(0.2, 0.85, null);
+  const full = cover(keyCoverage(img(0.2, 0.2, null), R, rect, 'alpha', 0.5, false));
+  check('ring fixture has a real silhouette', full > 0.2 && full < 0.6, full);
+
+  const auto = cover(keyCoverage(two, R, rect, 'auto', 0.5, false));
+  const alpha = cover(keyCoverage(two, R, rect, 'alpha', 0.5, false));
+  check('Auto on a transparent image = Alpha, whole silhouette at the centre', Math.abs(auto - alpha) < 1e-9 && Math.abs(alpha - full) < 0.01, { auto, alpha, full });
+  const trimLight = cover(keyCoverage(two, R, rect, 'alpha', 0.2, false));
+  const trimDark = cover(keyCoverage(two, R, rect, 'alpha', 0.8, false));
+  check('Alpha threshold left of centre trims the light half', trimLight < alpha * 0.65 && trimLight > alpha * 0.35, { trimLight, alpha });
+  check('Alpha threshold right of centre trims the dark half', trimDark < alpha * 0.65 && trimDark > alpha * 0.35, { trimDark, alpha });
+  check('Alpha threshold is continuous through the centre (pure white kept at 0.49 / 0.51)',
+    cover(keyCoverage(img(1, 1, null), R, rect, 'alpha', 0.49, false)) > full * 0.98
+    && cover(keyCoverage(img(0, 0, null), R, rect, 'alpha', 0.51, false)) > full * 0.98);
+
+  const lightLogo = cover(keyCoverage(img(0.85, 0.85, null), R, rect, 'luma', 0.5, false));
+  const midLogo = cover(keyCoverage(img(0.55, 0.55, null), R, rect, 'luma', 0.5, false));
+  const darkLogo = cover(keyCoverage(img(0.2, 0.2, null), R, rect, 'luma', 0.5, false));
+  check('Luminance keeps a LIGHT logo on a transparent PNG (was 0 %)', Math.abs(lightLogo - full) < 0.01, lightLogo);
+  check('Luminance keeps a MID-TONE logo on a transparent PNG (was 0 %)', Math.abs(midLogo - full) < 0.01, midLogo);
+  check('Luminance still keeps a dark logo on a transparent PNG', Math.abs(darkLogo - full) < 0.01, darkLogo);
+
+  const jpgDark = cover(keyCoverage(img(0.2, 0.2, 1), R, rect, 'auto', 0.5, false));
+  const jpgLight = cover(keyCoverage(img(0.9, 0.9, 0.05), R, rect, 'auto', 0.5, false));
+  check('opaque JPG: Auto -> Luminance, dark ink on white keyed', Math.abs(jpgDark - full) < 0.01, jpgDark);
+  check('opaque JPG: light ink on black keyed', Math.abs(jpgLight - full) < 0.01, jpgLight);
+  const jpgCut = cover(keyCoverage(img(0.2, 0.6, 1), R, rect, 'luma', 0.4, false));
+  check('opaque JPG: Luminance threshold still cuts by brightness', jpgCut < full * 0.65 && jpgCut > full * 0.35, jpgCut);
+  check('Invert stays inside the image frame', cover(keyCoverage(two, R, rect, 'alpha', 0.5, true)) < 1 - full + 0.01);
 }
 
 console.log(failures ? `\n${failures} check(s) failed.\n` : '\nAll Shape Source checks passed.\n');
