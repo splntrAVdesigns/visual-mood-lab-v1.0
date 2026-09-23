@@ -11,7 +11,7 @@ uniform float u_chaos;         // @label(Chaos) @range(0.1, 2.2) @default(1.0) @
 uniform float u_glow;          // @label(Glow) @range(0.0, 1.5) @default(0.8) @group(Global)
 uniform float u_lightAngle;    // @label(Light Angle) @range(0.0, 360.0) @default(200.0) @group(Global)
 uniform float u_crtAmount;     // @label(CRT Amount) @range(0.0, 1.0) @default(0.0) @group(Global)
-uniform float u_crtScanline;   // @label(Scanline Density) @range(0.3, 3.0) @default(1.0) @group(Global) @showIf(u_crtAmount>0)
+uniform float u_crtScanline;   // @label(Scanline Density) @range(0.3, 3.0) @default(1.0) @group(Global) @showIf(u_crtAmount!=0)
 uniform float u_chromaticAberration; // @label(Chromatic Aberration) @range(0.0, 1.0) @default(0.0) @group(Global)
 
 // ===== COLOR =====

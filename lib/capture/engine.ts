@@ -79,7 +79,7 @@ import {
   type CaptureProgress,
   type CaptureResult,
 } from './types';
-import { resolveVideoCodec } from './support';
+import { encodableSize, resolveVideoCodec } from './support';
 
 const KEYFRAME_INTERVAL_FRAMES = 60;
 const BITRATE = 8_000_000; // 8 Mbps — generous for a short mood-tile loop at up to ~1040px
@@ -92,8 +92,14 @@ class RecordingHandle {
 
   private tileCanvas: HTMLCanvasElement;
   private outputCtx: CanvasRenderingContext2D;
+  /** Encoded (even) frame size — see encodableSize() in support.ts. */
   private width: number;
   private height: number;
+  /** Pixels trimmed off the right / bottom of the tile canvas to reach an
+      even size (0 or 1 each), so the common case stays a 1:1 copy rather
+      than a resample. */
+  private trimX: number;
+  private trimY: number;
 
   private fps: number;
   private totalFrames: number;
@@ -129,8 +135,22 @@ class RecordingHandle {
     this.fps = opts.fps;
     this.totalFrames = opts.totalFrames;
     this.overlapFrames = opts.overlapFrames;
-    this.width = opts.tileCanvas.width;
-    this.height = opts.tileCanvas.height;
+    this.width = opts.outputCtx.canvas.width;
+    this.height = opts.outputCtx.canvas.height;
+    this.trimX = Math.max(0, opts.tileCanvas.width - this.width);
+    this.trimY = Math.max(0, opts.tileCanvas.height - this.height);
+  }
+
+  /** Draws `src` (the live tile canvas, or a head-frame still of it) onto the
+      output canvas. The source rect drops the trimmed edge, so at the size
+      the recording started at this is an exact 1:1 copy. If the tile resizes
+      mid-recording (rotation, the iOS URL bar), the new frame is scaled into
+      the fixed output size instead of being cropped or stretched off-frame —
+      the encoder's frame size can't change once started. */
+  private drawSource(src: CanvasImageSource & { width: number; height: number }): void {
+    const sw = Math.max(1, src.width - this.trimX);
+    const sh = Math.max(1, src.height - this.trimY);
+    this.outputCtx.drawImage(src, 0, 0, sw, sh, 0, 0, this.width, this.height);
   }
 
   subscribe(fn: CaptureListener): () => void {
@@ -171,9 +191,11 @@ class RecordingHandle {
   private async tick(): Promise<void> {
     if (this.settled) return;
 
-    if (this.width === 0 || this.height === 0) {
-      // Tile not actually sized yet — skip this tick rather than encode a
-      // zero-size frame, try again next tick.
+    if (this.tileCanvas.width === 0 || this.tileCanvas.height === 0) {
+      // Tile momentarily unsized (mid-layout) — skip this tick rather than
+      // drawImage a zero-size canvas (which throws), try again next tick.
+      // Checks the live tile, not this.width: the encoded size is fixed and
+      // never 0 once startCapture() has passed its own zero check.
       this.rafId = requestAnimationFrame(() => void this.tick());
       return;
     }
@@ -200,7 +222,7 @@ class RecordingHandle {
     }
 
     this.outputCtx.globalAlpha = 1;
-    this.outputCtx.drawImage(this.tileCanvas, 0, 0, this.width, this.height);
+    this.drawSource(this.tileCanvas);
 
     if (inTailWindow) {
       const tailIndex = this.frameIndex - (this.totalFrames - this.overlapFrames);
@@ -208,7 +230,7 @@ class RecordingHandle {
       if (head) {
         const alpha = (tailIndex + 1) / this.overlapFrames;
         this.outputCtx.globalAlpha = alpha;
-        this.outputCtx.drawImage(head, 0, 0, this.width, this.height);
+        this.drawSource(head);
         this.outputCtx.globalAlpha = 1;
       }
       // If the matching head frame hasn't finished capturing yet (should
@@ -299,15 +321,17 @@ export async function startCapture(
   }
 
   const fps = options.fps ?? 30;
-  const width = canvas.width;
-  const height = canvas.height;
-  if (width === 0 || height === 0) {
+  if (canvas.width === 0 || canvas.height === 0) {
     throw new Error('Tile has no size yet — try again once it has rendered a frame.');
   }
+  // Even dimensions — H.264 cannot encode an odd frame size. See
+  // encodableSize()'s doc for why this is what broke mobile MP4.
+  const { width, height } = encodableSize(canvas.width, canvas.height);
 
   const codec = await resolveVideoCodec(options.format, width, height);
   if (!codec) {
-    throw new Error(`No supported ${options.format.toUpperCase()} encoder found on this device.`);
+    // Size included so the next report of this diagnoses itself.
+    throw new Error(`No supported ${options.format.toUpperCase()} encoder found on this device (${width}×${height}).`);
   }
 
   const format = options.format === 'mp4' ? new Mp4OutputFormat() : new WebMOutputFormat();

@@ -60,18 +60,24 @@ uniform bool  u_invert;        // @label(Invert shape) @default(false) @group(Tr
 // ── Fill ──
 uniform int   u_fill;          // @label(Fill) @select(Gradient=0 | Elements=1 | Metaballs=2 | Mesh=3 | Solid=4) @strip @default(0) @group(Fill)
 uniform vec3  u_color1;        // @label(Color A) @color @default(1.0, 0.62, 0.11) @group(Fill)
-uniform vec3  u_color2;        // @label(Color B) @color @default(1.0, 0.18, 0.53) @group(Fill)
-uniform vec3  u_color3;        // @label(Color C) @color @default(0.23, 0.05, 0.64) @group(Fill)
-uniform float u_gradAngle;     // @label(Gradient angle) @range(-180, 180) @default(-90) @unit(°) @group(Fill) @mod
-uniform float u_gradScroll;    // @label(Gradient drift) @range(0, 2) @default(0.2) @group(Fill) @mod
-uniform int   u_element;       // @label(Element) @select(Dot=0 | Pill=1 | Bar=2 | Ring=3 | Diamond=4 | Zero=5) @strip @default(1) @group(Fill)
-uniform int   u_density;       // @label(Density) @range(12, 120) @default(46) @roll(24, 80) @group(Fill) @hint(Element rows across the tile.)
-uniform float u_cellAspect;    // @label(Cell aspect) @range(0.25, 4) @default(0.7) @group(Fill) @hint(Cell width ÷ height. Below 1 packs elements tighter across.)
-uniform float u_elemSize;      // @label(Element size) @range(0.1, 1.5) @default(1.1) @group(Fill) @mod
-uniform float u_depthSize;     // @label(Depth sizing) @range(0, 1) @default(0.35) @group(Fill) @mod @hint(Elements grow toward the middle of the shape.)
-uniform bool  u_gridLocal;     // @label(Grid follows shape) @default(false) @group(Fill) @hint(The grid rotates, scales and tilts with the shape.)
-uniform bool  u_elemExtrude;   // @label(Extrude elements) @default(false) @group(Fill) @hint(Apply the depth stack to elements.)
-uniform int   u_lineDensity;   // @label(Mesh lines) @range(2, 60) @default(14) @group(Fill)
+uniform vec3  u_color2;        // @label(Color B) @color @default(1.0, 0.18, 0.53) @group(Fill) @showIf(u_fill!=Solid)
+uniform vec3  u_color3;        // @label(Color C) @color @default(0.23, 0.05, 0.64) @group(Fill) @showIf(u_fill!=Solid)
+uniform float u_gradAngle;     // @label(Gradient angle) @range(-180, 180) @default(-90) @unit(°) @group(Fill) @mod @showIf(u_fill!=Solid)
+uniform float u_gradScroll;    // @label(Gradient drift) @range(0, 2) @default(0.2) @group(Fill) @mod @showIf(u_fill!=Solid)
+uniform int   u_element;       // @label(Element) @select(Dot=0 | Pill=1 | Bar=2 | Ring=3 | Diamond=4 | Zero=5) @strip @default(1) @group(Fill) @showIf(u_fill=Elements)
+uniform int   u_density;       // @label(Density) @range(12, 120) @default(46) @roll(24, 80) @group(Fill) @hint(Element rows across the tile.) @showIf(u_fill=Elements)
+uniform float u_cellAspect;    // @label(Cell aspect) @range(0.25, 4) @default(0.7) @group(Fill) @hint(Cell width ÷ height. Below 1 packs elements tighter across.) @showIf(u_fill=Elements)
+uniform float u_elemSize;      // @label(Element size) @range(0.1, 1.5) @default(1.1) @group(Fill) @mod @showIf(u_fill=Elements)
+uniform float u_depthSize;     // @label(Depth sizing) @range(0, 1) @default(0.35) @group(Fill) @mod @hint(Elements grow toward the middle of the shape.) @showIf(u_fill=Elements)
+uniform bool  u_gridLocal;     // @label(Grid follows shape) @default(false) @group(Fill) @hint(The grid rotates, scales and tilts with the shape.) @showIf(u_fill=Elements)
+uniform bool  u_elemExtrude;   // @label(Extrude elements) @default(false) @group(Fill) @hint(Apply the depth stack to elements.) @showIf(u_fill=Elements)
+uniform int   u_ballCount;     // @label(Blob count) @range(2, 12) @default(6) @roll(3, 9) @group(Fill) @showIf(u_fill=Metaballs)
+uniform float u_ballSize;      // @label(Blob size) @range(0.1, 1) @default(0.5) @group(Fill) @mod @showIf(u_fill=Metaballs)
+uniform float u_ballMerge;     // @label(Merge) @range(0, 1) @default(0.5) @group(Fill) @mod @hint(Separate orbs at 0, one fused mass at 1.) @showIf(u_fill=Metaballs)
+uniform float u_ballSpeed;     // @label(Drift speed) @range(0, 2) @default(1) @group(Fill) @mod @showIf(u_fill=Metaballs)
+uniform int   u_ballRings;     // @label(Rings) @range(0, 12) @default(3) @group(Fill) @hint(0 is a smooth glow; higher adds contour bands.) @showIf(u_fill=Metaballs)
+uniform float u_ballPump;      // @label(Audio pump) @range(0, 2) @default(1) @group(Fill) @hint(Bass swells the blobs, highs tighten the rings.) @showIf(u_fill=Metaballs)
+uniform int   u_lineDensity;   // @label(Mesh lines) @range(2, 60) @default(14) @group(Fill) @hint(Contour lines across the mesh.) @showIf(u_fill=Mesh)
 
 // ── Motion ──
 uniform int   u_motion;        // @label(Motion) @select(None=0 | Strip warp=1 | Column step=2 | Shard shift=3) @strip @default(1) @group(Motion)
@@ -317,16 +323,33 @@ vec4 frontLayer(vec2 pm, out float wob) {
     a = e.w;
     col = palette(dot(ccScreen, dir) * 0.35 + 0.5 + g_seg * 0.6 + drift) * (0.75 + 0.25 * e.x);
   } else if (u_fill == 2) {                              // Metaballs
+    // Field f = Σ r²/d². Threshold `th` sets where a blob's surface sits:
+    // Merge 0.5 -> th 1 (the 100.x look), 0 -> 2 (tight separate orbs),
+    // 1 -> 0.5 (one fused mass). Colour is read from v = log2(f/th), clamped:
+    // the old palette(f * 0.18) grew without bound toward each centre and
+    // aliased into a moiré "mandala" in the cores (~22 palette cycles per
+    // pixel at 500 px); the clamped log keeps even Rings 12 under ~0.6.
+    int nb = clamp(u_ballCount, 2, 12);
+    float rr = 0.32 * u_ballSize * (1.0 + 0.5 * u_bass * u_ballPump);
     float f = 0.0;
-    for (int i = 0; i < 6; i++) {
+    for (int i = 0; i < 12; i++) {
+      if (i >= nb) break;
       float fi = float(i);
-      vec2 b = vec2(sin(mod(u_time * 0.4 * (1.0 + fi * 0.17) + fi * 2.1, TAU)),
-                    cos(mod(u_time * 0.33 * (1.0 + fi * 0.11) + fi * 1.3, TAU))) * 0.55;
-      float rr = 0.16 + 0.08 * u_bass * u_audioDrive;
+      vec2 b = vec2(sin(mod(u_time * 0.4 * u_ballSpeed * (1.0 + fi * 0.17) + fi * 2.1, TAU)),
+                    cos(mod(u_time * 0.33 * u_ballSpeed * (1.0 + fi * 0.11) + fi * 1.3, TAU))) * 0.55;
       vec2 dv = s - b;
       f += rr * rr / max(dot(dv, dv), 1e-4);
     }
-    col = mix(u_color3 * 0.35, palette(f * 0.18 + gt), smoothstep(0.7, 1.3, f));
+    float th = exp2(1.0 - 2.0 * u_ballMerge);
+    float v = clamp(log2(max(f / th, 1e-6)), 0.0, 2.5);
+    vec3 blob;
+    if (u_ballRings > 0) {
+      float rf = float(u_ballRings) * 0.2 * (1.0 + 0.6 * u_high * u_ballPump);
+      blob = palette(gt + v * rf);
+    } else {
+      blob = palette(gt + v * 0.08) * (1.0 + 0.25 * smoothstep(0.0, 2.5, v));
+    }
+    col = mix(u_color3 * 0.35, blob, smoothstep(th * 0.7, th * 1.3, f));
     a = cov;
   } else if (u_fill == 3) {                              // Mesh
     float v = fbm(s * 2.5 + vec2(T * 0.15, -T * 0.1));

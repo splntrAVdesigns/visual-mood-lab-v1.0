@@ -49,6 +49,13 @@
  *                          writes [fireCount, secondsSinceFire]. The optional
  *                          argument names a toggle control that, while on,
  *                          re-fires it on every audio transient.
+ *   @showIf(id=A|B)       only show this control while control `id` is one of
+ *   @showIf(id!=A|B)      the listed values (or, with !=, none of them). For a
+ *   @showIf(id)           @select, a value may be written as its option value
+ *                          or its label (`u_fill=Metaballs`). A bare id means
+ *                          "while that control is truthy" (a toggle is on).
+ *                          Resolved once every control exists — see
+ *                          resolveShowIf() — so it may name a later uniform.
  *
  * Location: lib/gl/parse-uniforms.ts
  */
@@ -57,8 +64,10 @@ import { sanitizeSchema } from '@/lib/schema/sanitize';
 import { LIBRARY_SHAPES, DEFAULT_LIBRARY_ID } from '@/lib/shape-source/library';
 import {
   type Control,
+  type ControlPredicate,
   type ControlSchema,
   type GlslType,
+  type ParamValue,
   type RGBA,
   type SelectOption,
   type Vec2,
@@ -99,6 +108,8 @@ export interface Annotations {
   shape?: boolean;
   /** @trigger[(toggleId)] on a vec2 — fire-and-forget uniform. */
   trigger?: { autoFire?: string };
+  /** @showIf(...) — raw, unresolved; typed against its target by resolveShowIf(). */
+  showIf?: { id: string; values: string[]; negate: boolean };
 }
 
 export interface ParsedUniform {
@@ -241,6 +252,8 @@ export function parseUniforms(source: string, opts: ParseOptions = {}): ParseRes
     if (control) controls.push(control);
   }
 
+  resolveShowIf(uniforms, controls, warnings);
+
   const groups = [...BASE_GROUPS];
   for (const c of controls) {
     if (c.group && !groups.some((g) => g.id === c.group)) {
@@ -260,6 +273,86 @@ export function parseUniforms(source: string, opts: ParseOptions = {}): ParseRes
   }
 
   return { schema: clean.schema, uniforms, warnings };
+}
+
+/* ------------------------------------------------------------------ *
+ * @showIf — typed against its target control
+ * ------------------------------------------------------------------ */
+
+/**
+ * Turns each uniform's raw `@showIf(...)` into a real ControlPredicate on its
+ * control. Done after the whole schema is built rather than inside
+ * controlFor(), because a predicate can only be typed once its target exists:
+ * a @select stores its value as the option's string, a toggle as a boolean, a
+ * slider/stepper as a number, and ControlPredicate's `equals` is a strict
+ * comparison — `'2'` never equals `2`. Anything that cannot be resolved is
+ * dropped with a warning rather than guessed at, so a typo shows the control
+ * (safe) instead of hiding it for good.
+ */
+function resolveShowIf(uniforms: ParsedUniform[], controls: Control[], warnings: ParseWarning[]): void {
+  const byId = new Map(controls.map((c) => [c.id, c] as const));
+
+  for (const u of uniforms) {
+    const raw = u.annotations.showIf;
+    if (!raw) continue;
+    const control = byId.get(u.name);
+    if (!control) continue; // hidden, reserved or unmapped — nothing to gate
+    const warn = (message: string) => warnings.push({ level: 'warn', name: u.name, line: u.line, message });
+
+    const target = raw.id ? byId.get(raw.id) : undefined;
+    if (!target) {
+      warn(`@showIf refers to "${raw.id}", which is not a control — condition ignored.`);
+      continue;
+    }
+    if (target.id === control.id) {
+      warn('@showIf cannot depend on the control it belongs to — condition ignored.');
+      continue;
+    }
+
+    if (raw.values.length === 0) {
+      control.showIf = raw.negate ? { notEquals: [target.id, true] } : { truthy: target.id };
+      continue;
+    }
+
+    const typed: ParamValue[] = [];
+    let bad: string | null = null;
+    for (const v of raw.values) {
+      const t = typedValue(target, v);
+      if (t === undefined) { bad = v; break; }
+      typed.push(t);
+    }
+    if (bad !== null) {
+      warn(`@showIf value "${bad}" is not valid for "${target.id}" — condition ignored.`);
+      continue;
+    }
+
+    const leaves: ControlPredicate[] = typed.map((v) =>
+      raw.negate ? { notEquals: [target.id, v] } : { equals: [target.id, v] },
+    );
+    control.showIf = leaves.length === 1 ? leaves[0] : raw.negate ? { all: leaves } : { any: leaves };
+  }
+}
+
+/** A @showIf value as the type `target` actually stores, or undefined if it
+    is not a value that control can hold. */
+function typedValue(target: Control, v: string): ParamValue | undefined {
+  switch (target.kind) {
+    case 'select': {
+      const lower = v.toLowerCase();
+      const opt = target.options.find((o) => String(o.value) === v)
+        ?? target.options.find((o) => o.label.toLowerCase() === lower);
+      return opt ? opt.value : undefined;
+    }
+    case 'toggle':
+      return /^true$/i.test(v) ? true : /^false$/i.test(v) ? false : undefined;
+    case 'slider':
+    case 'stepper': {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : undefined;
+    }
+    default:
+      return undefined;
+  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -489,6 +582,16 @@ export function parseAnnotations(text: string): Annotations {
       case 'strip': a.strip = true; break;
       case 'shape': a.shape = true; break;
       case 'trigger': a.trigger = { autoFire: arg || undefined }; break;
+      case 'showif': {
+        const neg = arg.indexOf('!=');
+        const eq = neg >= 0 ? neg : arg.indexOf('=');
+        const id = (eq >= 0 ? arg.slice(0, eq) : arg).trim();
+        const rest = eq >= 0 ? arg.slice(eq + (neg >= 0 ? 2 : 1)) : '';
+        const values = rest.split('|').map((v) => v.trim()).filter(Boolean);
+        // Kept even when malformed (empty id) so resolveShowIf() can warn.
+        a.showIf = { id, values, negate: neg >= 0 };
+        break;
+      }
       case 'step': {
         const n = Number(arg);
         if (Number.isFinite(n)) a.step = n;

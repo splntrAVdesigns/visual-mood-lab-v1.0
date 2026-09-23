@@ -18,6 +18,31 @@ import type { VideoCodec } from 'mediabunny';
 
 let cached: boolean | null = null;
 
+/**
+ * The size a recording is actually encoded at: the tile canvas's own size
+ * rounded DOWN to even on both axes (never below 2).
+ *
+ * H.264 (and HEVC) encode 4:2:0 chroma in 2×2 blocks, so an odd width or
+ * height is not a legal frame size — Mediabunny's canEncodeVideo() returns
+ * false for AVC at any odd dimension before it ever asks the browser (see
+ * `hasOddDimension` in mediabunny/dist/modules/src/encode.js). A tile's canvas
+ * size is not chosen, it falls out of layout: ShaderRenderer sizes it
+ * round(cssSize × min(dpr, 2) × fit), and the CSS size of the focused view
+ * moves with the viewport — on iOS Safari that includes the URL bar
+ * collapsing or expanding. So the same tile on the same phone is odd one
+ * minute and even the next, which is why MP4 "used to work" on mobile and
+ * why WebM (VP8/VP9 have no such rule) never failed. Desktop layouts just
+ * happened to land even.
+ *
+ * Applied to WebM too: odd frame sizes are legal there, but some decoders
+ * and every downstream H.264 transcode (social uploads) choke on them.
+ * Losing at most one pixel column / row is invisible.
+ */
+export function encodableSize(width: number, height: number): { width: number; height: number } {
+  const even = (n: number) => Math.max(2, Math.floor(n / 2) * 2);
+  return { width: even(width), height: even(height) };
+}
+
 /** True if this browser can encode video via WebCodecs at all — the fast,
     synchronous gate RecordButton.tsx / CapturePanel.tsx use to decide
     whether to render as usable vs. disabled-with-tooltip. Mediabunny
