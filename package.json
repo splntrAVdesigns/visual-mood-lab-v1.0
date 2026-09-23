@@ -33,7 +33,8 @@
     "verify:panel-layout": "tsx scripts/verify-panel-layout.ts",
     "verify:backdrop-dismiss": "tsx scripts/verify-backdrop-dismiss.ts",
     "verify:update-ticker": "tsx scripts/verify-update-ticker.ts",
-    "verify:shape-source": "tsx scripts/verify-shape-source.ts"
+    "verify:shape-source": "tsx scripts/verify-shape-source.ts",
+    "verify:capture": "tsx scripts/verify-capture.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",

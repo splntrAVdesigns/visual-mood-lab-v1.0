@@ -112,8 +112,56 @@ console.log('\nShapeshift schema');
   }));
   check('depth stack defaults to 4', state.u_stack === 4);
 
+  // Fill-scoped controls (100.3): each fill shows only the controls it reads.
+  const fillIs = (label: string) => {
+    const f = byId.get('u_fill');
+    const opt = f?.kind === 'select' ? f.options.find((o) => o.label === label) : undefined;
+    return { ...state, u_fill: opt?.value ?? '' };
+  };
+  const elementIds = ['u_element', 'u_density', 'u_cellAspect', 'u_elemSize', 'u_depthSize', 'u_gridLocal', 'u_elemExtrude'];
+  const ballIds = ['u_ballCount', 'u_ballSize', 'u_ballMerge', 'u_ballSpeed', 'u_ballRings', 'u_ballPump'];
+  const shown = (ids: string[], st: typeof state) => ids.every((id) => byId.has(id) && isVisible(byId.get(id)!, st));
+  const hidden = (ids: string[], st: typeof state) => ids.every((id) => byId.has(id) && !isVisible(byId.get(id)!, st));
+  check('all six Metaballs controls present', ballIds.every((id) => byId.has(id)));
+  check('Metaballs: blob controls shown, element + mesh controls hidden',
+    shown(ballIds, fillIs('Metaballs')) && hidden([...elementIds, 'u_lineDensity'], fillIs('Metaballs')));
+  check('Elements: element controls shown, blob + mesh controls hidden',
+    shown(elementIds, fillIs('Elements')) && hidden([...ballIds, 'u_lineDensity'], fillIs('Elements')));
+  check('Mesh: Mesh lines shown, element + blob controls hidden',
+    shown(['u_lineDensity'], fillIs('Mesh')) && hidden([...elementIds, ...ballIds], fillIs('Mesh')));
+  check('Solid: Color A stays, the other colour + gradient controls hide',
+    shown(['u_color1'], fillIs('Solid')) && hidden(['u_color2', 'u_color3', 'u_gradAngle', 'u_gradScroll', ...elementIds, ...ballIds, 'u_lineDensity'], fillIs('Solid')));
+  check('Gradient: gradient controls shown, fill-specific ones hidden',
+    shown(['u_color2', 'u_color3', 'u_gradAngle', 'u_gradScroll'], fillIs('Gradient')) && hidden([...elementIds, ...ballIds, 'u_lineDensity'], fillIs('Gradient')));
+  check('Metaballs defaults preserve the 100.x look (count 6, size 0.5, merge 0.5, speed 1, pump 1)',
+    state.u_ballCount === 6 && state.u_ballSize === 0.5 && state.u_ballMerge === 0.5 && state.u_ballSpeed === 1 && state.u_ballPump === 1);
+  check('blob count + rings stay steppers; count has a Roll window',
+    byId.get('u_ballCount')?.kind === 'stepper' && byId.get('u_ballRings')?.kind === 'stepper'
+    && typeof byId.get('u_ballCount')?.roll === 'object');
+  check('blob size / merge / speed / pump are modulatable sliders',
+    ['u_ballSize', 'u_ballMerge', 'u_ballSpeed', 'u_ballPump'].every((id) => byId.get(id)?.kind === 'slider')
+    && ['u_ballSize', 'u_ballMerge', 'u_ballSpeed'].every((id) => byId.get(id)?.modulatable === true));
+
   const two = parseUniforms('uniform sampler2D a; // @shape\nuniform sampler2D b; // @shape\n');
   check('second @shape sampler refused with a warning', two.warnings.some((w) => /Only one @shape/.test(w.message)));
+  // @showIf parser contract.
+  const sel = 'uniform int m; // @label(M) @select(A=0 | B=1 | C=2) @default(0)\n';
+  const byLabel = parseUniforms(sel + 'uniform float x; // @label(X) @showIf(m=B)\n');
+  const xs = byLabel.schema.controls.find((c) => c.id === 'x')!;
+  check('@showIf(m=B) resolves a select label to its option value', isVisible(xs, { m: '1', x: 0 }) && !isVisible(xs, { m: '0', x: 0 }));
+  const multi = parseUniforms(sel + 'uniform float x; // @label(X) @showIf(m=0|2)\n').schema.controls.find((c) => c.id === 'x')!;
+  check('@showIf(m=0|2) matches any listed value', isVisible(multi, { m: '0' }) && isVisible(multi, { m: '2' }) && !isVisible(multi, { m: '1' }));
+  const neg = parseUniforms(sel + 'uniform float x; // @label(X) @showIf(m!=C)\n').schema.controls.find((c) => c.id === 'x')!;
+  check('@showIf(m!=C) hides only on C', isVisible(neg, { m: '0' }) && !isVisible(neg, { m: '2' }));
+  const fwd = parseUniforms('uniform float x; // @label(X) @showIf(t)\nuniform bool t; // @label(T) @default(false)\n');
+  const xf = fwd.schema.controls.find((c) => c.id === 'x')!;
+  check('@showIf may name a later uniform; bare id means truthy', isVisible(xf, { t: true }) && !isVisible(xf, { t: false }));
+  const typo = parseUniforms(sel + 'uniform float x; // @label(X) @showIf(nope=1)\n');
+  check('@showIf on a missing control warns and leaves the control visible',
+    typo.warnings.some((w) => /@showIf/.test(w.message)) && !typo.schema.controls.find((c) => c.id === 'x')!.showIf);
+  const badVal = parseUniforms(sel + 'uniform float x; // @label(X) @showIf(m=Z)\n');
+  check('@showIf with an unknown select value warns and is ignored',
+    badVal.warnings.some((w) => /not valid/.test(w.message)) && !badVal.schema.controls.find((c) => c.id === 'x')!.showIf);
   const wrong = parseUniforms('uniform float x; // @trigger\n');
   check('@trigger on a non-vec2 warns and maps normally', wrong.schema.controls[0]?.kind === 'slider' && wrong.warnings.length > 0);
 }
