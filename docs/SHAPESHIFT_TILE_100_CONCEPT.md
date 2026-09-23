@@ -334,3 +334,9 @@ Reminder from the seed playbook: seeding upserts `assets` only. Existing boards 
 - **Performance.** Motion runs once per pixel; only the front layer is filled; back layers are one-texture-read silhouettes composited front-to-back with early exit; edge-wobble noise is computed once and shared. Measured in CPU-emulated WebGL (relative only): stack 10 ×3.0, stack 16 + Mesh + chroma ×4.8. Depth stack default 10 → 4, Roll window 1–6.
 - **Element grid.** Rows/Columns → Density (12–120, Roll 24–80) + Cell aspect. Neighbouring cells are searched when elements are larger than their cell, so sizes above 1 overlap instead of clipping. Depth sizing is normalised to each shape's deepest point (`u_shapeDepth`, host-fed from the distance-field builder). New: Grid follows shape, Extrude elements (off by default — elements stay flat). Mesh gets its own Mesh lines control.
 - **Migration.** Saved `u_rows`/`u_cols` values are dropped by `hydrate()` (keys the schema no longer declares), so existing tiles pick up the new Density defaults.
+
+## 16. Fix 100.2 — orientation, centring, keying (as built)
+
+- **Upside-down shapes.** `ShaderRenderer` blits every GL frame with a vertical flip (`setTransform(1, 0, 0, -1, …)`), so in the app `gl_FragCoord.y` runs down the card. The shader now flips `p.y` once in `main()`. The test harness now reproduces that blit flip, so harness renders match the app.
+- **Centring.** Default Tilt 0.15 → 0 (it stretched one side and pushed the shape off-centre); the depth stack is centred as a group (shifted back by half its extrusion depth).
+- **Keying.** Auto now inspects only the image's own frame (the transparent fit margin made every opaque image look alpha-keyed → solid rectangle). Luminance picks polarity from the image border (transparent border = light paper), so dark-on-light, light-on-dark and transparent logos all key their ink.

@@ -53,7 +53,7 @@ uniform float u_shapeDepth;    // @hidden  deepest inside distance, shape space 
 uniform float u_rotation;      // @label(Angle) @range(-180, 180) @default(0) @unit(°) @group(Transform) @mod
 uniform float u_scale;         // @label(Scale) @range(0.2, 3) @default(0.9) @group(Transform) @mod
 uniform vec2  u_offset;        // @label(Position) @range(-1, 1) @default(0.0, 0.0) @group(Transform)
-uniform vec2  u_tilt;          // @label(Tilt) @range(-1, 1) @default(0.15, 0.0) @group(Transform) @mod
+uniform vec2  u_tilt;          // @label(Tilt) @range(-1, 1) @default(0.0, 0.0) @group(Transform) @mod
 uniform int   u_mirror;        // @label(Mirror) @select(None=0 | Horizontal=1 | Vertical=2 | Quad=3) @strip @default(0) @group(Transform)
 uniform bool  u_invert;        // @label(Invert shape) @default(false) @group(Transform)
 
@@ -360,6 +360,13 @@ float backCoverage(vec2 q, float wob) {
 }
 
 vec3 composite(vec2 p) {
+  int n = clamp(u_stack, 1, 16);
+  if (u_fill == 1 && !u_elemExtrude) n = 1;              // elements stay flat by default
+  vec2 step = u_stackOffset * (1.0 + u_bass * u_audioDrive * 0.6);
+  // Centre the stack as a group: the front layer sits half the extrusion
+  // depth forward, so the shape + its extrusion is centred in the frame.
+  p += step * float(n - 1) * 0.5;
+
   vec2 pm = motion(p);                                   // ONE motion pass
   float wob;
   vec4 F = frontLayer(pm, wob);
@@ -367,12 +374,9 @@ vec3 composite(vec2 p) {
   vec3 acc = F.rgb * F.a;
   float A = F.a;
 
-  int n = clamp(u_stack, 1, 16);
-  if (u_fill == 1 && !u_elemExtrude) n = 1;              // elements stay flat by default
   if (n > 1 && A < 0.995) {
     vec2 dir = vec2(cos(radians(u_gradAngle)), sin(radians(u_gradAngle)));
     float drift = mod(u_time * u_gradScroll * 0.12, 1.0);
-    vec2 step = u_stackOffset * (1.0 + u_bass * u_audioDrive * 0.6);
     for (int k = 1; k < 16; k++) {
       if (k >= n) break;
       float fk = float(k);
@@ -393,6 +397,13 @@ void main() {
   T = mod(u_time, 1000.0);
   PX = 1.0 / u_resolution.y;
   vec2 p = (gl_FragCoord.xy * 2.0 - u_resolution) / u_resolution.y;
+  // ShaderRenderer blits the GL frame with a vertical flip (see its
+  // setTransform(1, 0, 0, -1, …)), so in this app gl_FragCoord.y runs DOWN
+  // the card. Everything below is written y-up — the shape texture, tilt,
+  // stack offset, gradient angle — so flip once here. (100.0/100.1 missed
+  // this: text and uploads rendered upside down in the app while the test
+  // harness, which had no blit flip, looked correct.)
+  p.y = -p.y;
 
   vec3 col;
   if (u_chroma > 0.0005) {

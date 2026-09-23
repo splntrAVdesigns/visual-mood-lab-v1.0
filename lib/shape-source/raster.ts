@@ -174,21 +174,36 @@ async function rasterFile(spec: Extract<ShapeSpec, { kind: 'file' }>): Promise<U
   const rect = drawContain(ctx, await loadImage(spec.url, !spec.url.startsWith('blob:') && !spec.url.startsWith('data:')));
   const px = ctx.getImageData(0, 0, SHAPE_RES, SHAPE_RES).data;
   const n = SHAPE_RES * SHAPE_RES;
+  const lumAt = (j: number) => (0.299 * px[j] + 0.587 * px[j + 1] + 0.114 * px[j + 2]) / 255;
 
-  let key = spec.key;
-  if (key === 'auto') {
-    // Any genuinely translucent pixel means the file carries a real alpha
-    // channel (transparent PNG / SVG); otherwise key on luminance (JPG).
-    let translucent = false;
-    let inked = 0;
-    for (let j = 3; j < px.length; j += 16) {
-      const a = px[j];
-      if (a > 0) inked++;
-      if (a > 0 && a < 250) { translucent = true; break; }
+  // Inspect ONLY the image's own frame. 100.0 scanned the whole raster,
+  // whose transparent fit margin made every opaque JPG/PNG look like it had
+  // an alpha channel -> Auto picked Alpha -> the whole rectangle became the
+  // shape.
+  let transparent = 0, opaque = 0;
+  for (let y = rect.y0; y < rect.y1; y += 2) {
+    for (let x = rect.x0; x < rect.x1; x += 2) {
+      const a = px[(y * SHAPE_RES + x) * 4 + 3];
+      if (a < 250) transparent++; else opaque++;
     }
-    const opaqueFrame = inked * 4 > n * 0.98;
-    key = translucent || !opaqueFrame ? 'alpha' : 'luma';
   }
+  const hasAlpha = transparent > (transparent + opaque) * 0.005;
+  const key = spec.key === 'auto' ? (hasAlpha ? 'alpha' : 'luma') : spec.key;
+
+  // Luminance polarity from the image border: dark ink on a light ground, or
+  // light ink on a dark ground, both key the INK as the shape (100.0 always
+  // took dark, so light-on-dark logos came out inverted).
+  let borderSum = 0, borderN = 0;
+  const sample = (x: number, y: number) => {
+    const j = (y * SHAPE_RES + x) * 4;
+    // Transparent border pixels count as light "paper": a transparent logo
+    // keyed by Luminance still reads its dark ink as the shape.
+    borderSum += px[j + 3] > 8 ? lumAt(j) : 1;
+    borderN++;
+  };
+  for (let x = rect.x0; x < rect.x1; x += 4) { sample(x, rect.y0); sample(x, rect.y1 - 1); }
+  for (let y = rect.y0; y < rect.y1; y += 4) { sample(rect.x0, y); sample(rect.x1 - 1, y); }
+  const lightGround = borderN === 0 || borderSum / borderN >= 0.5;
 
   const out = new Uint8ClampedArray(n);
   for (let i = 0, j = 0; i < n; i++, j += 4) {
@@ -197,9 +212,10 @@ async function rasterFile(spec: Extract<ShapeSpec, { kind: 'file' }>): Promise<U
     if (key === 'alpha') {
       c = ramp(a, spec.threshold);
     } else {
-      // Dark ink on a light ground is the shape.
-      const lum = (0.299 * px[j] + 0.587 * px[j + 1] + 0.114 * px[j + 2]) / 255;
-      c = a > 0.03 ? ramp(1 - lum, 1 - spec.threshold) : 0;
+      // Ink = whatever contrasts with the ground. Threshold is the brightness
+      // cut: pixels darker (light ground) or brighter (dark ground) than it.
+      const lum = lumAt(j);
+      c = a > 0.03 ? (lightGround ? ramp(1 - lum, 1 - spec.threshold) : ramp(lum, spec.threshold)) : 0;
     }
     if (spec.invert) {
       // Invert inside the image's own frame only — flipping the margin too
