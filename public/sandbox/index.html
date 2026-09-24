@@ -269,6 +269,27 @@
     return densityForRenderer(instance && instance._renderer, q, targetW, targetH);
   }
 
+  // Host-pulled frame transport. One snapshot in flight, bounded by host
+  // dimensions and independent of the sketch's own draw frequency.
+  var vfxRequest = null, vfxBusy = false;
+  function sendVfxFrame() {
+    if (!vfxRequest || vfxBusy) return;
+    var request = vfxRequest; vfxRequest = null;
+    var cv = document.querySelector('canvas');
+    if (!cv || typeof createImageBitmap !== 'function') {
+      post({type:'vfx-frame',requestId:request.requestId}); return;
+    }
+    vfxBusy = true;
+    try {
+      createImageBitmap(cv, {resizeWidth:request.width,resizeHeight:request.height,resizeQuality:'high'})
+        .then(function(bitmap) {
+          try { parent.postMessage({type:'vfx-frame',requestId:request.requestId,bitmap:bitmap}, '*', [bitmap]); }
+          catch (error) { bitmap.close(); post({type:'vfx-frame',requestId:request.requestId}); }
+        }, function() { post({type:'vfx-frame',requestId:request.requestId}); })
+        .finally(function(){vfxBusy=false;});
+    } catch (error) { vfxBusy=false;post({type:'vfx-frame',requestId:request.requestId}); }
+  }
+
   function post(msg) { parent.postMessage(msg, '*'); }
 
   function showError(message, stack) {
@@ -665,6 +686,7 @@
             try { instance && instance.noLoop && instance.noLoop(); } catch (e2) { /* already gone */ }
             return;
           }
+          sendVfxFrame();
           frame++;
           fpsFrames++;
           var now = performance.now();
@@ -817,6 +839,7 @@
   });
 
   window.addEventListener('message', function (e) {
+    if (e.source !== parent) return;
     var msg = e.data;
     if (!msg || typeof msg !== 'object') return;
 
@@ -873,6 +896,17 @@
         break;
       case 'play': paused = false; if (instance && instance.loop) instance.loop(); break;
       case 'pause': paused = true; break;
+      case 'vfx-frame':
+        if (!Number.isSafeInteger(msg.requestId) || msg.requestId<1 ||
+            !Number.isInteger(msg.width) || !Number.isInteger(msg.height) ||
+            msg.width<1 || msg.height<1 || msg.width>2048 || msg.height>2048 ||
+            msg.width*msg.height>2097152 || vfxBusy) break;
+        // A host timeout supersedes its old request; keep only the newest.
+        vfxRequest={requestId:msg.requestId,width:msg.width,height:msg.height};
+        // Running WEBGL sketches capture immediately after draw, before the
+        // browser discards the backbuffer. Static/paused sketches use last frame.
+        if (paused || (instance && instance.isLooping && !instance.isLooping())) sendVfxFrame();
+        break;
       case 'capture':
         try {
           var cv = document.querySelector('canvas');

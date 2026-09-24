@@ -300,15 +300,9 @@ export function FocusedAssetOverlay() {
   // SoundPanel's own hasModulatableControls check decides which section(s)
   // it actually renders once open.
   const canSound = !asset.isSnapshot && (getCompatiblePresets(schema).length > 0 || canModulate);
-  // Phase 4.96 — scoped to shader tiles only for now. Snapshots and
-  // image/svg/video all render through MediaRenderer today (see
-  // lib/render/pool.ts's promote(): `createRenderer(asset.isSnapshot ?
-  // 'image' : asset.type, ...)`), which has no output canvas to draw a
-  // composited result back onto — the same blocker documented in the
-  // Phase 4.96 integration notes for uploads generally, not something
-  // special-cased against snapshots specifically. Widen this the moment
-  // MediaRenderer grows one; nothing else in the rack needs to change.
-  const canVfx = !asset.isSnapshot && asset.type === 'shader';
+  // Shader, sandboxed p5, and media (including image snapshots) now each
+  // expose a VFX presentation surface. The rack uses the same effect chain.
+  const canVfx = true;
   // Same gate as canVfx, same reason — see lib/capture/engine.ts's top doc.
   // A shader tile's canvas is a proven capture source; a p5 sketch's
   // sandboxed cross-origin iframe canvas is not a valid capture source at

@@ -38,8 +38,10 @@ vec2 swirlWarp(vec2 c) {
 }
 
 vec4 fxMain(vec2 uv) {
-  vec2 centered = (uv - 0.5) * u_scale;
+  vec2 aspect = vec2(u_resolution.x / u_resolution.y, 1.0);
+  float scale = max(u_scale, 0.0001);
+  vec2 centered = (uv - 0.5) * aspect * scale;
   vec2 warped = u_warpMode < 0.5 ? quadraticWarp(centered) : swirlWarp(centered);
-  vec2 sampleUv = mix(centered, warped, u_amount) / u_scale + 0.5;
+  vec2 sampleUv = mix(centered, warped, u_amount) / scale / aspect + 0.5;
   return fxSample(clamp(sampleUv, 0.0, 1.0));
 }

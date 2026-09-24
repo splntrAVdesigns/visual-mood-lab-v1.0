@@ -128,10 +128,8 @@ export function MobileFocusedView() {
   // Sound now also covers Tier 2 assets (modulatable, no synth preset),
   // since that's exactly what an uploaded Track is for (Phase 4.9).
   const canSound = !asset.isSnapshot && (getCompatiblePresets(schema).length > 0 || canModulate);
-  // Phase 4.96 — see FocusedAssetOverlay's identical canVfx for the full
-  // reasoning: scoped to shader tiles only until MediaRenderer has an
-  // output canvas to composite onto.
-  const canVfx = !asset.isSnapshot && asset.type === 'shader';
+  // All renderer types now expose an effect surface, including snapshots.
+  const canVfx = true;
   // Same gate, same reason as FocusedAssetOverlay's canCapture — see
   // lib/capture/engine.ts's top doc for why p5 sketch tiles can't record
   // yet (sandboxed cross-origin canvas isn't a valid capture source).

@@ -42,9 +42,10 @@ float valueNoise(vec2 p) {
 }
 
 vec4 fxMain(vec2 uv) {
-  vec2 field = uv * u_scale + u_time * u_speed;
+  vec2 aspect = vec2(u_resolution.x / u_resolution.y, 1.0);
+  vec2 field = (uv - 0.5) * aspect * u_scale + u_time * u_speed;
   float nx = valueNoise(field) - 0.5;
   float ny = valueNoise(field + vec2(31.7, 9.2)) - 0.5;
-  vec2 displaced = uv + vec2(nx, ny) * u_amount;
+  vec2 displaced = uv + vec2(nx, ny) * u_amount / aspect;
   return fxSample(clamp(displaced, 0.0, 1.0));
 }

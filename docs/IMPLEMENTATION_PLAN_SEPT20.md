@@ -24,6 +24,18 @@ scope, test commands and acceptance checks. C (media/p5 parity) and D (feedback
 and performance/visual refinements) remain deferred; A/B does not claim universal
 asset support or full Phase 4.99.1 completion.
 
+### Phase 4.99.1 C/D — Asset parity, feedback and GPU-pass improvements
+
+Implemented as an additive patch against deployed A/B commit `250a4d3`;
+deployment and owner device QA pending. Media tiles now use an effectable
+presentation surface, sandboxed p5 sketches pass validated bounded ImageBitmap
+frames to a host-owned effect surface, and the rack exposes availability on
+desktop/mobile for all renderer types. The GPU chain uses bounded per-card
+framebuffers with a CPU relay fallback. Echo accumulation is time-normalized
+and reset on relevant lifecycle changes. CRT filtering, aspect-aware warps and
+catalog titles are updated. See `PHASE_4_99_1_CD_PATCH_NOTES.md` for exact
+validation, security boundary and remaining mobile/browser acceptance.
+
 ---
 
 ## 0. Current build status at a glance (updated, rev 14)

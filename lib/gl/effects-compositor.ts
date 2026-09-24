@@ -1,3 +1,5 @@
+import { getEffectTargets, releaseEffectTargets } from './effect-targets';
+import { feedbackWeights } from '@/lib/effects/feedback';
 /**
  * VFX consumes the already-presented tile canvas. uploadTexture flips DOM
  * rows on ingestion; framebuffer regions copied with drawImage are already
@@ -31,6 +33,8 @@ export interface CompositeInput {
       applyReserved — an effect shader can read u_time/u_resolution the
       same way any seed shader does. */
   time: number;
+  /** Simulation delta; optional for callers outside the render pool. */
+  delta?: number;
 }
 
 const RESERVED_EFFECT_UNIFORMS = new Set(['u_time', 'u_resolution', 'u_fxMix', 'u_fxSource', 'u_echoBuffer']);
@@ -38,29 +42,21 @@ const RESERVED_EFFECT_UNIFORMS = new Set(['u_time', 'u_resolution', 'u_fxMix', '
 const relayCanvases = new Map<string, HTMLCanvasElement>();
 const relayCtx = new Map<string, CanvasRenderingContext2D>();
 
-/**
- * Echo/feedback buffer — Phase 4.96 Part 2. A per-card persistent canvas
- * (never cleared between frames, unlike the ping-pong relay canvases
- * above, which ARE meant to reset each call) that accumulates a fading
- * trail of the chain's own recent output. Reuses the exact "fade toward
- * black, draw new content on top, re-upload as a texture" technique the
- * seed library's own feedback-trails shaders already use for the same
- * kind of accumulation, just done in 2D canvas space here since the echo
- * buffer lives alongside the relay canvases rather than as a GLSL-side
- * backbuffer.
- *
- * Deliberately NOT wired to every effect — "Strobe is the first and only
- * consumer" per the original Part 2 scope, checked explicitly in
- * compositeEffects() below via the effect instance's own `echo` param
- * rather than a generic `usesEcho` flag on EffectDefinition. The buffer
- * mechanism itself is generic by construction, though: any future effect
- * that declares a `uniform sampler2D u_echoBuffer;` gets it automatically
- * once it's part of an active chain — see the RESERVED_EFFECT_UNIFORMS
- * entry and the wrapper template below.
- */
+/** Per-card history is upright, reset on chain/bypass/resize/time discontinuity. */
 const echoCanvases = new Map<string, HTMLCanvasElement>();
 const echoCtx = new Map<string, CanvasRenderingContext2D>();
-const ECHO_DECAY = 0.85; // fraction of old trail content kept each frame
+const historyState = new Map<string, { signature: string; time: number; generation: number }>();
+const warnings = new Set<string>();
+const notices = new Map<string, string>();
+export function getEffectsPipelineNotice(cardId: string): string | null { return notices.get(cardId) ?? null; }
+export interface EffectsMetrics { passes: number; uploads: number; relayCopies: number; gpuIntermediate: boolean }
+const metrics = new Map<string, EffectsMetrics>();
+export function getEffectsMetrics(cardId: string): EffectsMetrics | undefined { return metrics.get(cardId); }
+
+export function resetEffectHistory(cardId: string): void {
+  echoCanvases.delete(cardId);echoCtx.delete(cardId);historyState.delete(cardId);
+  peekGLStage()?.releaseTexture(`${cardId}:echo`);
+}
 
 function getEcho(cardId: string, w: number, h: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
   let canvas = echoCanvases.get(cardId);
@@ -102,6 +98,7 @@ function getRelay(key: string, w: number, h: number): { canvas: HTMLCanvasElemen
     GLStage's own texture map keyed off the same cardId-derived string)
     would leak for the lifetime of the tab. */
 export function disposeEffectsFor(cardId: string): void {
+  releaseEffectTargets(cardId);resetEffectHistory(cardId);metrics.delete(cardId);warnings.delete(cardId);notices.delete(cardId);
   // The GL half. This function's doc (above) has always claimed the textures
   // were freed "via GLStage's own texture map" — but nothing did that:
   // deleting the canvases from the Maps below left the WebGL textures AND the
@@ -167,7 +164,9 @@ export function compositeEffects(
   input: CompositeInput,
 ): void {
   const active = input.effects.filter((e) => e.enabled && Number.isFinite(e.mix) && e.mix > 0);
-  if (active.length === 0) return;
+  if (active.length === 0) {
+    resetEffectHistory(input.cardId);releaseEffectTargets(input.cardId);metrics.delete(input.cardId);notices.delete(input.cardId);return;
+  }
 
   // Every step below touches the GL context, a 2D canvas, or a compiled
   // program — any one of them can throw given an edge case a specific
@@ -189,7 +188,9 @@ export function compositeEffects(
   try {
     compositeEffectsUnsafe(stage, dest, input, active);
   } catch (err) {
-    console.error(`[effects] composite failed for ${input.cardId}:`, err);
+    if (!warnings.has(input.cardId)) { console.error(`[effects] composite failed for ${input.cardId}:`, err);warnings.add(input.cardId); }
+    notices.set(input.cardId, 'VFX rendering failed; showing the original tile.');
+    resetEffectHistory(input.cardId);
   }
 }
 
@@ -212,45 +213,51 @@ function compositeEffectsUnsafe(
     const result = stage.compile(key, source);
     return result.ok && result.program ? [{ instance, def, program: result.program }] : [];
   });
-  if (passes.length === 0) return;
+  if (passes.length === 0) {
+    notices.set(input.cardId, 'VFX shaders loading or unavailable; showing the original tile.');
+    resetEffectHistory(input.cardId);return;
+  }
+  if (passes.length < active.length) notices.set(input.cardId, 'Some VFX shaders are unavailable; the others remain active.');
+  else notices.delete(input.cardId);
+  const stats: EffectsMetrics={passes:passes.length,uploads:0,relayCopies:0,gpuIntermediate:false};
+  metrics.set(input.cardId,stats);
 
-  // Echo buffer: only maintained when something in the active chain
-  // actually wants it (currently just Dark Strobe with its own `echo`
-  // param above 0) — no point paying for an extra canvas + texture
-  // upload + draw every frame on chains that never read it. Read BEFORE
-  // this frame's passes run — it holds LAST frame's trail; updated with
-  // THIS frame's result only after the loop below, so a pass never reads
-  // its own not-yet-produced output.
-  // Generalized (Tier 1+2 batch) beyond the original dark-strobe-only
-  // check — see EffectDefinition.usesEcho's own doc for the reasoning.
-  // Dark Strobe keeps its exact original opt-in behavior (echo must be
-  // both declared AND above 0); any other effect declaring usesEcho is
-  // active whenever the instance itself is, since the buffer is
-  // load-bearing to those effects rather than an optional dial.
   const usesEcho = passes.some(({ instance: i }) => {
     const def = getEffectDefinition(i.effectType);
     if (!def?.usesEcho) return false;
     if (i.effectType === 'dark-strobe') {
       return typeof i.params.echo === 'number' && i.params.echo > 0;
     }
-    return true;
+    return i.effectType !== 'turbulent-feedback' || Number(i.params.decay ?? 0.6) > 0;
   });
   let echoTex: WebGLTexture | null = null;
+  const signature=passes.map(p=>`${p.instance.id}:${p.instance.effectType}`).join('|')+`:${w}x${h}`;
+  const previous=historyState.get(input.cardId);
+  const delta=input.delta ?? (previous ? input.time-previous.time : 1/60);
+  if (!usesEcho || !previous || previous.signature!==signature || previous.generation!==stage.generation || delta<0 || delta>0.25 || input.time<previous.time) resetEffectHistory(input.cardId);
+  const firstHistory=!historyState.has(input.cardId);
   if (usesEcho) {
     const { canvas: echoCanvas } = getEcho(input.cardId, w, h);
+    stats.uploads++;
     echoTex = stage.uploadTexture(`${input.cardId}:echo`, echoCanvas, { force: true });
   }
 
   // Pass 0's input is the tile's own live frame — captured with force:true
   // for the same reason ShaderRenderer's backbuffer needs it: `source` is
   // the same element reference every tick, only its pixel content changes.
+  stats.uploads++;
   let currentTex = stage.uploadTexture(`${input.cardId}:fx-src`, input.source, { force: true });
   if (!currentTex) return;
 
   let relayToggle: 'a' | 'b' = 'a';
+  const gpuTargets=passes.length>1 ? getEffectTargets(stage,input.cardId,w,h) : null;
+  if(passes.length===1)releaseEffectTargets(input.cardId);
+  stats.gpuIntermediate=!!gpuTargets;
 
   for (let i = 0; i < passes.length; i++) {
     const { instance, def, program } = passes[i];
+    const isLast = i === passes.length - 1;
+    const gpuTarget=!isLast && gpuTargets ? gpuTargets[i%2] : null;
     const region = stage.draw(program, w, h, (set) => {
       set('u_fxSource', currentTex!);
       // Bound unconditionally, same as u_time/u_resolution below — a
@@ -264,11 +271,11 @@ function compositeEffectsUnsafe(
       set('u_time', input.time);
       set('u_resolution', [w, h]);
       applyEffectParams(set, def.params, instance.params);
-    });
+    },gpuTarget?.framebuffer ?? null);
+    if(gpuTarget){currentTex=gpuTarget.texture;continue;}
 
     // Texture ingestion handles Y orientation. Canvas region copies use
     // identity, for both intermediate and final passes. No extra final relay.
-    const isLast = i === passes.length - 1;
     const relayKey = `${input.cardId}:${relayToggle}`;
     const target = isLast
       ? { canvas: dest, ctx: dest.getContext('2d', { alpha: false }) }
@@ -282,6 +289,7 @@ function compositeEffectsUnsafe(
     target.ctx.drawImage(stage.canvas, region.sx, region.sy, region.sw, region.sh, 0, 0, w, h);
     target.ctx.restore();
     if (!isLast) {
+      stats.uploads++;stats.relayCopies++;
       const nextTex = stage.uploadTexture(relayKey, target.canvas, { force: true });
       if (!nextTex) return; // leave the fresh base frame intact on upload failure
       currentTex = nextTex;
@@ -289,25 +297,19 @@ function compositeEffectsUnsafe(
     }
   }
 
-  // Update the trail for NEXT frame, from THIS frame's final result —
-  // `dest` already holds it, already correctly oriented (this is the
-  // on-screen canvas, not a GL-space region), so no flip needed here.
-  // Fade old content toward transparent-black, then draw the new frame
-  // on top at reduced alpha so it accumulates as a ghosting trail rather
-  // than replacing the buffer outright — the same technique the seed
-  // library's own feedback-trails shaders use, done in 2D canvas space
-  // since this buffer lives here rather than as a GLSL backbuffer.
+  // Initialize from the first successful output. Then use a normalized
+  // exponential blend, so steady images keep their brightness at every FPS.
   if (usesEcho) {
-    const { ctx: echoCtx2d } = getEcho(input.cardId, w, h);
-    echoCtx2d.save();
-    echoCtx2d.globalCompositeOperation = 'source-over';
-    echoCtx2d.globalAlpha = 1;
-    echoCtx2d.fillStyle = `rgba(0, 0, 0, ${1 - ECHO_DECAY})`;
-    echoCtx2d.fillRect(0, 0, w, h);
-    echoCtx2d.globalAlpha = ECHO_DECAY;
-    echoCtx2d.drawImage(dest, 0, 0, w, h);
-    echoCtx2d.restore();
+    const { ctx: history } = getEcho(input.cardId,w,h);
+    const weights=feedbackWeights(delta);
+    history.save();
+    history.globalCompositeOperation='source-over';
+    history.globalAlpha=firstHistory ? 1 : weights.inject;
+    history.drawImage(dest,0,0,w,h);
+    history.restore();
+    historyState.set(input.cardId,{signature,time:input.time,generation:stage.generation});
   }
+
 }
 
 function applyEffectParams(

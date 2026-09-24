@@ -107,6 +107,14 @@ function parse(raw: unknown): SandboxToHost | null {
         frame: finite(raw.frame) ? Math.max(0, Math.floor(raw.frame)) : undefined,
       };
 
+    case 'vfx-frame': {
+      if (!finite(raw.requestId) || !Number.isSafeInteger(raw.requestId) || raw.requestId < 1) return null;
+      if (raw.bitmap == null) return { type: 'vfx-frame', requestId: raw.requestId };
+      if (typeof ImageBitmap === 'undefined' || !(raw.bitmap instanceof ImageBitmap)) return null;
+      if (raw.bitmap.width < 1 || raw.bitmap.height < 1 || raw.bitmap.width > 2048 || raw.bitmap.height > 2048 || raw.bitmap.width * raw.bitmap.height > 2_097_152) return null;
+      return { type: 'vfx-frame', requestId: raw.requestId, bitmap: raw.bitmap };
+    }
+
     case 'captured': {
       if (!finite(raw.requestId) || !Number.isInteger(raw.requestId)) return null;
       // A bad dataUrl still resolves the waiter — with null, i.e. "capture

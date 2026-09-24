@@ -1,3 +1,5 @@
+import { SandboxEffectSurface } from './sandbox-effect-surface';
+import { resetEffectHistory } from '@/lib/gl/effects-compositor';
 import type { Asset } from '@/types/asset';
 import type { ControlSchema, ParamState, ParamValue } from './control-schema';
 import { defaultsOf } from './control-schema';
@@ -82,6 +84,9 @@ export class P5Renderer implements AssetRenderer {
   private captureTimers = new Map<number, ReturnType<typeof setTimeout>>();
   private nextRequestId = 1;
   private onMessage: ((e: MessageEvent) => void) | null = null;
+  private effectSurface: SandboxEffectSurface | null = null;
+  private frameWrap: HTMLDivElement | null = null;
+
   private resizeObserver: ResizeObserver | null = null;
   private resizeDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   /** Tracks the last 'enabled' value actually sent to the sandbox, so the
@@ -136,6 +141,7 @@ export class P5Renderer implements AssetRenderer {
       // handle() without passing the gate — see lib/sandbox/validate-message.ts.
       const msg = parseSandboxMessage(e.data);
       if (msg) this.handle(msg);
+      else if (e.data?.type === 'vfx-frame' && typeof ImageBitmap !== 'undefined' && e.data.bitmap instanceof ImageBitmap) e.data.bitmap.close();
     };
     window.addEventListener('message', this.onMessage);
 
@@ -166,7 +172,10 @@ export class P5Renderer implements AssetRenderer {
     this.resizeObserver.observe(el);
 
     if (signal.aborted) return;
-    el.appendChild(frame);
+    const wrap=document.createElement('div');
+    wrap.style.cssText='position:relative;width:100%;height:100%;overflow:hidden';
+    wrap.appendChild(frame);el.appendChild(wrap);this.frameWrap=wrap;
+    this.effectSurface=new SandboxEffectSurface(frame,wrap,msg=>this.send(msg));
 
     await new Promise<void>((resolve) => {
       frame.addEventListener('load', () => resolve(), { once: true });
@@ -184,6 +193,9 @@ export class P5Renderer implements AssetRenderer {
 
   private handle(msg: SandboxToHost): void {
     switch (msg.type) {
+      case 'vfx-frame':
+        this.effectSurface?.accept(msg);
+        break;
       case 'ready':
         this.ready = true;
         this.error = null;
@@ -221,6 +233,7 @@ export class P5Renderer implements AssetRenderer {
 
       case 'error':
         this.error = msg.message ?? 'Sketch error';
+        this.effectSurface?.reset();
         this.settleSwap({ ok: false, error: this.error });
         break;
 
@@ -354,6 +367,10 @@ export class P5Renderer implements AssetRenderer {
     this.send({ type: 'fonts', fonts: resolved });
   }
 
+  setEffectsActive(active: boolean): void { this.effectSurface?.setActive(active); }
+  getEffectsNotice(): string | null { return this.effectSurface?.getNotice() ?? null; }
+  getCanvas(): HTMLCanvasElement | null { return this.effectSurface?.getCanvas() ?? null; }
+
   render(ctx: RenderContext): void {
     if (this.disposed) return;
 
@@ -372,13 +389,14 @@ export class P5Renderer implements AssetRenderer {
 
     if (performance.now() - this.lastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
       this.error = 'Sketch stopped responding and was halted.';
+      this.effectSurface?.reset();
       this.frameEl?.remove();
       this.frameEl = null;
       this.ready = false;
       return;
     }
 
-    void ctx;
+    this.effectSurface?.render(ctx);
 
     // Forward this card's own live audio, if anything is actually driving
     // it — generic plumbing any sketch can opt into via
@@ -494,6 +512,8 @@ export class P5Renderer implements AssetRenderer {
   }
 
   async capture(_opts?: CaptureOpts): Promise<Blob | null> {
+    const surface=this.getCanvas();
+    if(surface) return new Promise(resolve=>surface.toBlob(resolve,_opts?.type ?? 'image/png'));
     if (!this.frameEl) return null;
     const requestId = this.nextRequestId++;
 
@@ -533,6 +553,8 @@ export class P5Renderer implements AssetRenderer {
     return new Promise<SourceSwapResult>((resolve) => {
       const timer = setTimeout(() => this.settleSwap({ ok: false, error: 'The sketch did not respond.' }), 4000);
       this.swap = { resolve, timer };
+      this.effectSurface?.reset();
+      resetEffectHistory(this.cardId);
       this.send({ type: 'init', source, params: this.params as Record<string, unknown> });
     });
   }
@@ -554,6 +576,10 @@ export class P5Renderer implements AssetRenderer {
     this.resizeObserver = null;
     if (this.resizeDebounceTimer) clearTimeout(this.resizeDebounceTimer);
     this.resizeDebounceTimer = null;
+    this.effectSurface?.dispose();
+    this.effectSurface=null;
+    this.frameWrap?.remove();
+    this.frameWrap=null;
     this.frameEl?.remove();
     this.frameEl = null;
     for (const timer of this.captureTimers.values()) clearTimeout(timer);

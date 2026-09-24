@@ -45,8 +45,9 @@ float valueNoise(vec2 p) {
 vec4 fxMain(vec2 uv) {
   vec4 src = fxSample(uv);
 
-  vec2 field = uv * u_scale + u_time * 0.15;
-  vec2 warp = vec2(valueNoise(field) - 0.5, valueNoise(field + vec2(17.3, 4.1)) - 0.5) * u_turbulence;
+  vec2 aspect = vec2(u_resolution.x / u_resolution.y, 1.0);
+  vec2 field = (uv - 0.5) * aspect * u_scale + u_time * 0.15;
+  vec2 warp = vec2(valueNoise(field) - 0.5, valueNoise(field + vec2(17.3, 4.1)) - 0.5) * u_turbulence / aspect;
   vec4 trail = fxEcho(clamp(uv + warp, 0.0, 1.0));
 
   vec3 blended = mix(src.rgb, max(src.rgb, trail.rgb), u_decay);

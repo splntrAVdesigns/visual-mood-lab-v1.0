@@ -117,16 +117,13 @@ export interface AssetRenderer {
    */
   resumeFromStall?(): void;
 
-  /**
-   * Phase 4.96 — the tile's own currently-rendered surface, if this
-   * renderer type has one that's a valid `texImage2D` source. Returns
-   * null for a renderer with no such surface (P5Renderer's sandboxed
-   * iframe is not a valid capture source at the browser level — see
-   * lib/gl/effects-compositor.ts's top doc). Optional, like
-   * resumeFromStall above, for the same reason: most call sites don't
-   * need it, and a renderer that has nothing to return shouldn't have to
-   * implement a method that always returns null.
-   */
+  /** Enable/disable optional media/sandbox presentation adapters. */
+  setEffectsActive?(active: boolean): void;
+  /** Null means ready/no limitation; otherwise a user-facing availability note. */
+  getEffectsNotice?(): string | null;
+
+  /** Current presentation canvas when available. Sandbox p5 transfers a
+   * bounded ImageBitmap into a host-owned canvas; its iframe is never read. */
   getCanvas?(): HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null;
 
   dispose(): void;

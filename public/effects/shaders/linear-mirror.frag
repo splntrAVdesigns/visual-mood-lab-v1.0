@@ -16,7 +16,8 @@ uniform float u_angle;   // degrees — the mirror line's orientation
 uniform float u_offset;  // -0.5..0.5 — perpendicular distance of the line from center
 
 vec4 fxMain(vec2 uv) {
-  vec2 centered = uv - 0.5;
+  vec2 aspect = vec2(u_resolution.x / u_resolution.y, 1.0);
+  vec2 centered = (uv - 0.5) * aspect;
 
   float rad = radians(u_angle);
   vec2 dir = vec2(cos(rad), sin(rad));       // along the mirror line
@@ -29,6 +30,6 @@ vec4 fxMain(vec2 uv) {
     centered -= 2.0 * d * normal;
   }
 
-  vec2 mirrored = clamp(centered + 0.5, 0.0, 1.0);
+  vec2 mirrored = clamp(centered / aspect + 0.5, 0.0, 1.0);
   return fxSample(mirrored);
 }

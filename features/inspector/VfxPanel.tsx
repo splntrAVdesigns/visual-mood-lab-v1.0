@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { PanelModeButton } from '@/features/panels/PanelModeButton';
 import { usePanelCollapsed } from '@/features/panels/usePanelCollapsed';
 import {
@@ -30,6 +30,9 @@ import { ModulatedValue } from './ModulatedValue';
 import { ModRow } from './ModulationPanel';
 import { sourceMeta } from '@/lib/modulation/bus';
 import { useInspectorStore } from '@/stores';
+import { getPool } from '@/lib/render/pool';
+import { getEffectsPipelineNotice } from '@/lib/gl/effects-compositor';
+import { glUnavailableReason } from '@/lib/gl/context-pool';
 import s from '../features.module.css';
 
 const FAMILY_ORDER: { key: EffectFamily; label: string }[] = [
@@ -70,11 +73,23 @@ export function VfxPanel({ itemId, onClose, embedded = false }: VfxPanelProps) {
   const [browsing, setBrowsing] = useState(false);
   const [expandedMod, setExpandedMod] = useState<{ instanceId: string; paramId: string } | null>(null);
 
+  const [availability, setAvailability] = useState<string | null>(null);
+  useEffect(() => {
+    const update=()=>setAvailability(
+      getPool().get(itemId)?.getEffectsNotice?.()
+        ?? (glUnavailableReason() ? 'VFX unavailable: WebGL2 is not supported on this device.' : null)
+        ?? getEffectsPipelineNotice(itemId),
+    );
+    update();
+    const timer=setInterval(update,500);return ()=>clearInterval(timer);
+  },[itemId]);
+
   const atCap = effects.length >= MAX_EFFECTS_PER_CHAIN;
   const definitions = listEffectDefinitions();
 
   const body = (
     <div className={embedded ? s.modPanelListEmbedded : s.modPanelList}>
+      {availability && <p className={s.notice} role="status">{availability}</p>}
       {effects.length === 0 && !browsing && <p className={s.notice}>No effects on this tile yet. Add one below.</p>}
 
       {effects.map((instance, index) => (

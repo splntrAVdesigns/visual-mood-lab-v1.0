@@ -1,3 +1,4 @@
+import { effectSize } from '@/lib/effects/surface';
 import type { Asset, AssetType } from '@/types/asset';
 import type { ControlSchema, ParamState, ParamValue, RGBA } from './control-schema';
 import { defaultSchemaFor, defaultsOf } from './control-schema';
@@ -36,6 +37,11 @@ export class MediaRenderer implements AssetRenderer {
   private params: ParamState = {};
   private paused = false;
   private disposed = false;
+  private effectsActive = false;
+  private effectCanvas: HTMLCanvasElement | null = null;
+  private cleanCanvas: HTMLCanvasElement | null = null;
+  private effectsNotice: string | null = null;
+  private readable = false;
 
   constructor(assetId: string, type: AssetType) {
     this.assetId = assetId;
@@ -62,6 +68,7 @@ export class MediaRenderer implements AssetRenderer {
           })
         : document.createElement('img');
 
+    el.crossOrigin = 'anonymous';
     el.src = src;
     el.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block';
     if (el instanceof HTMLImageElement) {
@@ -85,9 +92,14 @@ export class MediaRenderer implements AssetRenderer {
       const done = () => resolve();
       el.addEventListener(this.type === 'video' ? 'loadeddata' : 'load', done, { once: true });
       el.addEventListener('error', () => {
-        this.error = 'Failed to load media';
-        resolve();
-      }, { once: true });
+        // Display-only fallback for hosts which disallow anonymous CORS.
+        // Keep VFX unavailable explicitly; do not upload a tainted canvas.
+        if (el.crossOrigin) {
+          el.removeAttribute('crossorigin');
+          this.effectsNotice = 'VFX unavailable: this media host does not allow image processing. Upload a local copy.';
+          el.src = src;
+        } else { this.error = 'Failed to load media'; resolve(); }
+      });
       setTimeout(resolve, 8000);
     });
 
@@ -96,9 +108,70 @@ export class MediaRenderer implements AssetRenderer {
     this.applyStyle();
   }
 
-  render(_ctx: RenderContext): void {
-    // Images and video are driven by the browser, not by our loop. Style is
-    // only reapplied when a param actually changes.
+  setEffectsActive(active: boolean): void {
+    if (this.effectsActive === active) return;
+    this.effectsActive = active;
+    this.readable = false;
+    if (!active) this.hideEffects();
+  }
+
+  getEffectsNotice(): string | null { return this.effectsNotice; }
+
+  private hideEffects(): void {
+    if (this.effectCanvas) this.effectCanvas.style.display = 'none';
+    if (this.el) this.el.style.visibility = '';
+    if (this.tintEl) this.tintEl.style.visibility = '';
+    this.applyStyle();
+  }
+
+  render(ctx: RenderContext): void {
+    if (!this.effectsActive || !this.el || !this.wrap || this.effectsNotice?.startsWith('VFX unavailable')) return;
+    const el = this.el;
+    const sw = el instanceof HTMLVideoElement ? el.videoWidth : el.naturalWidth;
+    const sh = el instanceof HTMLVideoElement ? el.videoHeight : el.naturalHeight;
+    if (!sw || !sh || (el instanceof HTMLVideoElement && el.readyState < 2)) {
+      this.effectsNotice = 'VFX waiting for media…'; return;
+    }
+    if (!this.effectCanvas) {
+      this.effectCanvas = document.createElement('canvas');
+      this.effectCanvas.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none';
+      this.wrap.appendChild(this.effectCanvas);
+      this.cleanCanvas = document.createElement('canvas');
+    }
+    const dest = this.effectCanvas, clean = this.cleanCanvas!;
+    const [w,h] = effectSize(ctx.width, ctx.height, ctx.pixelRatio);
+    if (clean.width !== w || clean.height !== h) { clean.width=w; clean.height=h; this.readable=false; }
+    if (dest.width !== w || dest.height !== h) { dest.width=w; dest.height=h; }
+    const base=clean.getContext('2d'), out=dest.getContext('2d');
+    if (!base || !out) return;
+    try {
+      // Bake object-fit:cover and tint before VFX; then bake the existing
+      // wrapper transform/opacity against the tile's black presentation.
+      base.clearRect(0,0,w,h);
+      const fit=Math.max(w/sw,h/sh), dw=sw*fit, dh=sh*fit;
+      base.drawImage(el,(w-dw)/2,(h-dh)/2,dw,dh);
+      if (!this.readable) { base.getImageData(0,0,1,1); this.readable=true; }
+      const tint=(this.params.tint ?? {r:1,g:1,b:1,a:1}) as RGBA;
+      base.save(); base.globalCompositeOperation='color';
+      base.globalAlpha=Math.max(0,Math.min(1,Number(this.params.tintAmount ?? 0)));
+      base.fillStyle=rgbaToCss({...tint,a:1});base.fillRect(0,0,w,h);base.restore();
+      const offset=Array.isArray(this.params.offset)?this.params.offset:[0,0];
+      out.fillStyle='#000';out.fillRect(0,0,w,h);out.save();
+      out.translate(w/2+Number(offset[0])*w,h/2+Number(offset[1])*h);
+      out.rotate(Number(this.params.rotation ?? 0)*Math.PI/180);
+      const zoom=Number(this.params.scale ?? 1);out.scale(zoom,zoom);
+      out.globalAlpha=Math.max(0,Math.min(1,Number(this.params.opacity ?? 1)));
+      out.drawImage(clean,-w/2,-h/2);out.restore();
+      this.wrap.style.transform='none';this.wrap.style.opacity='1';
+      // Keep video paint/decode active underneath the opaque output canvas;
+      // hiding the media element can throttle its frames on mobile Safari.
+      el.style.visibility='';if(this.tintEl)this.tintEl.style.visibility='hidden';
+      dest.style.display='block';this.effectsNotice=null;
+    } catch {
+      this.readable=false;
+      this.effectsNotice='VFX unavailable: this media cannot be processed. Upload a local copy.';
+      this.hideEffects();
+    }
   }
 
   private applyStyle(): void {
@@ -195,8 +268,8 @@ export class MediaRenderer implements AssetRenderer {
       works for all three; there's just no destination canvas yet to draw
       a composited result back onto (see lib/render/pool.ts's tick() doc
       on the same gap) — that's the remaining piece, not this accessor. */
-  getCanvas(): HTMLImageElement | HTMLVideoElement | null {
-    return this.el;
+  getCanvas(): HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null {
+    return this.effectsActive && this.readable ? this.effectCanvas : this.el;
   }
 
   setParam(id: string, value: ParamValue): void {
@@ -214,6 +287,13 @@ export class MediaRenderer implements AssetRenderer {
   setQuality(_q: Quality): void {}
 
   async capture(opts: CaptureOpts = {}): Promise<Blob | null> {
+    if (this.effectsActive && this.readable && this.effectCanvas) {
+      const output = document.createElement('canvas');
+      output.width=Math.max(1,Math.round(this.effectCanvas.width*(opts.scale ?? 1)));
+      output.height=Math.max(1,Math.round(this.effectCanvas.height*(opts.scale ?? 1)));
+      output.getContext('2d')?.drawImage(this.effectCanvas,0,0,output.width,output.height);
+      return new Promise(resolve=>output.toBlob(resolve,opts.type ?? 'image/png'));
+    }
     const el = this.el;
     if (!el) return null;
 
@@ -260,6 +340,9 @@ export class MediaRenderer implements AssetRenderer {
       this.el.removeAttribute('src');
       this.el.load();
     }
+    this.effectCanvas?.remove();
+    this.effectCanvas = null;
+    this.cleanCanvas = null;
     this.el = null;
     this.tintEl = null;
     this.wrap?.remove();

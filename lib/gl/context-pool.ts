@@ -606,6 +606,7 @@ export class GLStage {
     w: number,
     h: number,
     apply: (set: UniformSetter) => void,
+    framebuffer: WebGLFramebuffer | null = null,
   ): { sx: number; sy: number; sw: number; sh: number } {
     const { gl } = this;
 
@@ -618,16 +619,20 @@ export class GLStage {
     const sw = Math.max(1, Math.min(Math.round(w), capacity.width));
     const sh = Math.max(1, Math.min(Math.round(h), capacity.height));
 
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
     gl.useProgram(compiled.program);
     gl.bindVertexArray(this.vao);
     gl.viewport(0, 0, sw, sh);
     gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.BLEND);
 
-    apply(makeSetter(gl, compiled));
-
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-    gl.bindVertexArray(null);
+    try {
+      apply(makeSetter(gl, compiled));
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    } finally {
+      gl.bindVertexArray(null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    }
 
     // GL's origin is bottom-left; the canvas image origin is top-left, so the
     // rendered region lives at the bottom of the shared canvas.

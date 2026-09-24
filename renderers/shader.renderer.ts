@@ -1,4 +1,5 @@
 import type { Asset } from '@/types/asset';
+import { resetEffectHistory } from '@/lib/gl/effects-compositor';
 import type { ControlSchema, ParamState, ParamValue, RGBA } from './control-schema';
 import { defaultsOf } from './control-schema';
 import type { SourceSwapResult } from './types';
@@ -23,6 +24,7 @@ export class ShaderRenderer implements AssetRenderer {
   error: string | null = null;
 
   private canvas: HTMLCanvasElement | null = null;
+  private cardId: string | null = null;
   private ctx2d: CanvasRenderingContext2D | null = null;
   private compiled: CompiledProgram | null = null;
   private schema: ControlSchema | null = null;
@@ -85,6 +87,7 @@ export class ShaderRenderer implements AssetRenderer {
   }
 
   async mount(el: HTMLElement, asset: Asset, signal: AbortSignal): Promise<void> {
+    this.cardId = asset.itemId;
     const stage = getGLStage();
     if (!stage) {
       this.error = glUnavailableReason() ?? 'WebGL2 unavailable';
@@ -162,6 +165,7 @@ export class ShaderRenderer implements AssetRenderer {
     this.usesBackbuffer = /\bu_prevFrame\b|\bu_backbuffer\b/.test(source);
     this.params = carryParams(this.schema, parsed.schema, this.params);
     this.schema = parsed.schema;
+    if (this.cardId) resetEffectHistory(this.cardId);
 
     if (retired && retired !== key) stage.releaseProgram(retired);
     return {

@@ -49,11 +49,17 @@ vec4 fxMain(vec2 uv) {
 
   float period = max(u_scanlineDensity, 1.5);
   float yPx = warped.y * u_resolution.y;
-  float scanline = mix(1.0, 0.5 + 0.5 * sin(yPx * 6.28318 / period), u_scanlineIntensity);
+  // Integrate a sinusoid across the pixel footprint, suppressing aliases
+  // when curvature or downsampling pushes scanlines above Nyquist.
+  float phase = yPx * 6.2831853 / period;
+  float footprint = max(fwidth(phase) * 0.5, 0.0001);
+  float attenuation = sin(min(footprint, 3.14159265)) / footprint;
+  float scanline = mix(1.0, 0.5 + 0.5 * sin(phase) * attenuation, u_scanlineIntensity);
 
   vec2 cell = mod(warped * u_resolution, 3.0);
   vec3 maskColor = cell.x < 1.0 ? vec3(1.2, 0.8, 0.8) : (cell.x < 2.0 ? vec3(0.8, 1.2, 0.8) : vec3(0.8, 0.8, 1.2));
-  vec3 mask = mix(vec3(1.0), maskColor, u_maskStrength);
+  float maskFilter = 1.0 - smoothstep(1.0, 2.0, fwidth(warped.x * u_resolution.x));
+  vec3 mask = mix(vec3(1.0), maskColor, u_maskStrength * maskFilter);
 
   float dist = length(warped - 0.5);
   float vig = mix(1.0, 1.0 - smoothstep(0.3, 0.75, dist), u_vignette);

@@ -176,7 +176,7 @@
     },
     {
       "id": "invert",
-      "title": "Invert",
+      "title": "Point Invert",
       "family": "mirror",
       "file": "invert.frag",
       "hint": "Point reflection through an adjustable center \u2014 completes the Linear/Quad/Invert mirror family.",
@@ -290,7 +290,7 @@
     },
     {
       "id": "hue-shift",
-      "title": "Hue Shift LUT",
+      "title": "Hue Shift",
       "family": "color",
       "file": "hue-shift.frag",
       "hint": "HSV hue/saturation/brightness grade. Shader-based, not a texture LUT yet \u2014 see the shader's own doc for the scoping note.",

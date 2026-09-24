@@ -14,7 +14,7 @@ import { STALL_RESUME_THRESHOLD_MS } from '@/lib/sandbox/protocol';
 import type { EffectInstance } from '@/lib/effects/types';
 import { getEffectSchema } from '@/lib/effects/registry';
 import { getGLStage } from '@/lib/gl/context-pool';
-import { compositeEffects, disposeEffectsFor, loadEffectShaderIfNeeded } from '@/lib/gl/effects-compositor';
+import { compositeEffects, resetEffectHistory, disposeEffectsFor, loadEffectShaderIfNeeded } from '@/lib/gl/effects-compositor';
 
 /**
  * The renderer pool.
@@ -428,11 +428,13 @@ class RendererPool {
 
   /** The inspector owns the unmodulated truth; the pool layers motion on it. */
   setBaseParams(cardId: string, params: ParamState): void {
+    resetEffectHistory(cardId);
     const entry = this.entries.get(cardId);
     if (entry) entry.baseParams = { ...params };
   }
 
   setBaseParam(cardId: string, id: string, value: ParamState[string]): void {
+    resetEffectHistory(cardId);
     const entry = this.entries.get(cardId);
     if (entry) entry.baseParams[id] = value;
   }
@@ -486,6 +488,13 @@ class RendererPool {
   setEffects(cardId: string, effects: EffectInstance[]): void {
     const entry = this.entries.get(cardId);
     if (!entry) return;
+
+    // A bypass, reorder, or replacement starts a new feedback timeline.
+    const chainKey = (chain: EffectInstance[]) => chain
+      .filter((effect) => effect.enabled && effect.mix > 0)
+      .map((effect) => `${effect.id}:${effect.effectType}`).join('|');
+    if (chainKey(entry.effects) !== chainKey(effects)) resetEffectHistory(cardId);
+    if (!effects.some((effect) => effect.enabled && effect.mix > 0)) disposeEffectsFor(cardId);
 
     const bus = getModBus();
     for (const prev of entry.effects) {
@@ -832,6 +841,7 @@ class RendererPool {
       if (!entry.mounted) continue;
 
       if (resumedFromStall) {
+        resetEffectHistory(entry.cardId);
         try {
           entry.renderer.resumeFromStall?.();
         } catch (err) {
@@ -880,6 +890,7 @@ class RendererPool {
       }
 
       try {
+        entry.renderer.setEffectsActive?.(entry.effects.some((effect) => effect.enabled));
         entry.renderer.render(ctx);
       } catch (err) {
         entry.failure = err instanceof Error ? err.message : String(err);
@@ -893,23 +904,9 @@ class RendererPool {
       // DEMOTE the card, tearing down a perfectly healthy tile over a
       // post-process problem. Now the tile keeps rendering, un-effected.
       try {
-        // Phase 4.96 — composite the VFX chain over whatever the renderer
-        // just drew. Gated on entry.effects.length first (the common
-        // case, nothing to do) before touching getCanvas() at all.
-        //
-        // Scoped to HTMLCanvasElement sources only for now — a shader
-        // tile's canvas is a proven capture source (ShaderRenderer.
-        // getCanvas() returns the real thing). MediaRenderer.getCanvas()
-        // also returns a valid texImage2D source (its <img>/<video>
-        // element), so CAPTURE works there too, but there's no
-        // destination canvas to draw the composited result back onto —
-        // an image/video tile's visible surface is that DOM element
-        // directly, not a canvas, and giving it one is a small separate
-        // piece of work, not done in this pass. p5.renderer.ts's
-        // sandboxed cross-origin iframe is never a valid texImage2D
-        // source at all (a browser-level restriction, not a missing
-        // accessor) — see lib/gl/effects-compositor.ts's top doc.
-        if (entry.effects.length > 0) {
+        // Only enter the compositor when a pass can actually be active.
+        // Media and sandbox adapters redraw a fresh base before each pass.
+        if (entry.effects.some((effect) => effect.enabled && effect.mix > 0)) {
           const surface = entry.renderer.getCanvas?.();
           if (surface instanceof HTMLCanvasElement) {
             const stage = getGLStage();
@@ -921,6 +918,7 @@ class RendererPool {
                 width: surface.width,
                 height: surface.height,
                 time: entry.lastTime,
+                delta: ctx.delta,
               });
             }
           }

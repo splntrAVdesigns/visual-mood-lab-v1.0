@@ -46,8 +46,8 @@ try {
     };
     const pixels = c => [...c.getContext('2d').getImageData(0,0,c.width,c.height).data];
     const equal = (a,b) => a.length === b.length && a.every((v,i) => Math.abs(v-b[i]) <= 1);
-    const render = (effects, { w=64,h=48,cardId=`case-${serial++}`,source=fixture(w,h),time=0 }={}) => {
-      api.compositeEffects(stage,source,{source,cardId,effects,width:w,height:h,time}); return source;
+    const render = (effects, { w=64,h=48,cardId=`case-${serial++}`,source=fixture(w,h),time=0,renderStage=stage }={}) => {
+      api.compositeEffects(renderStage,source,{source,cardId,effects,width:w,height:h,time,delta:1/60}); return source;
     };
     // Missing trailing shader BEFORE it is fetched must not hide a valid pass.
     await api.loadEffectShaderIfNeeded('hue-shift');
@@ -90,6 +90,19 @@ try {
     for (const count of [1,2,3]) {
       check(`${count} neutral passes preserve orientation`,equal(pixels(fixture()),pixels(render(Array.from({length:count},()=>instance('grain',{intensity:0}))))));
     }
+    const chain=[instance('hue-shift',{hue:68}),instance('grain',{intensity:0.12}),instance('crt',{curvature:0.1})];
+    const gpuCard=`gpu-${serial++}`;
+    const gpuPixels=pixels(render(chain,{cardId:gpuCard}));
+    const gpuMetrics=api.getEffectsMetrics(gpuCard);
+    check('GPU path removes intermediate texture uploads',gpuMetrics?.gpuIntermediate === true && gpuMetrics.uploads === 1 && gpuMetrics.relayCopies === 0);
+    // Share the REAL drawing methods but conceal GL target allocation so the
+    // compositor takes its original CPU relay path for identical inputs.
+    const relayStage={canvas:stage.canvas,compile:stage.compile.bind(stage),uploadTexture:stage.uploadTexture.bind(stage),draw:stage.draw.bind(stage)};
+    const relayCard=`relay-${serial++}`;
+    const relayPixels=pixels(render(chain,{cardId:relayCard,renderStage:relayStage}));
+    const relayMetrics=api.getEffectsMetrics(relayCard);
+    check('CPU fallback retains three-pass behavior',relayMetrics?.gpuIntermediate === false && relayMetrics.relayCopies === 2);
+    check('GPU and relay output have identical orientation/color',equal(gpuPixels,relayPixels));
     const unknown=instance('retired-effect');
     for (const chain of [[grade,unknown],[unknown,grade],[grade,unknown,instance('grain',{intensity:0})]])
       check('unknown pass preserves valid chain',equal(graded,pixels(render(chain))));
