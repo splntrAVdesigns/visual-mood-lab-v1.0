@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "release": "1.0.0-beta",
+  "reconciledAt": "2026-08-19",
+  "baselineArchive": {
+    "name": "ORBITAL - AUDIO VISUALIZER BETA V1.8.2026 (AUG 2026)_7_refactor complete(1).zip",
+    "sha256": "589e38f7e63cdedc15cee40f83a72fa5fa4e7f8fc59c0a070e5ddcd23761ea2f"
+  },
+  "toolchain": {
+    "node": "22.x",
+    "npm": "10.x",
+    "packageManager": "npm@10.9.4"
+  },
+  "production": {
+    "frameBodySha256": "fd109071da343499b79995fa8e3d26514fbbc9d2da522efe1a8dd1ea2834b839",
+    "mainThreadFallbackFileCount": 67,
+    "mainThreadFallbackSha256": "20393f505baf6410e3249664746d90696753bf1c84d3eb140734b0d9ffe086a3",
+    "coreParticleFallbackLineCount": 454,
+    "coreParticleFallbackSha256": "79f19316ce38fc7cb4bdc0d9f2de957703bd1566d07dd1fc8c1b90068a436ce1"
+  },
+  "files": {
+    "package.json": "0301fc6475f3a8b111791787bec6af52119ffea7677d839afd5c79e73f6100a7",
+    "package-lock.json": "fa133c06f907e4e42cdc29415be4ab3485c748cc188f1c20dd567fcb96db84f2",
+    "public/vendor/gif.js": "07aee23742523e6a154ac9c758903cd29cb7f5975c9b13f9146eaf591a01b56c",
+    "public/vendor/gif.worker.js": "33ce40455c96e6a8e54845177e3dfa61c21b36941d060e35a5715f42fe7fef59",
+    "index.html": "541b9da087387323cd6dbb61b8d4d5335eda5b20cc275a8b1015344349bbdc75",
+    "vercel.json": "4de7027249427cc35ff2e784611d4a0e88e39bc512da4d57336c8f0fedcf3c45",
+    ".gitignore": "b1e75c2b833edba757b82bb7dceda30a459ce776353724e557b4292faa2758c6",
+    ".nvmrc": "8fb7215a78fb2dacb282d6fca135a48bd69892ad6560efa3c5a9c12b0200ac7c"
+  }
+}
