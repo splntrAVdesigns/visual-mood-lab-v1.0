@@ -641,7 +641,7 @@ class RendererPool {
         const control = schema.controls.find((c) => c.id === controlId);
         if (!mod || !control) continue;
 
-        const base = controlId === 'mix' ? instance.mix : nextParams[controlId];
+        const base = controlId === 'mix' ? instance.mix : (nextParams[controlId] ?? control.default);
         if (typeof base !== 'number') continue;
 
         const signal = bus.sample(`${entry.cardId}:fx:${instance.id}:${controlId}`, mod, entry.cardId);

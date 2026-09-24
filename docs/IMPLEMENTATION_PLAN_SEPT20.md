@@ -6,6 +6,24 @@
 
 **Last updated:** 2026-09-23 (rev 20 — Phase 4.99 (Shapeshift, mood tile #100) SHIPPED and merged to `main`; the tile library moves to 100 assets and Phase 4.95 is now the recommended next phase — see its updated status note and the reasoning in the new Phase 4.99 section. Rev 19 — the 'Latest Update' ticker, built and verified on rev 18, is now confirmed merged to `main` (`e1aeae2`). Rev 18 — the scrim-click fix (rev 17) is now merged: merged to `main` as `f6566f6` on 2026-09-21 (owner-tested on the preview, then merged); the fix commit is `eaa609a` on top of the Phase 4.98 merge `a3cfbe9`. Owner confirmed the merged fix passed testing. Rev 17 — Phase 4.98 Floating Sidecar Panels SHIPPED: merged to `main` as `a3cfbe9` on 2026-09-21; owner-verified on the Vercel preview that the app loads and functions in Safari and Firefox. A pre-existing backdrop-click bug, exposed by owner testing of Phase 4.98 but not caused by it, was found and fixed (`lib/ui/backdrop-dismiss.ts`, on branch `fix/scrim-click`, not yet merged as of this revision); see §0 and `SPRINT_FLOATING_PANELS.md` §12. Corrects a rev 16 error: no slider drag was ever affected by the bug — `Slider` captures the pointer, so its drags always completed correctly; the bug only affected presses on plain content (panel text, the tile). Rev 15 — Phase 4.98 Floating Sidecar Panels implemented on `feat/floating-panels` and verified in Chromium (72-check browser suite, 82-check layout verifier, all existing verifiers, build); browser testing found and fixed a header-click-closes-overlay bug; Safari/Firefox preview QA and merge pending. Rev 14 — re-sequenced after a source audit of the current build: Phase 4.98 is now Floating Sidecar Panels (desktop) with a stack accordion; the Live Output slices (Stage page + pop-out, OBS link) and the Live Session Bus, Mobile Companion Controller, and native bridge are deferred with re-entry triggers; stale status items corrected — `getTrackFrequencyData()` is already guarded, the renderer budget is device-scaled at 1–3, and Phase 4.97 code exists through 4.97G. No application code was changed by this planning revision.)
 
+
+### Phase 4.99.1 A/B — VFX orientation and chain correctness (2026-09-24)
+
+Implemented in a patch package against `c7e6f67ffef832e11f1f7fa251679c1f8e9e1546`;
+not yet deployed or owner-verified. Removes redundant VFX final/relay Y flips,
+resolves runnable passes before final-output selection, bypasses zero Mix,
+contains/deduplicates async shader loads, and restores schema defaults for
+VFX modulation of older saved instances. SHAPESHIFT and the base shader
+renderer retain their existing orientation convention.
+
+Production build, TypeScript, all 13 manifest definitions, 15 compositor
+control-flow checks and 10 renderer-pool checks pass. GPU pixel tests are
+provided but blocked in the authoring environment by browser socket restrictions;
+iOS Safari/device QA is pending. See `PHASE_4_99_1_AB_PATCH_NOTES.md` for exact
+scope, test commands and acceptance checks. C (media/p5 parity) and D (feedback
+and performance/visual refinements) remain deferred; A/B does not claim universal
+asset support or full Phase 4.99.1 completion.
+
 ---
 
 ## 0. Current build status at a glance (updated, rev 14)

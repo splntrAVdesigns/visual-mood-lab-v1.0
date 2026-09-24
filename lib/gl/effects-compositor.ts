@@ -1,33 +1,9 @@
 /**
- * Visual Mood Lab — Phase 4.96 effects compositor.
- *
- * There is no FBO/render-to-texture layer in context-pool.ts today — GLStage
- * draws directly into a region of its own shared canvas and callers blit
- * that region out with drawImage (see GLStage.draw's doc). Rather than add
- * a parallel render-to-texture abstraction, this reuses the ONE pattern the
- * codebase already has for exactly this problem: ShaderRenderer's feedback
- * backbuffer, which captures a live-mutating canvas into an offscreen
- * canvas and re-uploads it as a texture every frame with
- * `uploadTexture(key, canvas, { force: true })`.
- *
- * A chain of N effects becomes N draw-and-relay steps: draw into the
- * shared stage, copy that region into a small offscreen "relay" canvas,
- * upload the relay canvas as next pass's input texture, repeat, then blit
- * the final pass's output onto the destination canvas the same way
- * ShaderRenderer already blits its own shader output (flip transform,
- * because GL renders y-up and canvas images are y-down).
- *
- * Capture support today: shader-rendered `<canvas>` sources work directly
- * (proven — this is the ShaderRenderer case). `<img>`/`<video>` elements
- * are also valid `texImage2D` sources and will work through the same
- * `captureFrame()` entry point once a renderer exposes one — nothing here
- * is shader-canvas-specific. A cross-origin sandboxed p5 `<iframe>` is NOT
- * a valid texImage2D source at all (browser-level restriction, not a
- * missing accessor) — see IMPLEMENTATION_PLAN.md §7 Phase 4.96 note on
- * this; that needs the sandbox to stream frames out over postMessage, a
- * separate piece of design work, not wired here.
- *
- * Location: lib/gl/effects-compositor.ts
+ * VFX consumes the already-presented tile canvas. uploadTexture flips DOM
+ * rows on ingestion; framebuffer regions copied with drawImage are already
+ * upright. Never repeat ShaderRenderer's authoring-space flip here.
+ * Resolve runnable programs before drawing; publish the final runnable pass.
+ * Missing/loading/invalid shaders are bypassed in chain order.
  */
 
 import { peekGLStage, type GLStage } from './context-pool';
@@ -190,7 +166,7 @@ export function compositeEffects(
   dest: HTMLCanvasElement,
   input: CompositeInput,
 ): void {
-  const active = input.effects.filter((e) => e.enabled);
+  const active = input.effects.filter((e) => e.enabled && Number.isFinite(e.mix) && e.mix > 0);
   if (active.length === 0) return;
 
   // Every step below touches the GL context, a 2D canvas, or a compiled
@@ -226,6 +202,18 @@ function compositeEffectsUnsafe(
   const w = Math.max(1, Math.round(input.width));
   const h = Math.max(1, Math.round(input.height));
 
+  // Resolve the runnable chain first. The final *successful* program owns
+  // output, even when a later configured entry is loading or fails compile.
+  const passes = active.flatMap((instance) => {
+    const def = getEffectDefinition(instance.effectType);
+    const key = `fx:${instance.effectType}`;
+    const source = compiledSourceCache.get(key);
+    if (!def || !source) return [];
+    const result = stage.compile(key, source);
+    return result.ok && result.program ? [{ instance, def, program: result.program }] : [];
+  });
+  if (passes.length === 0) return;
+
   // Echo buffer: only maintained when something in the active chain
   // actually wants it (currently just Dark Strobe with its own `echo`
   // param above 0) — no point paying for an extra canvas + texture
@@ -239,7 +227,7 @@ function compositeEffectsUnsafe(
   // both declared AND above 0); any other effect declaring usesEcho is
   // active whenever the instance itself is, since the buffer is
   // load-bearing to those effects rather than an optional dial.
-  const usesEcho = active.some((i) => {
+  const usesEcho = passes.some(({ instance: i }) => {
     const def = getEffectDefinition(i.effectType);
     if (!def?.usesEcho) return false;
     if (i.effectType === 'dark-strobe') {
@@ -261,23 +249,9 @@ function compositeEffectsUnsafe(
 
   let relayToggle: 'a' | 'b' = 'a';
 
-  for (let i = 0; i < active.length; i++) {
-    const instance = active[i];
-    const def = getEffectDefinition(instance.effectType);
-    if (!def) continue; // unknown effectType (retired registry entry) — fail closed, skip
-
-    const compileKey = `fx:${instance.effectType}`;
-    const source = compiledSourceCache.get(compileKey);
-    if (!source) continue; // shader source not yet loaded for this effect — see loadEffectShaderIfNeeded
-
-    const result = stage.compile(compileKey, source);
-    if (!result.ok || !result.program) continue;
-
-    const isLastPass = i === active.length - 1;
-    const relayKey = `${input.cardId}:${relayToggle}`;
-    const { canvas: relayCanvas, ctx: relayCtx2d } = getRelay(relayKey, w, h);
-
-    const region = stage.draw(result.program, w, h, (set) => {
+  for (let i = 0; i < passes.length; i++) {
+    const { instance, def, program } = passes[i];
+    const region = stage.draw(program, w, h, (set) => {
       set('u_fxSource', currentTex!);
       // Bound unconditionally, same as u_time/u_resolution below — a
       // shader that never declares u_echoBuffer just has this location
@@ -292,28 +266,25 @@ function compositeEffectsUnsafe(
       applyEffectParams(set, def.params, instance.params);
     });
 
-    if (isLastPass) {
-      // Final pass: blit straight to the destination canvas, flip-corrected
-      // the exact same way ShaderRenderer.render() does for its own output.
-      const destCtx = dest.getContext('2d', { alpha: false });
-      if (destCtx) {
-        if (dest.width !== w || dest.height !== h) { dest.width = w; dest.height = h; }
-        destCtx.save();
-        destCtx.setTransform(1, 0, 0, -1, 0, dest.height);
-        destCtx.drawImage(stage.canvas, region.sx, region.sy, region.sw, region.sh, 0, 0, dest.width, dest.height);
-        destCtx.restore();
-      }
-    } else {
-      // Intermediate pass: relay into the offscreen canvas (also
-      // flip-corrected — every pass reads u_fxSource in the same
-      // y-orientation the previous stage produced it in) and upload as
-      // the next pass's texture input, force:true for the same
-      // same-reference-every-frame reason as pass 0's capture above.
-      relayCtx2d.save();
-      relayCtx2d.setTransform(1, 0, 0, -1, 0, h);
-      relayCtx2d.drawImage(stage.canvas, region.sx, region.sy, region.sw, region.sh, 0, 0, w, h);
-      relayCtx2d.restore();
-      currentTex = stage.uploadTexture(relayKey, relayCanvas, { force: true });
+    // Texture ingestion handles Y orientation. Canvas region copies use
+    // identity, for both intermediate and final passes. No extra final relay.
+    const isLast = i === passes.length - 1;
+    const relayKey = `${input.cardId}:${relayToggle}`;
+    const target = isLast
+      ? { canvas: dest, ctx: dest.getContext('2d', { alpha: false }) }
+      : getRelay(relayKey, w, h);
+    if (!target.ctx) return;
+    if (target.canvas.width !== w || target.canvas.height !== h) {
+      target.canvas.width = w; target.canvas.height = h;
+    }
+    target.ctx.save();
+    target.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    target.ctx.drawImage(stage.canvas, region.sx, region.sy, region.sw, region.sh, 0, 0, w, h);
+    target.ctx.restore();
+    if (!isLast) {
+      const nextTex = stage.uploadTexture(relayKey, target.canvas, { force: true });
+      if (!nextTex) return; // leave the fresh base frame intact on upload failure
+      currentTex = nextTex;
       relayToggle = relayToggle === 'a' ? 'b' : 'a';
     }
   }
@@ -385,12 +356,26 @@ function applyEffectParams(
 
 const compiledSourceCache = new Map<string, string>();
 
-export async function loadEffectShaderIfNeeded(effectType: string): Promise<void> {
-  const key = `fx:${effectType}`;
-  if (compiledSourceCache.has(key)) return;
+const pendingSources = new Map<string, Promise<void>>();
 
-  const { getEffectShaderSource } = await import('@/lib/effects/registry');
-  const raw = await getEffectShaderSource(effectType);
-  if (!raw) return;
-  compiledSourceCache.set(key, wrapEffectSource(raw));
+export function loadEffectShaderIfNeeded(effectType: string): Promise<void> {
+  const key = `fx:${effectType}`;
+  if (compiledSourceCache.has(key)) return Promise.resolve();
+  const pending = pendingSources.get(key);
+  if (pending) return pending;
+  const task = (async () => {
+    try {
+      const { getEffectShaderSource } = await import('@/lib/effects/registry');
+      const raw = await getEffectShaderSource(effectType);
+      if (raw) compiledSourceCache.set(key, wrapEffectSource(raw));
+    } catch (err) {
+      // Callers intentionally fire-and-forget. A failed fetch must not create
+      // an unhandled rejection; the next explicit load can retry.
+      console.warn(`[effects] could not load ${effectType}:`, err);
+    } finally {
+      pendingSources.delete(key);
+    }
+  })();
+  pendingSources.set(key, task);
+  return task;
 }
