@@ -7,7 +7,7 @@ export interface FrameSample {
   gapMs: number;
   cpuMs: number;
   tiles: Array<{ type: AssetType; renderMs: number; effectsMs: number; passes: number; pixels: number; p5Fps: number | null;
-    focused?: boolean; p5DrawP95Ms?: number | null; p5CaptureP95Ms?: number | null }>;
+    focused?: boolean; p5DrawP95Ms?: number | null; p5CaptureP95Ms?: number | null; p5ProfileActive?: boolean | null }>;
 }
 
 export interface FrameSummary {
@@ -19,6 +19,8 @@ export interface FrameSummary {
   p5SketchFps: number | null;
   p5DrawP95Ms: number | null;
   p5CaptureP95Ms: number | null;
+  /** null means no profile-status heartbeat arrived; false means profiling is inactive. */
+  p5ProfileActive: boolean | null;
   effectsPasses: number;
 }
 
@@ -48,6 +50,8 @@ export function summarizeFrameProfile(frames: FrameSample[]): FrameSummary {
     p5SketchFps: percentile(sketchFps, 0.5),
     p5DrawP95Ms: percentile(sketchTiles.map(t => t.p5DrawP95Ms).filter((n): n is number => n !== null && n !== undefined), 0.95),
     p5CaptureP95Ms: percentile(sketchTiles.map(t => t.p5CaptureP95Ms).filter((n): n is number => n !== null && n !== undefined), 0.95),
+    p5ProfileActive: sketchTiles.some(t => t.p5ProfileActive === true) ? true
+      : sketchTiles.some(t => t.p5ProfileActive === false) ? false : null,
     effectsPasses: Math.max(0, ...tiles.map(t => t.passes)),
   };
 }

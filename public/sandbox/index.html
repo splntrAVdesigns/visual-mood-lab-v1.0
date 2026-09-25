@@ -33,7 +33,10 @@
   var lastFpsAt = performance.now();
   var fpsFrames = 0;
   var fps = 0;
-  var profileEnabled = false;
+  // Explicit iframe query flag lets a diagnostic session survive an init
+  // message from an older host bundle during a rolling deployment.
+  var profileRequested = new URLSearchParams(window.location.search).get('profile') === '1';
+  var profileEnabled = profileRequested;
   var drawTimings = [];
   var captureTimings = [];
   function profileSample(samples, elapsed) {
@@ -863,7 +866,7 @@
 
     switch (msg.type) {
       case 'init':
-        profileEnabled = msg.profile === true;
+        profileEnabled = profileRequested || msg.profile === true;
         drawTimings.length = 0;
         captureTimings.length = 0;
         params = msg.params || {};
@@ -940,7 +943,7 @@
   });
 
   setInterval(function () {
-    post({ type: 'heartbeat', fps: fps, frame: frame,
+    post({ type: 'heartbeat', fps: fps, frame: frame, profileActive: profileEnabled,
       drawP95Ms: profileEnabled ? profileP95(drawTimings) : undefined,
       captureP95Ms: profileEnabled ? profileP95(captureTimings) : undefined });
   }, 500);

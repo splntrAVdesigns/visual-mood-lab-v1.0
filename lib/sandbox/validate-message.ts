@@ -105,6 +105,7 @@ function parse(raw: unknown): SandboxToHost | null {
         type: 'heartbeat',
         fps: finite(raw.fps) ? clamp(raw.fps, 0, 1000) : undefined,
         frame: finite(raw.frame) ? Math.max(0, Math.floor(raw.frame)) : undefined,
+        profileActive: typeof raw.profileActive === 'boolean' ? raw.profileActive : undefined,
         drawP95Ms: finite(raw.drawP95Ms) ? clamp(raw.drawP95Ms, 0, 5000) : undefined,
         captureP95Ms: finite(raw.captureP95Ms) ? clamp(raw.captureP95Ms, 0, 5000) : undefined,
       };

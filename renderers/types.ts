@@ -130,7 +130,7 @@ export interface AssetRenderer {
   /** Restore a clean source on a rack edit before reprocessing the same p5 frame. */
   restoreEffectsSource?(): void;
   /** Optional sandbox timing, only populated by a ?perf=1 host. */
-  getSketchProfile?(): { drawP95Ms: number | null; captureP95Ms: number | null };
+  getSketchProfile?(): { drawP95Ms: number | null; captureP95Ms: number | null; profileActive: boolean | null };
 
   dispose(): void;
 

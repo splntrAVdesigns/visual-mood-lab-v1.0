@@ -82,6 +82,7 @@ export class P5Renderer implements AssetRenderer {
   private fps = 0;
   private drawP95Ms: number | null = null;
   private captureP95Ms: number | null = null;
+  private profileActive: boolean | null = null;
   private captureWaiters = new Map<number, (url: string | null) => void>();
   private captureTimers = new Map<number, ReturnType<typeof setTimeout>>();
   private nextRequestId = 1;
@@ -127,7 +128,8 @@ export class P5Renderer implements AssetRenderer {
     // logic calling a bridge function the currently-loaded sandbox runtime
     // never defined — while every line of actual code is correct. Bump
     // this string any time index.html changes.
-    frame.src = `/sandbox/index.html?v=${SANDBOX_RUNTIME_VERSION}`;
+    const profileRequested = new URLSearchParams(window.location.search).has('perf');
+    frame.src = `/sandbox/index.html?v=${SANDBOX_RUNTIME_VERSION}${profileRequested ? '&profile=1' : ''}`;
     frame.style.cssText = 'width:100%;height:100%;border:0;display:block;background:#000';
     // allow-scripts WITHOUT allow-same-origin: the frame gets a null origin
     // and cannot reach this document, its storage, or its cookies.
@@ -244,6 +246,7 @@ export class P5Renderer implements AssetRenderer {
         this.fps = msg.fps ?? 0;
         this.drawP95Ms = msg.drawP95Ms ?? null;
         this.captureP95Ms = msg.captureP95Ms ?? null;
+        this.profileActive = msg.profileActive ?? null;
         break;
 
       case 'key': {
@@ -544,8 +547,8 @@ export class P5Renderer implements AssetRenderer {
 
   get currentDrawP95Ms(): number | null { return this.drawP95Ms; }
   get currentCaptureP95Ms(): number | null { return this.captureP95Ms; }
-  getSketchProfile(): { drawP95Ms: number | null; captureP95Ms: number | null } {
-    return { drawP95Ms: this.drawP95Ms, captureP95Ms: this.captureP95Ms };
+  getSketchProfile(): { drawP95Ms: number | null; captureP95Ms: number | null; profileActive: boolean | null } {
+    return { drawP95Ms: this.drawP95Ms, captureP95Ms: this.captureP95Ms, profileActive: this.profileActive };
   }
 
   get isPaused(): boolean {

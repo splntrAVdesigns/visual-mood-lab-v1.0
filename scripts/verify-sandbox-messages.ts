@@ -40,8 +40,8 @@ function verifyRealMessages(): void {
   check('schema with params', schema?.type === 'schema' && (schema.params as Record<string, { kind?: string }> | undefined)?.count?.kind === 'slider');
   const hb = p({ type: 'heartbeat', fps: 59.4, frame: 1204 });
   check('heartbeat', hb?.type === 'heartbeat' && hb.fps === 59.4 && hb.frame === 1204, hb);
-  const profiledHb = p({ type: 'heartbeat', fps: 30, frame: 30, drawP95Ms: 4.2, captureP95Ms: 6.1 });
-  check('profiled heartbeat', profiledHb?.drawP95Ms === 4.2 && profiledHb?.captureP95Ms === 6.1, profiledHb);
+  const profiledHb = p({ type: 'heartbeat', fps: 30, frame: 30, drawP95Ms: 4.2, captureP95Ms: 6.1, profileActive: true });
+  check('profiled heartbeat', profiledHb?.drawP95Ms === 4.2 && profiledHb?.captureP95Ms === 6.1 && profiledHb.profileActive === true, profiledHb);
   check('profile timings bounded and invalid timing ignored',
     p({ type: 'heartbeat', drawP95Ms: Infinity, captureP95Ms: 1e9 })?.drawP95Ms === undefined &&
     p({ type: 'heartbeat', drawP95Ms: Infinity, captureP95Ms: 1e9 })?.captureP95Ms === 5000);

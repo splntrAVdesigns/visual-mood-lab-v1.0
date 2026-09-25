@@ -126,6 +126,7 @@ export interface SandboxToHost {
   message?: string;
   stack?: string;
   fps?: number;
+  profileActive?: boolean;
   /** Sandboxed sketch draw and VFX bitmap capture timing, in milliseconds. */
   drawP95Ms?: number;
   captureP95Ms?: number;
@@ -214,7 +215,7 @@ export const STALL_RESUME_THRESHOLD_MS = 1200;
  * itself changes, so the browser can't keep serving a stale cached copy
  * that's missing whatever bridge function or protocol change just shipped.
  */
-export const SANDBOX_RUNTIME_VERSION = '2026-09-25-p5-profile';
+export const SANDBOX_RUNTIME_VERSION = '2026-09-25-p5-profile-status';
 
 /**
  * How long to wait after sending `init` before declaring the sketch dead.
