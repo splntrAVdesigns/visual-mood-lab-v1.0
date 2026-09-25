@@ -17,6 +17,7 @@ import { describeSeedAuthFailure, evaluateSeedRequest } from '@/lib/security/see
  * already working, so it sidesteps that toolchain entirely.
  *
  *   POST /api/seed          migrate, then upsert every manifest entry
+ *   POST /api/seed?slug=...  update only that manifest entry; no pruning
  *   POST /api/seed?fresh=1  drop the tables first (NOT available in production)
  *
  * POST only. It used to be a GET, which meant a link prefetch, a crawler, or
@@ -114,7 +115,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const fresh = new URL(req.url).searchParams.get('fresh') === '1';
+  const url = new URL(req.url);
+  const fresh = url.searchParams.get('fresh') === '1';
+  const onlySlug = url.searchParams.get('slug');
 
   const facts = {
     nodeEnv: process.env.NODE_ENV,
@@ -137,6 +140,9 @@ export async function POST(req: Request) {
       },
     );
   }
+  if (onlySlug && fresh) {
+    return NextResponse.json({ error: 'Choose either a single slug or fresh seeding.' }, { status: 400 });
+  }
 
   const log: string[] = [];
 
@@ -153,13 +159,19 @@ export async function POST(req: Request) {
     const manifest = JSON.parse(readFileSync(join(seedDir, 'manifest.json'), 'utf8')) as {
       assets: ManifestEntry[];
     };
+    const entries = onlySlug
+      ? manifest.assets.filter((entry) => entry.slug === onlySlug)
+      : manifest.assets;
+    if (onlySlug && entries.length === 0) {
+      return NextResponse.json({ error: 'Unknown seed slug.' }, { status: 404 });
+    }
 
     let created = 0;
     let updated = 0;
     let unchanged = 0;
     const warnings: string[] = [];
 
-    for (const entry of manifest.assets) {
+    for (const entry of entries) {
       const source = readFileSync(join(seedDir, entry.file), 'utf8');
 
       const res = await ingestAsset({
@@ -187,17 +199,18 @@ export async function POST(req: Request) {
     /*
      * Prune seed assets that are no longer in the manifest.
      *
-     * Seeding upserts by slug but never removed anything, so an asset
+     * Full seeding upserts by slug but never removed anything, so an asset
      * retired from the manifest (Chromatic Glitch, replaced by Particle
      * Cube several sprints ago) kept its row forever — invisible on the
      * board, but permanently inflating the asset count and leaving stray
      * data behind. Scoped to rows that HAVE a seedSlug, so anything a
      * person uploaded themselves is never touched by this.
+     * A single-slug update must leave every other library asset intact.
      */
     const db = await getDb();
     const slugs = manifest.assets.map((a) => a.slug);
 
-    const orphans = await db
+    const orphans = onlySlug ? [] : await db
       .select({ id: schema.assets.id, seedSlug: schema.assets.seedSlug })
       .from(schema.assets)
       .where(and(isNotNull(schema.assets.seedSlug), notInArray(schema.assets.seedSlug, slugs)));
@@ -221,6 +234,7 @@ export async function POST(req: Request) {
       created,
       updated,
       unchanged,
+      slug: onlySlug ?? null,
       pruned,
       total: rows.length,
       posters: rows.filter((r) => r.posterUrl).length,

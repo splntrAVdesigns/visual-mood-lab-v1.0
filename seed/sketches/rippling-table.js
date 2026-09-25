@@ -157,6 +157,8 @@ export default function sketch(p, get) {
   let accumReadIsA = true;
   let simAccumulator = 0;
   let rainTimer = 0;
+  let spinAngle = 0;
+  let horizontalAngle = 0;
   let lastW = -1, lastH = -1;
   let energyHistory = [0, 0, 0, 0, 0, 0, 0, 0]; // rolling window for a local baseline
   let energyHistoryIdx = 0;
@@ -375,6 +377,16 @@ export default function sketch(p, get) {
     const zoomFactor = get('zoom');
     const camDist = TABLE_SIZE * 2.4 / Math.max(zoomFactor, 0.01);
 
+    // Speed is modulatable. Multiplying the entire elapsed frame count by
+    // the CURRENT speed makes each beat-sized change jump the table to a
+    // different absolute angle and back. Integrate the speed instead so a
+    // changed speed only affects future movement. Cap a suspended tab's
+    // first delta to avoid an unrelated rotation jump on resume.
+    const motionDtMs = Math.min(Math.max(p.deltaTime || 0, 0), 50);
+    const angleStep = motionDtMs * (0.002 * 30 / 1000);
+    spinAngle = (spinAngle + angleStep * spinSpeed) % p.TWO_PI;
+    horizontalAngle = (horizontalAngle + angleStep * horizontalSpin) % p.TWO_PI;
+
     // ---- regular timed rain (unaffected by audio — see the transient
     // trigger below for the actual audio-reactive splash) ----
     rainTimer += p.deltaTime;
@@ -436,12 +448,12 @@ export default function sketch(p, get) {
     // — tipping the table end-over-end, exactly the "flips on itself"
     // bug report. rotateZ(spin) here rotates around the vertical axis
     // instead, the correct flat "turntable" spin.
-    p.rotateZ(p.frameCount * 0.002 * spinSpeed);
+    p.rotateZ(spinAngle);
     // Horizontal spin is a SEPARATE, independent control — deliberately
     // reusing what rotateY does at this point in the transform stack
     // (rotation around the horizontal, in-plane axis) as an intentional
     // second axis, not the accidental one Spin speed used to be.
-    p.rotateY(p.frameCount * 0.002 * horizontalSpin);
+    p.rotateY(horizontalAngle);
     // *0.6, not the old *0.3 — doubles the effective tilt range per the
     // "increase tilt ability by 1x more" ask, without changing the
     // slider's own displayed 0-30 range.
@@ -484,6 +496,12 @@ export default function sketch(p, get) {
     // correctly on its own. ----
     p.clear();
     p.resetShader();
+    // The camera and projection used by the simulation and scene buffers
+    // can leak into the default framebuffer in p5. Set a known view for
+    // this one-to-one screen blit every frame.
+    p.resetMatrix();
+    p.camera(0, 0, 1, 0, 0, 0, 0, 1, 0);
+    p.ortho(-p.width / 2, p.width / 2, -p.height / 2, p.height / 2, -1000, 1000);
     p.noStroke();
     p.rectMode(p.CENTER);
     p.texture(writeBuf);

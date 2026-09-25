@@ -241,6 +241,10 @@ it once:
      https://your-app.vercel.app/api/seed
    ```
 
+   To update one library sketch without touching other seed entries, use
+   `?slug=rippling-table` (substitute a slug from `seed/manifest.json`). This
+   scoped mode also skips orphan pruning and requires the same authorization.
+
    You should see JSON reporting the created/updated counts. If you get
    `Unauthorized`, open **Logs** in Vercel and search `[seed]`: it says whether
    the stored secret is missing, a different length, or the same length with
