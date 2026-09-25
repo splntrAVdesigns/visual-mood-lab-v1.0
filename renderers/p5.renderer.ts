@@ -80,6 +80,8 @@ export class P5Renderer implements AssetRenderer {
   private lastHeartbeat = 0;
   private initSentAt = 0;
   private fps = 0;
+  private drawP95Ms: number | null = null;
+  private captureP95Ms: number | null = null;
   private captureWaiters = new Map<number, (url: string | null) => void>();
   private captureTimers = new Map<number, ReturnType<typeof setTimeout>>();
   private nextRequestId = 1;
@@ -187,7 +189,7 @@ export class P5Renderer implements AssetRenderer {
 
     this.lastHeartbeat = performance.now();
     this.initSentAt = performance.now();
-    this.send({ type: 'init', source: asset.source, params: this.params as Record<string, unknown> });
+    this.send({ type: 'init', source: asset.source, params: this.params as Record<string, unknown>, profile: new URLSearchParams(window.location.search).has('perf') });
     void this.pushFontsFor(this.params);
   }
 
@@ -240,6 +242,8 @@ export class P5Renderer implements AssetRenderer {
       case 'heartbeat':
         this.lastHeartbeat = performance.now();
         this.fps = msg.fps ?? 0;
+        this.drawP95Ms = msg.drawP95Ms ?? null;
+        this.captureP95Ms = msg.captureP95Ms ?? null;
         break;
 
       case 'key': {
@@ -538,6 +542,12 @@ export class P5Renderer implements AssetRenderer {
     return this.fps;
   }
 
+  get currentDrawP95Ms(): number | null { return this.drawP95Ms; }
+  get currentCaptureP95Ms(): number | null { return this.captureP95Ms; }
+  getSketchProfile(): { drawP95Ms: number | null; captureP95Ms: number | null } {
+    return { drawP95Ms: this.drawP95Ms, captureP95Ms: this.captureP95Ms };
+  }
+
   get isPaused(): boolean {
     return this.paused;
   }
@@ -557,7 +567,7 @@ export class P5Renderer implements AssetRenderer {
       this.swap = { resolve, timer };
       this.effectSurface?.reset();
       resetEffectHistory(this.cardId);
-      this.send({ type: 'init', source, params: this.params as Record<string, unknown> });
+      this.send({ type: 'init', source, params: this.params as Record<string, unknown>, profile: new URLSearchParams(window.location.search).has('perf') });
     });
   }
 

@@ -964,9 +964,13 @@ class RendererPool {
       } catch (err) {
         this.warnOnce(entry.cardId, 'effects', err);
       }
+      const sketchProfile = profiling ? entry.renderer.getSketchProfile?.() : undefined;
       if (profiling) recordTileProfile({
         type: entry.renderer.type, renderMs, effectsMs: performance.now() - effectsStart,
         passes: effectPasses, pixels: effectPixels,
+        focused: entry.state === 'focused',
+        p5DrawP95Ms: sketchProfile?.drawP95Ms ?? null,
+        p5CaptureP95Ms: sketchProfile?.captureP95Ms ?? null,
         p5Fps: entry.renderer.type === 'p5' && 'currentFps' in entry.renderer
           ? Number(entry.renderer.currentFps) : null,
       });

@@ -9,7 +9,7 @@ installFrameProfile(win);
 assert.ok(win.__vmlPerf);
 for (let i = 0; i < 950; i++) {
   beginFrameProfile(i * 16);
-  recordTileProfile({type:'p5',renderMs:1,effectsMs:2,passes:2,pixels:480000,p5Fps:30});
+  recordTileProfile({type:'p5',renderMs:1,effectsMs:2,passes:2,pixels:480000,p5Fps:30,focused:true,p5DrawP95Ms:3.5,p5CaptureP95Ms:1.2});
   endFrameProfile();
 }
 const frames = win.__vmlPerf.snapshot().frames;
@@ -21,6 +21,8 @@ assert.equal(summary.medianFps, 63);
 assert.equal(summary.p95FrameGapMs, 16);
 assert.equal(summary.p5SketchFps, 30);
 assert.equal(summary.effectsPasses, 2);
+assert.equal(summary.p5DrawP95Ms, 3.5);
+assert.equal(summary.p5CaptureP95Ms, 1.2);
 frames[0].tiles[0].passes = 100;
 assert.equal(win.__vmlPerf.snapshot().frames[0].tiles[0].passes, 2, 'snapshot cannot change ring');
 win.__vmlPerf.reset();

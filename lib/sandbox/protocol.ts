@@ -9,6 +9,8 @@
 export interface HostToSandbox {
   type: 'init' | 'params' | 'event' | 'resize' | 'play' | 'pause' | 'quality' | 'capture' | 'audioWaveform' | 'fonts' | 'vfx-frame';
   source?: string;
+  /** Opt-in local performance capture enabled by ?perf=1 on the host. */
+  profile?: boolean;
   params?: Record<string, unknown>;
   id?: string;
   value?: unknown;
@@ -124,6 +126,9 @@ export interface SandboxToHost {
   message?: string;
   stack?: string;
   fps?: number;
+  /** Sandboxed sketch draw and VFX bitmap capture timing, in milliseconds. */
+  drawP95Ms?: number;
+  captureP95Ms?: number;
   frame?: number;
   dataUrl?: string;
   requestId?: number;
@@ -209,7 +214,7 @@ export const STALL_RESUME_THRESHOLD_MS = 1200;
  * itself changes, so the browser can't keep serving a stale cached copy
  * that's missing whatever bridge function or protocol change just shipped.
  */
-export const SANDBOX_RUNTIME_VERSION = '2026-09-24-vfx-cd';
+export const SANDBOX_RUNTIME_VERSION = '2026-09-25-p5-profile';
 
 /**
  * How long to wait after sending `init` before declaring the sketch dead.

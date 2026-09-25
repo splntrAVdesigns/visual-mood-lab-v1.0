@@ -33,6 +33,20 @@
   var lastFpsAt = performance.now();
   var fpsFrames = 0;
   var fps = 0;
+  var profileEnabled = false;
+  var drawTimings = [];
+  var captureTimings = [];
+  function profileSample(samples, elapsed) {
+    if (!profileEnabled || !Number.isFinite(elapsed)) return;
+    samples.push(elapsed);
+    if (samples.length > 120) samples.shift();
+  }
+  function profileP95(samples) {
+    if (!samples.length) return null;
+    var values = samples.slice().sort(function(a,b){ return a-b; });
+    samples.length = 0;
+    return values[Math.floor((values.length-1)*0.95)];
+  }
   var paused = false;
   var quality = 'preview';
   // Set at the top of every run() and never anywhere else — the one thing
@@ -280,9 +294,11 @@
       post({type:'vfx-frame',requestId:request.requestId}); return;
     }
     vfxBusy = true;
+    var captureStarted = profileEnabled ? performance.now() : 0;
     try {
       createImageBitmap(cv, {resizeWidth:request.width,resizeHeight:request.height,resizeQuality:'high'})
         .then(function(bitmap) {
+          if (profileEnabled) profileSample(captureTimings, performance.now() - captureStarted);
           try { parent.postMessage({type:'vfx-frame',requestId:request.requestId,bitmap:bitmap}, '*', [bitmap]); }
           catch (error) { bitmap.close(); post({type:'vfx-frame',requestId:request.requestId}); }
         }, function() { post({type:'vfx-frame',requestId:request.requestId}); })
@@ -679,7 +695,9 @@
            * would have swallowed it.
            */
           try {
+            var drawStarted = profileEnabled ? performance.now() : 0;
             userDraw.call(p);
+            if (profileEnabled) profileSample(drawTimings, performance.now() - drawStarted);
           } catch (e) {
             drawFailed = true;
             showError('Sketch threw during draw(): ' + e.message, e.stack);
@@ -845,6 +863,9 @@
 
     switch (msg.type) {
       case 'init':
+        profileEnabled = msg.profile === true;
+        drawTimings.length = 0;
+        captureTimings.length = 0;
         params = msg.params || {};
         run(msg.source || '');
         // Per protocol.ts's `fonts` field doc, `fonts` is attachable to
@@ -919,7 +940,9 @@
   });
 
   setInterval(function () {
-    post({ type: 'heartbeat', fps: fps, frame: frame });
+    post({ type: 'heartbeat', fps: fps, frame: frame,
+      drawP95Ms: profileEnabled ? profileP95(drawTimings) : undefined,
+      captureP95Ms: profileEnabled ? profileP95(captureTimings) : undefined });
   }, 500);
 })();
 </script>
