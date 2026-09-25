@@ -76,6 +76,16 @@ export function FocusedAssetOverlay() {
   const params = useInspectorStore((st) => st.params);
   const schema = useInspectorStore((st) => st.schema);
   const asset = useBoardStore(selectSelectedAsset);
+  const hasShapeSource = schema?.controls.some((c) => c.binding?.target === 'host' && c.binding.property === 'shape:u_shape') ?? false;
+  const shapeBackground = params.u_bg ?? schema?.controls.find((c) => c.id === 'u_bg' && c.kind === 'color')?.default;
+  const shapeBackgroundIsLight = hasShapeSource
+    && typeof shapeBackground === 'object'
+    && shapeBackground !== null
+    && 'r' in shapeBackground && 'g' in shapeBackground && 'b' in shapeBackground
+    && typeof shapeBackground.r === 'number'
+    && typeof shapeBackground.g === 'number'
+    && typeof shapeBackground.b === 'number'
+    && shapeBackground.r * 0.2126 + shapeBackground.g * 0.7152 + shapeBackground.b * 0.0722 > 0.6;
   const panelRef = useRef<HTMLDivElement>(null);
 
   const [showCode, setShowCode] = useState(false);
@@ -550,7 +560,8 @@ export function FocusedAssetOverlay() {
       <div
         ref={panelRef}
         className={s.focusPanel}
-        data-shape-source={schema?.controls.some((c) => c.binding?.target === 'host' && c.binding.property === 'shape:u_shape') ? 'true' : undefined}
+        data-shape-source={hasShapeSource ? 'true' : undefined}
+        data-shape-light-bg={shapeBackgroundIsLight ? 'true' : undefined}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

@@ -713,14 +713,20 @@
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.6), transparent);
 }
 
-/* Shape Source can render a white or pastel canvas: the shared dark overlay
-   becomes a visible strip in the artwork. Keep this tile's controls in a
-   separate, opaque chrome row so no CSS layer alters its output. */
+/* Shape Source can render white or pastel artwork: neither the shared dark
+   gradient nor an opaque chrome row belongs over its canvas. Keep the
+   existing absolute header, with zero background and no layout space. */
 .focusPanel[data-shape-source='true'] .focusHeader {
-  position: relative;
-  flex: none;
-  background: var(--bg-raised);
-  border-bottom: 1px solid var(--border);
+  background: transparent;
+}
+
+/* Control text must remain legible when the user chooses a light shader
+   background. Override inherited button tokens locally, without tinting
+   any pixels of the artwork or adding a header strip. */
+.focusPanel[data-shape-light-bg='true'] .focusHeader {
+  --text: #151515;
+  --text-dim: #343434;
+  --text-mute: #575757;
 }
 
 .focusTitle {
