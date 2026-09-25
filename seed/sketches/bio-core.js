@@ -12,12 +12,8 @@
  * exactly what's awkward in a fragment shader (which only ever reasons
  * per-pixel; multiple independent creature bodies means increasingly
  * convoluted analytical SDF unions with a hard-coded count ceiling).
- * The creature locomotion below is a direct reuse of Synth Organism's
- * proven noise-steered follow-chain technique (already verified,
- * already shipped) — reshaped for a different silhouette (no legs, a
- * few glow points along the body instead of one LED head, trailing
- * streamer ribbons instead of stiff perpendicular legs) rather than
- * re-derived from scratch.
+ * The creatures follow a broad current with small local eddies. The
+ * directional drift keeps the eddies open, unlike a closed orbital path.
  *
  * Contamination is a single control that does two things at once, not
  * just particle count: more debris AND murkier water, since real
@@ -50,22 +46,23 @@ export const params = {
   trailFade: { kind: 'slider', label: 'Trail fade', min: 0, max: 0.98, step: 0.01, default: 0.85, hint: 'Higher leaves a longer glowing trail behind each creature.' },
 };
 
-function noise1(seed, t) {
-  const hash = (n) => {
-    const s = Math.sin(n * 127.1 + seed * 311.7) * 43758.5453;
-    return s - Math.floor(s);
-  };
-  const i = Math.floor(t), f = t - i;
-  const u = f * f * (3 - 2 * f);
-  return hash(i) * (1 - u) + hash(i + 1) * u;
-}
-
 export default function sketch(p, get) {
   let time = 0;
   let builtFor = '';
   let creatures = [];
   let particles = [];
   let floorBlobs = [];
+  let trailLayer;
+
+  function rebuildLayers() {
+    if (trailLayer) trailLayer.remove();
+    trailLayer = p.createGraphics(p.width, p.height);
+    // One CSS-pixel-resolution buffer keeps trails independent of the
+    // seafloor without doubling Retina/mobile offscreen memory.
+    trailLayer.pixelDensity(1);
+    trailLayer.colorMode(p.RGB, 1, 1, 1, 1);
+    trailLayer.clear();
+  }
 
   function createCreature(wanderSeed, colorIsA) {
     const c = { head: { x: 0, y: 0, angle: 0 }, segments: [], streamers: [], wanderSeed, colorIsA };
@@ -82,15 +79,19 @@ export default function sketch(p, get) {
       }
     };
 
-    // Same noise-steered wander + edge-wrap technique as Synth Organism
-    // — no pointer avoidance, no mutual avoidance: these are meant to
-    // drift through open water, not compete for space or react to the
-    // viewer.
+    // A smooth directional current advects the creature; small local
+    // eddies create curved passages without trapping it in a circle.
     c.stepHead = (dt) => {
       const head = c.head;
       const speed = get('moveSpeed') * 40;
-      const wanderAngle = (noise1(c.wanderSeed, time * 0.12) - 0.5) * 3.2;
-      head.angle += wanderAngle * dt;
+      const u = head.x / Math.max(1, p.width);
+      const v = head.y / Math.max(1, p.height);
+      const current = time * 0.12 + c.wanderSeed * 0.35;
+      const flowX = 1 + 0.16 * Math.cos(current) + 0.22 * Math.sin(v * 9 - time * 0.45 + c.wanderSeed);
+      const flowY = 0.18 * Math.sin(current) + 0.28 * Math.sin(u * 8 + time * 0.35 + c.wanderSeed);
+      const desired = Math.atan2(flowY, flowX);
+      const turn = Math.atan2(Math.sin(desired - head.angle), Math.cos(desired - head.angle));
+      head.angle += Math.max(-0.85 * dt, Math.min(0.85 * dt, turn));
       head.x += Math.cos(head.angle) * speed * dt;
       head.y += Math.sin(head.angle) * speed * dt;
 
@@ -151,6 +152,7 @@ export default function sketch(p, get) {
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
     p.colorMode(p.RGB, 1, 1, 1, 1);
+    rebuildLayers();
     rebuildAll();
     rebuildParticles();
     builtFor = `${get('creatureCount')}|${get('segmentCount')}`;
@@ -158,28 +160,30 @@ export default function sketch(p, get) {
 
   p.windowResized = () => {
     p.resizeCanvas(p.windowWidth, p.windowHeight);
+    rebuildLayers();
     rebuildAll();
     rebuildParticles();
     builtFor = `${get('creatureCount')}|${get('segmentCount')}`;
   };
 
   function drawSeafloor(seafloorCol, contamination) {
+    const g = p;
     // Murkier water tints the floor toward the debris color as
     // contamination rises — the second effect Contamination drives,
     // beyond just particle count.
     const particleCol = get('particleColor');
     const r = seafloorCol.r + (particleCol.r - seafloorCol.r) * contamination * 0.25;
-    const g = seafloorCol.g + (particleCol.g - seafloorCol.g) * contamination * 0.25;
+    const gColor = seafloorCol.g + (particleCol.g - seafloorCol.g) * contamination * 0.25;
     const b = seafloorCol.b + (particleCol.b - seafloorCol.b) * contamination * 0.25;
 
-    p.noStroke();
-    p.fill(r, g, b, 1);
-    p.rect(0, 0, p.width, p.height);
+    g.noStroke();
+    g.fill(r, gColor, b, 1);
+    g.rect(0, 0, p.width, p.height);
 
     for (const blob of floorBlobs) {
       const s = Math.max(0, Math.min(1, 0.5 + blob.shade));
-      p.fill(r * (0.8 + s * 0.4), g * (0.8 + s * 0.4), b * (0.8 + s * 0.4), 0.5);
-      p.circle(blob.x, blob.y, blob.r * 2);
+      g.fill(r * (0.8 + s * 0.4), gColor * (0.8 + s * 0.4), b * (0.8 + s * 0.4), 0.5);
+      g.circle(blob.x, blob.y, blob.r * 2);
     }
   }
 
@@ -187,8 +191,8 @@ export default function sketch(p, get) {
     const col = get('particleColor');
     p.noStroke();
     for (const particle of particles) {
-      particle.x += particle.vx * dt + Math.sin(time * 0.6 + particle.seed) * 0.3;
-      particle.y += particle.vy * dt + Math.cos(time * 0.5 + particle.seed) * 0.3;
+      particle.x += (particle.vx + Math.sin(time * 0.6 + particle.seed) * 9) * dt;
+      particle.y += (particle.vy + Math.cos(time * 0.5 + particle.seed) * 9) * dt;
       if (particle.x < -10) particle.x = p.width + 10;
       if (particle.x > p.width + 10) particle.x = -10;
       if (particle.y < -10) particle.y = p.height + 10;
@@ -201,6 +205,7 @@ export default function sketch(p, get) {
   }
 
   function drawCreature(c, colA, colB, glowAmt, undulationAmt, undulationFreq, size, streamerLen) {
+    const g = trailLayer;
     const col = c.colorIsA ? colA : colB;
     const chain = [c.head, ...c.segments];
     const drawPts = chain.map((seg, i) => {
@@ -217,11 +222,11 @@ export default function sketch(p, get) {
     // the body renders on top of them.
     const tail = drawPts[drawPts.length - 1];
     if (tail) {
-      p.noFill();
+      g.noFill();
       for (const streamer of c.streamers) {
-        p.stroke(col.r, col.g, col.b, col.a * 0.45);
-        p.strokeWeight(1);
-        p.beginShape();
+        g.stroke(col.r, col.g, col.b, col.a * 0.45);
+        g.strokeWeight(1);
+        g.beginShape();
         const steps = 6;
         for (let s = 0; s <= steps; s++) {
           const st = s / steps;
@@ -229,19 +234,19 @@ export default function sketch(p, get) {
           const baseAngle = Math.atan2(tail.dirY, tail.dirX) + Math.PI + streamer.angleOffset;
           const px = tail.x + Math.cos(baseAngle) * streamerLen * st + Math.cos(baseAngle + Math.PI / 2) * sway * st;
           const py = tail.y + Math.sin(baseAngle) * streamerLen * st + Math.sin(baseAngle + Math.PI / 2) * sway * st;
-          p.vertex(px, py);
+          g.vertex(px, py);
         }
-        p.endShape();
+        g.endShape();
       }
-      p.noStroke();
+      g.noStroke();
     }
 
     // Body — tapering segments, no legs.
     for (let i = drawPts.length - 1; i >= 0; i--) {
       const t = i / Math.max(1, drawPts.length - 1);
       const w = Math.max(1.2, (1 - t * 0.8) * 8) * size;
-      p.fill(col.r, col.g, col.b, 0.5);
-      p.circle(drawPts[i].x, drawPts[i].y, w * 2);
+      g.fill(col.r, col.g, col.b, 0.5);
+      g.circle(drawPts[i].x, drawPts[i].y, w * 2);
     }
 
     // Bioluminescent glow points along the body — every third segment,
@@ -255,12 +260,12 @@ export default function sketch(p, get) {
       const localPulse = 0.5 + 0.5 * Math.sin(time * get('pulseRate') * 6.283 + c.wanderSeed + i * 0.9);
       const r = (isHead ? 5 + pulse * 3 : 2 + localPulse * 1.5) * size;
       if (glowAmt > 0) {
-        p.drawingContext.shadowBlur = (isHead ? 16 : 8) * glowAmt * (0.5 + localPulse * 0.5);
-        p.drawingContext.shadowColor = `rgba(${col.r * 255},${col.g * 255},${col.b * 255},0.9)`;
+        g.drawingContext.shadowBlur = (isHead ? 16 : 8) * glowAmt * (0.5 + localPulse * 0.5);
+        g.drawingContext.shadowColor = `rgba(${col.r * 255},${col.g * 255},${col.b * 255},0.9)`;
       }
-      p.fill(col.r, col.g, col.b, isHead ? 0.9 : 0.75);
-      p.circle(drawPts[i].x, drawPts[i].y, r * 2);
-      p.drawingContext.shadowBlur = 0;
+      g.fill(col.r, col.g, col.b, isHead ? 0.9 : 0.75);
+      g.circle(drawPts[i].x, drawPts[i].y, r * 2);
+      g.drawingContext.shadowBlur = 0;
     }
   }
 
@@ -284,6 +289,13 @@ export default function sketch(p, get) {
   p.draw = () => {
     const key = `${get('creatureCount')}|${get('segmentCount')}`;
     if (key !== builtFor) { rebuildAll(); builtFor = key; }
+    const streamerCount = Math.round(get('streamerCount'));
+    for (const c of creatures) {
+      while (c.streamers.length < streamerCount) {
+        c.streamers.push({ phase: Math.random() * 6.283, angleOffset: (Math.random() - 0.5) * 1.3 });
+      }
+      c.streamers.length = streamerCount;
+    }
     rebuildParticles();
 
     const dt = Math.min(p.deltaTime, 100) / 1000;
@@ -306,9 +318,12 @@ export default function sketch(p, get) {
     // solid seafloor redraw below rather than replacing it, so the
     // seafloor itself stays crisp while creature trails still fade.
     drawSeafloor(seafloorCol, contamination);
-    p.fill(seafloorCol.r, seafloorCol.g, seafloorCol.b, 1 - fade);
-    p.noStroke();
-    p.rect(0, 0, p.width, p.height);
+    // Fade the transparent trail independently from the opaque seafloor.
+    trailLayer.noStroke();
+    trailLayer.drawingContext.globalCompositeOperation = 'destination-out';
+    trailLayer.fill(0, 0, 0, 1 - fade);
+    trailLayer.rect(0, 0, p.width, p.height);
+    trailLayer.drawingContext.globalCompositeOperation = 'source-over';
 
     const colA = get('glowColorA');
     const colB = get('glowColorB');
@@ -322,6 +337,7 @@ export default function sketch(p, get) {
       drawCreature(c, colA, colB, glowAmt, undulationAmt, undulationFreq, size, streamerLen);
     }
 
+    p.image(trailLayer, 0, 0);
     drawParticles(dt);
     drawWaterEffect(get('waterEffectAmount'));
   };

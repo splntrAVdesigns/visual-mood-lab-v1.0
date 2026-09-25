@@ -8,6 +8,7 @@ import { defaultsOf, type ControlSchema } from '@/renderers/control-schema';
 import type { AssetType } from '@/types/asset';
 import { generatePosterSvg, hashContent, posterColors } from './poster';
 import { sanitizeAssetTitle, sanitizeAssetTags } from '@/lib/validation/asset';
+import { migrateSeedHeightParams } from './seed-height-migration';
 
 /**
  * One ingest path for everything.
@@ -213,7 +214,7 @@ export async function ingestAsset(input: IngestInput): Promise<IngestResult> {
     posterUrl,
     schema: controlSchema,
     // Preserve user edits across a re-seed; only fill gaps from new defaults.
-    params: prior ? { ...params, ...prior.params } : params,
+    params: prior ? { ...params, ...migrateSeedHeightParams(input.seedSlug, prior.params) } : params,
     mod: prior?.mod ?? {},
     dominantColors,
     width: clampNonNegative(input.width) ?? null,
@@ -228,6 +229,19 @@ export async function ingestAsset(input: IngestInput): Promise<IngestResult> {
 
   if (prior) {
     await db.update(schema.assets).set(row).where(eq(schema.assets.id, prior.id));
+    // Snapshots carry their own parameter maps. Update only legacy maps,
+    // including the old zero-Height preset, without touching newer edits.
+    if (input.seedSlug === 'landscape-grid' || input.seedSlug === 'terrain-wireframe') {
+      const items = await db.select().from(schema.boardItems).where(eq(schema.boardItems.assetId, prior.id));
+      for (const item of items) {
+        if (!item.paramsOverride) continue;
+        const migrated = migrateSeedHeightParams(input.seedSlug, item.paramsOverride);
+        if (migrated !== item.paramsOverride) {
+          await db.update(schema.boardItems).set({ paramsOverride: migrated })
+            .where(eq(schema.boardItems.id, item.id));
+        }
+      }
+    }
     await ensureCanonicalBoardItem(boardId, prior.id, input.boardOrder ?? 0);
     return { id: prior.id, created: false, unchanged: false, schema: controlSchema, warnings };
   }

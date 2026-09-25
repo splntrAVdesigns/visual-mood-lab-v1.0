@@ -13,7 +13,8 @@ export const params = {
   cols: { kind: 'stepper', label: 'Columns', min: 8, max: 120, step: 2, default: 48 },
   rows: { kind: 'stepper', label: 'Rows', min: 8, max: 80, step: 2, default: 34 },
   speed: { kind: 'slider', label: 'Scroll speed', min: 0, max: 4, step: 0.02, default: 0.5, modulatable: true },
-  amplitude: { kind: 'slider', label: 'Height', min: 0, max: 1.5, step: 0.02, default: 0.42, modulatable: true },
+  height: { kind: 'slider', label: 'Height', min: 0, max: 1, step: 0.01, default: 0.5, modulatable: true, hint: 'Moves the entire grid vertically; zero places it near the bottom.' },
+  amplitude: { kind: 'slider', label: 'Terrain relief', min: 0, max: 1.5, step: 0.02, default: 0.42, hint: 'Strength of peaks and valleys, independent of Height.' },
   noiseScale: { kind: 'slider', label: 'Terrain scale', min: 0.2, max: 5, step: 0.05, default: 1.3, scale: 'log' },
   octaves: { kind: 'stepper', label: 'Detail', min: 1, max: 6, step: 1, default: 4 },
   ridged: { kind: 'toggle', label: 'Ridged', default: false, hint: 'Sharp peaks instead of rolling hills.' },
@@ -33,6 +34,7 @@ export const params = {
 };
 
 export default function sketch(p, get) {
+  let scroll = 0;
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
     p.colorMode(p.RGB, 1, 1, 1, 1);
@@ -71,8 +73,14 @@ export default function sketch(p, get) {
     const far = get('farColor');
     const glow = get('glow');
 
-    const t = p.millis() * 0.001 * get('speed');
+    scroll += Math.min(Math.max(p.deltaTime || 0, 0), 100) * 0.001 * get('speed');
+    const t = scroll;
     const baseH = p.height * amp * 0.5;
+    // Screen-space placement never changes relief or the vanishing point.
+    // At zero, even the highest peaks remain visible within the lower frame.
+    const position = get('height') ?? 0.5;
+    const frameOffset = (0.5 - position) * p.height * 0.65;
+    const projected = Array.from({ length: rows }, () => new Array(cols + 1));
 
     // Project a grid vertex to screen. Depth runs 0 (horizon) to 1 (viewer).
     const project = (ix, iz) => {
@@ -84,8 +92,12 @@ export default function sketch(p, get) {
       const y = horizonY + (p.height - horizonY) * depth;
       const widthAt = p.width * spread * depth;
       const h = terrain(ix, iz + t * 10, scale, octaves, ridged) * baseH * depth;
-      return { x: p.width / 2 + u * widthAt, y: y - h, d: depth };
+      return { x: p.width / 2 + u * widthAt, y: y - h + frameOffset, d: depth };
     };
+
+    for (let iz = 1; iz <= rows; iz++) {
+      for (let ix = 0; ix <= cols; ix++) projected[iz - 1][ix] = project(ix, iz);
+    }
 
     p.strokeCap(p.ROUND);
 
@@ -100,7 +112,7 @@ export default function sketch(p, get) {
       for (let iz = 1; iz <= rows; iz++) {
         let prev = null;
         for (let ix = 0; ix <= cols; ix++) {
-          const q = project(ix, iz);
+          const q = projected[iz - 1][ix];
           if (prev) { strokeFor(q.d); p.line(prev.x, prev.y, q.x, q.y); }
           prev = q;
         }
@@ -111,7 +123,7 @@ export default function sketch(p, get) {
       for (let ix = 0; ix <= cols; ix++) {
         let prev = null;
         for (let iz = 1; iz <= rows; iz++) {
-          const q = project(ix, iz);
+          const q = projected[iz - 1][ix];
           if (prev) { strokeFor(q.d); p.line(prev.x, prev.y, q.x, q.y); }
           prev = q;
         }
@@ -123,7 +135,7 @@ export default function sketch(p, get) {
       p.noStroke();
       for (let i = 0; i < 4; i++) {
         p.fill(near.r, near.g, near.b, glow * 0.05);
-        p.rect(0, horizonY - (i + 1) * 6, p.width, (i + 1) * 12);
+        p.rect(0, horizonY + frameOffset - (i + 1) * 6, p.width, (i + 1) * 12);
       }
       p.noFill();
     }

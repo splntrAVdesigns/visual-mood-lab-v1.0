@@ -80,10 +80,15 @@ function lerpColor(a, b, t) {
 
 export default function sketch(p, get) {
   function createOrganism(wanderSeed) {
-    const org = { head: { x: 0, y: 0, angle: 0 }, segments: [], builtFor: '', wanderSeed };
+    const org = { head: { x: 0, y: 0, angle: 0 }, segments: [], builtFor: '', wanderSeed,
+      cruiseHeading: 0, cruiseTimer: 0, progressTimer: 0, originX: 0, originY: 0 };
 
     org.build = () => {
       org.head = { x: p.width / 2 + (wanderSeed - 1) * 60, y: p.height / 2, angle: Math.random() * Math.PI * 2 };
+      org.cruiseHeading = org.head.angle;
+      org.cruiseTimer = 0;
+      org.progressTimer = 0;
+      org.originX = org.head.x; org.originY = org.head.y;
       const n = Math.round(get('segmentCount'));
       org.segments = [];
       for (let i = 0; i < n; i++) org.segments.push({ x: org.head.x, y: org.head.y });
@@ -92,8 +97,14 @@ export default function sketch(p, get) {
     org.stepHead = (dt, speedMult, otherHead, avoidMutual) => {
       const head = org.head;
       const speed = get('moveSpeed') * speedMult * 40;
-      const wanderAngle = (noise1(org.wanderSeed, time * 0.15) - 0.5) * 4;
-      let targetAngle = head.angle + wanderAngle * dt;
+      // Cruise along a heading for several seconds. A new heading changes
+      // the path gradually; slow noise only bends it slightly between goals.
+      org.cruiseTimer -= dt;
+      if (org.cruiseTimer <= 0) {
+        org.cruiseHeading = head.angle + (noise1(org.wanderSeed + 8, time * 0.37) - 0.5) * 1.4;
+        org.cruiseTimer = 3 + noise1(org.wanderSeed + 12, time * 0.21) * 3;
+      }
+      let targetAngle = org.cruiseHeading + (noise1(org.wanderSeed, time * 0.28) - 0.5) * 0.35;
 
       const avoid = get('pointerAvoid');
       if (avoid > 0) {
@@ -103,7 +114,7 @@ export default function sketch(p, get) {
         if (dist < radius && dist > 0.001) {
           const away = Math.atan2(dy, dx);
           const strength = (1 - dist / radius) * avoid;
-          targetAngle = targetAngle + (away - targetAngle) * Math.min(1, strength);
+          targetAngle += Math.atan2(Math.sin(away - targetAngle), Math.cos(away - targetAngle)) * Math.min(1, strength);
         }
       }
 
@@ -114,13 +125,25 @@ export default function sketch(p, get) {
         if (dist < radius && dist > 0.001) {
           const away = Math.atan2(dy, dx);
           const strength = (1 - dist / radius) * avoidMutual;
-          targetAngle = targetAngle + (away - targetAngle) * Math.min(1, strength);
+          targetAngle += Math.atan2(Math.sin(away - targetAngle), Math.cos(away - targetAngle)) * Math.min(1, strength);
         }
       }
 
-      head.angle = targetAngle;
+      const turn = Math.atan2(Math.sin(targetAngle - head.angle), Math.cos(targetAngle - head.angle));
+      head.angle += Math.max(-1.1 * dt, Math.min(1.1 * dt, turn));
       head.x += Math.cos(head.angle) * speed * dt;
       head.y += Math.sin(head.angle) * speed * dt;
+
+      org.progressTimer += dt;
+      if (org.progressTimer >= 5) {
+        // A short closed orbit should not become the permanent itinerary.
+        if (Math.hypot(head.x - org.originX, head.y - org.originY) < speed * 1.4) {
+          org.cruiseHeading = head.angle + 0.45;
+          org.cruiseTimer = 4;
+        }
+        org.progressTimer = 0;
+        org.originX = head.x; org.originY = head.y;
+      }
 
       const m = 20;
       let wrapDX = 0, wrapDY = 0;
@@ -128,6 +151,7 @@ export default function sketch(p, get) {
       else if (head.x > p.width + m) { wrapDX = -m - head.x; head.x += wrapDX; }
       if (head.y < -m) { wrapDY = (p.height + m) - head.y; head.y += wrapDY; }
       else if (head.y > p.height + m) { wrapDY = -m - head.y; head.y += wrapDY; }
+      org.originX += wrapDX; org.originY += wrapDY;
 
       return { wrapDX, wrapDY };
     };

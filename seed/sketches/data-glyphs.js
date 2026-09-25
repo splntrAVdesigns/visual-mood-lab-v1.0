@@ -23,6 +23,7 @@ export const params = {
   harmonics: { kind: 'stepper', label: 'Harmonics', min: 1, max: 6, step: 1, default: 3 },
   speed: { kind: 'slider', label: 'Scroll speed', min: 0, max: 4, step: 0.01, default: 0.7 },
   spread: { kind: 'slider', label: 'Spread', min: 0.1, max: 1, step: 0.01, default: 0.9 },
+  characterSpread: { kind: 'slider', label: 'Character spread', min: 0, max: 3, step: 0.1, default: 0, hint: 'Minimum spacing between visible characters in text sizes. Zero retains the full sample density; the data path stays in place.' },
   jitter: { kind: 'slider', label: 'Jitter', min: 0, max: 30, step: 0.5, default: 0 },
   low: { kind: 'color', label: 'Low value', default: { r: 0.2, g: 0.22, b: 0.3, a: 1 } },
   high: { kind: 'color', label: 'High value', default: { r: 0, g: 0.83, b: 1, a: 1 } },
@@ -30,6 +31,9 @@ export const params = {
 };
 
 export default function sketch(p, get) {
+  let phase = 0;
+  let lastCharset = null;
+  let glyphs = ['#'];
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
     p.colorMode(p.RGB, 1, 1, 1, 1);
@@ -41,11 +45,8 @@ export default function sketch(p, get) {
   p.windowResized = () => p.resizeCanvas(p.windowWidth, p.windowHeight);
 
   /** The data series. Every layout reads from this one function. */
-  function valueAt(i, n, t) {
+  function valueAt(i, n, t, mode, freq, harm) {
     const x = i / n;
-    const mode = get('source');
-    const freq = get('frequency');
-    const harm = Math.floor(get('harmonics'));
 
     if (mode === 'series') {
       let v = 0;
@@ -70,15 +71,23 @@ export default function sketch(p, get) {
     p.background(0);
 
     const n = Math.floor(get('samples'));
-    const t = p.millis() * 0.001 * get('speed');
-    const chars = (get('charset') || '#').split('');
+    phase += Math.min(Math.max(p.deltaTime || 0, 0), 100) * 0.001 * get('speed');
+    const t = phase;
+    const charset = get('charset') || '#';
+    if (lastCharset !== charset) { glyphs = Array.from(charset); lastCharset = charset; }
+    const chars = glyphs;
     const mode = get('source');
+    const freq = get('frequency');
+    const harm = Math.floor(get('harmonics'));
     const map = get('mapMode');
     const amp = get('amplitude');
     const low = get('low');
     const high = get('high');
     const spread = get('spread');
+    const characterSpread = get('characterSpread') ?? 0;
     const jit = get('jitter');
+    const minGap = Math.max(0, characterSpread * get('textSize'));
+    const occupied = minGap > 0 ? new Map() : null;
 
     p.textSize(get('textSize'));
 
@@ -87,10 +96,11 @@ export default function sketch(p, get) {
       p.rect(0, p.height / 2, p.width, 1);
     }
 
+    let prev = valueAt(-1, n, t, mode, freq, harm);
     for (let i = 0; i < n; i++) {
-      const v = valueAt(i, n, t);
-      const prev = valueAt(i - 1, n, t);
+      const v = valueAt(i, n, t, mode, freq, harm);
       const slope = Math.abs(v - prev) * 12;
+      prev = v;
 
       let x, y;
       if (mode === 'spiral') {
@@ -110,6 +120,22 @@ export default function sketch(p, get) {
       }
 
       if (jit > 0) { x += (p.noise(i, t) - 0.5) * jit; y += (p.noise(i + 99, t) - 0.5) * jit; }
+      // A small spatial hash spaces glyphs without stretching or shifting
+      // the underlying graph. This also works for unordered Scatter data.
+      if (occupied) {
+        const cx = Math.floor(x / minGap), cy = Math.floor(y / minGap);
+        let tooClose = false;
+        for (let yy = cy - 1; yy <= cy + 1 && !tooClose; yy++) {
+          for (let xx = cx - 1; xx <= cx + 1; xx++) {
+            const prior = occupied.get(`${xx},${yy}`);
+            if (prior && Math.hypot(x - prior[0], y - prior[1]) < minGap) {
+              tooClose = true; break;
+            }
+          }
+        }
+        if (tooClose) continue;
+        occupied.set(`${cx},${cy}`, [x, y]);
+      }
 
       // The glyph itself encodes the datum — that is the whole idea.
       let pick;
