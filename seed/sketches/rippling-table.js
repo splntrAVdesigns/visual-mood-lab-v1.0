@@ -148,6 +148,8 @@ export default function sketch(p, get) {
   const MESH_SEG = 96;
   const TABLE_SIZE = 6;
   const MAX_SIM_STEPS_PER_FRAME = 6;
+  // Bound stacked impulses before a spike can intersect the camera plane.
+  const MAX_WAVE_HEIGHT = 2.0;
 
   let simShader, tableShader, blurShader;
   let heightCur, heightPrev, heightNext;
@@ -205,9 +207,21 @@ export default function sketch(p, get) {
 
   function rebuildSceneBuffers(w, h) {
     const opts = { width: w, height: h, textureFiltering: p.LINEAR, density: 1 };
-    freshScene = p.createFramebuffer(opts);
-    accumA = p.createFramebuffer(opts);
-    accumB = p.createFramebuffer(opts);
+    if (freshScene) {
+      freshScene.resize(w, h);
+      accumA.resize(w, h);
+      accumB.resize(w, h);
+    } else {
+      freshScene = p.createFramebuffer(opts);
+      accumA = p.createFramebuffer(opts);
+      accumB = p.createFramebuffer(opts);
+    }
+    // Previous-frame textures are invalid after a resize (and undefined
+    // after first creation). Never blend them into the first new frame.
+    for (const buffer of [accumA, accumB]) {
+      buffer.begin(); p.clear(); buffer.end();
+    }
+    accumReadIsA = true;
     lastW = w;
     lastH = h;
   }
@@ -281,6 +295,9 @@ export default function sketch(p, get) {
       fbo.begin(); p.clear(); fbo.end();
     });
 
+    // A restored GL context cannot reuse framebuffer handles from before
+    // context loss. Resize during normal operation does reuse them.
+    freshScene = accumA = accumB = null;
     rebuildSceneBuffers(p.width, p.height);
   }
 
@@ -305,6 +322,7 @@ export default function sketch(p, get) {
     simShader.setUniform('uPrevious', heightPrev);
     simShader.setUniform('uTexel', [1 / SIM_RES, 1 / SIM_RES]);
     simShader.setUniform('uDamping', damp);
+    simShader.setUniform('uMaxWaveHeight', MAX_WAVE_HEIGHT);
     p.noStroke();
     p.plane(SIM_RES, SIM_RES); // plane(), not rect() — see file header
     heightNext.end();
@@ -317,6 +335,10 @@ export default function sketch(p, get) {
 
   function stampDrop(u, v, strength, sizeFraction) {
     heightCur.begin();
+    // Camera/projection state leaks between p5 framebuffer passes. Always
+    // address the 128px simulation grid in its own coordinates, regardless
+    // of the preceding table camera or full-size blur pass.
+    p.ortho(-SIM_RES / 2, SIM_RES / 2, -SIM_RES / 2, SIM_RES / 2, -1000, 1000);
     p.push();
     p.colorMode(p.RGB, 1);
     p.blendMode(p.ADD);
@@ -434,6 +456,7 @@ export default function sketch(p, get) {
     tableShader.setUniform('uWarp', warp);
     tableShader.setUniform('uPattern', patternMode);
     tableShader.setUniform('uHeightScale', rippleHeight);
+    tableShader.setUniform('uMaxWaveHeight', MAX_WAVE_HEIGHT);
     p.noStroke();
     p.plane(TABLE_SIZE, TABLE_SIZE, MESH_SEG, MESH_SEG);
     p.pop();
@@ -509,6 +532,7 @@ uniform sampler2D uCurrent;
 uniform sampler2D uPrevious;
 uniform vec2 uTexel;
 uniform float uDamping;
+uniform float uMaxWaveHeight;
 void main() {
   float n  = texture2D(uCurrent, vUv + vec2(0.0,  uTexel.y)).r;
   float s  = texture2D(uCurrent, vUv - vec2(0.0,  uTexel.y)).r;
@@ -517,7 +541,7 @@ void main() {
   float prevCenter = texture2D(uPrevious, vUv).r;
 
   float term = (n + s + e + w) * 0.5;
-  float next = (term - prevCenter) * uDamping;
+  float next = clamp((term - prevCenter) * uDamping, -uMaxWaveHeight, uMaxWaveHeight);
 
   gl_FragColor = vec4(next, next, next, 1.0);
 }
@@ -548,6 +572,7 @@ uniform mat3 uNormalMatrix;
 uniform sampler2D uHeight;
 uniform vec2 uTexel;
 uniform float uHeightScale;
+uniform float uMaxWaveHeight;
 
 varying vec2 vUv;
 varying vec3 vNormal;
@@ -557,11 +582,13 @@ varying float vGradMag;
 void main() {
   vUv = aTexCoord;
 
-  float h  = texture2D(uHeight, vUv).r;
-  float hn = texture2D(uHeight, vUv + vec2(0.0, uTexel.y)).r;
-  float hs = texture2D(uHeight, vUv - vec2(0.0, uTexel.y)).r;
-  float he = texture2D(uHeight, vUv + vec2(uTexel.x, 0.0)).r;
-  float hw = texture2D(uHeight, vUv - vec2(uTexel.x, 0.0)).r;
+  // Drops can land between fixed simulation ticks. Bound the mesh too so
+  // a fresh impulse cannot flash a large triangle for one display frame.
+  float h  = clamp(texture2D(uHeight, vUv).r, -uMaxWaveHeight, uMaxWaveHeight);
+  float hn = clamp(texture2D(uHeight, vUv + vec2(0.0, uTexel.y)).r, -uMaxWaveHeight, uMaxWaveHeight);
+  float hs = clamp(texture2D(uHeight, vUv - vec2(0.0, uTexel.y)).r, -uMaxWaveHeight, uMaxWaveHeight);
+  float he = clamp(texture2D(uHeight, vUv + vec2(uTexel.x, 0.0)).r, -uMaxWaveHeight, uMaxWaveHeight);
+  float hw = clamp(texture2D(uHeight, vUv - vec2(uTexel.x, 0.0)).r, -uMaxWaveHeight, uMaxWaveHeight);
 
   vec3 tangentX = vec3(uTexel.x * 2.0, 0.0, (he - hw) * uHeightScale);
   vec3 tangentY = vec3(0.0, uTexel.y * 2.0, (hn - hs) * uHeightScale);

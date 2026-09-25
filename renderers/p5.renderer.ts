@@ -40,6 +40,11 @@ async function fetchAsDataUrl(url: string): Promise<string> {
   });
 }
 
+/** The host profiler survives client-side route changes; the URL may not. */
+function shouldProfileSandbox(): boolean {
+  return Boolean(window.__vmlPerf) || new URLSearchParams(window.location.search).has('perf');
+}
+
 /**
  * Runs a p5 sketch inside a sandboxed iframe.
  *
@@ -128,7 +133,7 @@ export class P5Renderer implements AssetRenderer {
     // logic calling a bridge function the currently-loaded sandbox runtime
     // never defined — while every line of actual code is correct. Bump
     // this string any time index.html changes.
-    const profileRequested = new URLSearchParams(window.location.search).has('perf');
+    const profileRequested = shouldProfileSandbox();
     frame.src = `/sandbox/index.html?v=${SANDBOX_RUNTIME_VERSION}${profileRequested ? '&profile=1' : ''}`;
     frame.style.cssText = 'width:100%;height:100%;border:0;display:block;background:#000';
     // allow-scripts WITHOUT allow-same-origin: the frame gets a null origin
@@ -191,7 +196,7 @@ export class P5Renderer implements AssetRenderer {
 
     this.lastHeartbeat = performance.now();
     this.initSentAt = performance.now();
-    this.send({ type: 'init', source: asset.source, params: this.params as Record<string, unknown>, profile: new URLSearchParams(window.location.search).has('perf') });
+    this.send({ type: 'init', source: asset.source, params: this.params as Record<string, unknown>, profile: shouldProfileSandbox() });
     void this.pushFontsFor(this.params);
   }
 
@@ -570,7 +575,7 @@ export class P5Renderer implements AssetRenderer {
       this.swap = { resolve, timer };
       this.effectSurface?.reset();
       resetEffectHistory(this.cardId);
-      this.send({ type: 'init', source, params: this.params as Record<string, unknown>, profile: new URLSearchParams(window.location.search).has('perf') });
+      this.send({ type: 'init', source, params: this.params as Record<string, unknown>, profile: shouldProfileSandbox() });
     });
   }
 

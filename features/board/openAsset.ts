@@ -56,7 +56,9 @@ export function openAssetById(itemId: string, pushUrl = true): void {
     );
 
   if (pushUrl && typeof window !== 'undefined') {
-    window.history.pushState({ itemId }, '', `/asset/${itemId}`);
+    // Preserve opt-in diagnostics across client-side navigation. Otherwise
+    // the host profiler survives while a newly mounted p5 iframe starts cold.
+    window.history.pushState({ itemId }, '', `/asset/${itemId}${window.location.search}${window.location.hash}`);
   }
 }
 
@@ -65,7 +67,7 @@ export function closeAsset(pushUrl = true): void {
   useBoardStore.getState().select(null);
 
   if (pushUrl && typeof window !== 'undefined') {
-    window.history.pushState({}, '', '/');
+    window.history.pushState({}, '', `/${window.location.search}${window.location.hash}`);
   }
 }
 
