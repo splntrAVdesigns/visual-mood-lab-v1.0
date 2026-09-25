@@ -17,7 +17,7 @@ export const params = {
     { value: 'index', label: 'By index' },
     { value: 'speed', label: 'By slope' },
   ] },
-  textSize: { kind: 'slider', label: 'Text size', min: 4, max: 40, step: 0.5, default: 12 },
+  textSize: { kind: 'slider', label: 'Text size', min: 4, max: 120, step: 0.5, default: 12 },
   amplitude: { kind: 'slider', label: 'Amplitude', min: 0.02, max: 0.9, step: 0.01, default: 0.32, modulatable: true },
   frequency: { kind: 'slider', label: 'Frequency', min: 0.2, max: 12, step: 0.05, default: 2.4, modulatable: true },
   harmonics: { kind: 'stepper', label: 'Harmonics', min: 1, max: 6, step: 1, default: 3 },
