@@ -125,6 +125,10 @@ export interface AssetRenderer {
   /** Current presentation canvas when available. Sandbox p5 transfers a
    * bounded ImageBitmap into a host-owned canvas; its iframe is never read. */
   getCanvas?(): HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null;
+  /** p5 transport generation: skip a duplicate post-process when its source has not advanced. */
+  getEffectsFrameVersion?(): number;
+  /** Restore a clean source on a rack edit before reprocessing the same p5 frame. */
+  restoreEffectsSource?(): void;
 
   dispose(): void;
 

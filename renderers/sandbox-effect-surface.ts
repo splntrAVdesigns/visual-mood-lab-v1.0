@@ -9,6 +9,8 @@ export class SandboxEffectSurface {
   private clean = document.createElement('canvas');
   private active = false;
   private ready = false;
+  private dirty = false;
+  private version = 0;
   private pending = 0;
   private sequence = 0;
   private requestedAt = 0;
@@ -25,11 +27,16 @@ export class SandboxEffectSurface {
     this.active=active; this.reset();
   }
   reset(): void {
-    this.pending=0;this.ready=false;this.lastRequest=-Infinity;
+    this.pending=0;this.ready=false;this.dirty=false;this.lastRequest=-Infinity;
+    this.version++;
     this.output.style.display='none';this.frame.style.opacity='';
     this.notice=this.active ? 'VFX waiting for sketch frame…' : null;
   }
   getCanvas(): HTMLCanvasElement | null { return this.active && this.ready ? this.output : null; }
+  getFrameVersion(): number { return this.version; }
+  restoreCleanFrame(): void {
+    if (this.active && this.ready) copySurface(this.clean,this.output,...this.expected);
+  }
   getNotice(): string | null { return this.notice; }
   render(ctx: RenderContext): void {
     if (!this.active) return;
@@ -40,7 +47,7 @@ export class SandboxEffectSurface {
       this.reset();this.notice='VFX frame unavailable; retrying…';this.lastRequest=now;
     }
     if(this.ready) {
-      copySurface(this.clean,this.output,...this.expected);
+      if(this.dirty) { this.restoreCleanFrame();this.dirty=false; }
       this.output.style.display='block';this.frame.style.opacity='0';
     }
     if(!this.pending && now-this.lastRequest >= (this.notice?.includes('unavailable') ? 1000 : 1000/30)) {
@@ -58,7 +65,7 @@ export class SandboxEffectSurface {
         this.notice='VFX frame unavailable; retrying…';return;
       }
       copySurface(bitmap,this.clean,...this.expected);
-      this.ready=true;this.notice=null;
+      this.ready=true;this.dirty=true;this.version++;this.notice=null;
     } finally { bitmap?.close(); }
   }
   dispose(): void { this.active=false;this.reset();this.output.remove();this.clean.width=this.clean.height=1; }

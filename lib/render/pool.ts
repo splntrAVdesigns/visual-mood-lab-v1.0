@@ -67,6 +67,11 @@ interface Entry {
    * chain was actually left, not wherever an LFO happened to leave it.
    */
   effects: EffectInstance[];
+  effectsRevision: number;
+  lastEffectsFrameVersion: number;
+  lastEffectsRevision: number;
+  lastEffectsStageGeneration: number;
+  lastEffectsTime: number;
   /**
    * Cached box size, updated by `resizeObserver` on layout change rather
    * than read via `host.getBoundingClientRect()` on every single tick()
@@ -282,6 +287,11 @@ class RendererPool {
       // the moment anything mapped over it. See that function's comment.
       soundState: normalizeSoundState(asset.sound),
       effects: [...(asset.effects ?? [])],
+      effectsRevision: 0,
+      lastEffectsFrameVersion: -1,
+      lastEffectsRevision: -1,
+      lastEffectsStageGeneration: -1,
+      lastEffectsTime: 0,
       // Zeroed until the observer's first callback lands — tick() already
       // skips a zero-size entry exactly as it did with a fresh
       // getBoundingClientRect() before layout settles, so this isn't a
@@ -506,6 +516,7 @@ class RendererPool {
     }
 
     entry.effects = effects.map((e) => ({ ...e, params: { ...e.params }, mod: { ...e.mod } }));
+    entry.effectsRevision++;
 
     for (const instance of entry.effects) void loadEffectShaderIfNeeded(instance.effectType);
   }
@@ -894,7 +905,7 @@ class RendererPool {
 
       const renderStart = profiling ? performance.now() : 0;
       try {
-        entry.renderer.setEffectsActive?.(entry.effects.some((effect) => effect.enabled));
+        entry.renderer.setEffectsActive?.(entry.effects.some((effect) => effect.enabled && effect.mix > 0));
         entry.renderer.render(ctx);
       } catch (err) {
         entry.failure = err instanceof Error ? err.message : String(err);
@@ -920,16 +931,33 @@ class RendererPool {
             effectPixels = surface.width * surface.height;
             const stage = getGLStage();
             if (stage) {
-              compositeEffects(stage, surface, {
-                source: surface,
-                cardId: entry.cardId,
-                effects: this.resolveEffectsForFrame(entry),
-                width: surface.width,
-                height: surface.height,
-                time: entry.lastTime,
-                delta: ctx.delta,
-              });
-              effectPasses = getEffectsMetrics(entry.cardId)?.passes ?? 0;
+              const version = entry.renderer.getEffectsFrameVersion?.();
+              // A sandbox transfers at most 30 fresh frames/sec. Re-uploading
+              // and running the entire chain on an unchanged canvas each rAF
+              // wastes GPU time and can cause severe stalls on mobile.
+              const unchanged = version !== undefined && version === entry.lastEffectsFrameVersion;
+              const routed = entry.effects.some((effect) => effect.enabled && Object.keys(effect.mod).length > 0);
+              if (!unchanged || entry.effectsRevision !== entry.lastEffectsRevision ||
+                  stage.generation !== entry.lastEffectsStageGeneration || routed) {
+                // Rack edits and modulation may rerun on the same sketch frame.
+                // Always start from its clean image, never from prior VFX.
+                if (unchanged) entry.renderer.restoreEffectsSource?.();
+                compositeEffects(stage, surface, {
+                  source: surface,
+                  cardId: entry.cardId,
+                  effects: this.resolveEffectsForFrame(entry),
+                  width: surface.width,
+                  height: surface.height,
+                  time: entry.lastTime,
+                  delta: version !== undefined && entry.lastEffectsTime
+                    ? Math.max(0, entry.lastTime - entry.lastEffectsTime) : ctx.delta,
+                });
+                effectPasses = getEffectsMetrics(entry.cardId)?.passes ?? 0;
+                entry.lastEffectsFrameVersion = version ?? -1;
+                entry.lastEffectsRevision = entry.effectsRevision;
+                entry.lastEffectsStageGeneration = stage.generation;
+                entry.lastEffectsTime = entry.lastTime;
+              }
             }
           }
         }

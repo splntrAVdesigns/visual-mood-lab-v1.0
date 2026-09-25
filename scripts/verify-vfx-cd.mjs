@@ -24,9 +24,9 @@ class FrameBitmap {
   close() { this.closed = true; }
 }
 class Canvas {
-  width = 0; height = 0; style = {};
+  width = 0; height = 0; style = {}; draws = 0;
   getContext() {
-    return { setTransform() {}, drawImage() {},
+    return { setTransform() {}, drawImage: () => { this.draws++; },
       set globalAlpha(_value) {}, set globalCompositeOperation(_value) {}, };
   }
   remove() { this.removed = true; }
@@ -115,6 +115,22 @@ report('valid frame presents while isolated iframe remains pointer target', () =
   assert(right.closed);
   assert(adapter.getCanvas());
   assert.equal(iframe.style.opacity,'0');
+});
+report('unchanged sandbox frames retain composed pixels until a new bitmap or rack edit', () => {
+  const version=adapter.getFrameVersion();
+  const output=adapter.getCanvas();
+  const draws=output.draws;
+  time=40;
+  adapter.render({width:200,height:100,pixelRatio:1});
+  assert.equal(adapter.getFrameVersion(),version);
+  assert.equal(output.draws,draws);
+  adapter.restoreCleanFrame();
+  assert.equal(output.draws,draws+1);
+  const next=new FrameBitmap(200,100);
+  adapter.accept({type:'vfx-frame',requestId:messages.at(-1).requestId,bitmap:next});
+  adapter.render({width:200,height:100,pixelRatio:1});
+  assert.equal(adapter.getFrameVersion(),version+1);
+  assert.equal(output.draws,draws+2);
 });
 report('resize, timeout and bypass restore original iframe', () => {
   adapter.render({width:300,height:100,pixelRatio:1});

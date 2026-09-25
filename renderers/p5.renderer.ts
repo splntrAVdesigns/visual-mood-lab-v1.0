@@ -369,6 +369,8 @@ export class P5Renderer implements AssetRenderer {
 
   setEffectsActive(active: boolean): void { this.effectSurface?.setActive(active); }
   getEffectsNotice(): string | null { return this.effectSurface?.getNotice() ?? null; }
+  getEffectsFrameVersion(): number { return this.effectSurface?.getFrameVersion() ?? -1; }
+  restoreEffectsSource(): void { this.effectSurface?.restoreCleanFrame(); }
   getCanvas(): HTMLCanvasElement | null { return this.effectSurface?.getCanvas() ?? null; }
 
   render(ctx: RenderContext): void {
