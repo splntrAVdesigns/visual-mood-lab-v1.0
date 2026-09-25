@@ -6,11 +6,13 @@
  * no extra runtime dependency, and so every aspect is exposed as a real
  * inspector control rather than hard-coded constants.
  *
- * The glow is faked with additive blending and layered sprites instead of a
- * post-processing bloom pass — visually very close at these particle counts,
- * and it costs a fraction of a full composer chain, which matters when three
- * of these can be live on the board at once.
+ * Camera-facing points retain a legible core throughout a full rotation.
+ * p5 cannot vary stroke() inside a POINTS batch, so 28 reused gradient
+ * buckets follow Strange Attractor's proven batching pattern. At most 56
+ * shape submissions replace thousands of individual flat circles.
  */
+
+const COLOR_BUCKETS = 28;
 
 export const params = {
   count: { kind: 'slider', label: 'Particles', min: 200, max: 12000, step: 100, default: 3500, scale: 'log', modulatable: true },
@@ -60,6 +62,8 @@ export const params = {
 export default function sketch(p, get) {
   let particles = [];
   let builtFor = '';
+  let maxPointSize = 16;
+  const buckets = Array.from({ length: COLOR_BUCKETS }, () => []);
 
   /** Position a particle on the cube according to the chosen distribution. */
   function place(i, n, mode) {
@@ -125,8 +129,14 @@ export default function sketch(p, get) {
         nx: base.x / len,
         ny: base.y / len,
         nz: base.z / len,
-        seed: p.random(1000),
+        // Jitter never changes unless Reseed runs, so sample it at build
+        // time rather than running three extra noise calls per particle/frame.
+        jitterX: 0, jitterY: 0, jitterZ: 0,
       };
+      const seed = p.random(1000);
+      particles[i].jitterX = p.noise(seed) - 0.5;
+      particles[i].jitterY = p.noise(seed + 7) - 0.5;
+      particles[i].jitterZ = p.noise(seed + 13) - 0.5;
     }
 
     builtFor = `${n}:${mode}`;
@@ -136,6 +146,11 @@ export default function sketch(p, get) {
     p.createCanvas(p.windowWidth, p.windowHeight, p.WEBGL);
     p.colorMode(p.RGB, 1, 1, 1, 1);
     p.noStroke();
+    const gl = p._renderer && p._renderer.GL;
+    if (gl) {
+      const range = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
+      if (range && Number.isFinite(range[1])) maxPointSize = range[1];
+    }
     build();
   };
 
@@ -183,6 +198,10 @@ export default function sketch(p, get) {
     p.rotateX(t * get('spinX'));
     p.rotateY(t * get('spinY'));
     p.rotateZ(t * get('spinZ'));
+    // The rotated model-view matrix makes near/far colors follow what the
+    // viewer sees. Local z did not change when the cube spun, leaving a
+    // nearby face with the dark "far" color throughout part of the orbit.
+    const view = p._renderer && p._renderer.uMVMatrix && p._renderer.uMVMatrix.mat4;
 
     if (get('showEdges')) {
       p.push();
@@ -196,20 +215,23 @@ export default function sketch(p, get) {
     // Additive blending is what sells the glow — overlapping halos
     // accumulate into brightness instead of occluding one another.
     p.blendMode(p.ADD);
+    p.noFill();
 
     const jitter = get('jitter');
+    for (let b = 0; b < COLOR_BUCKETS; b++) buckets[b].length = 0;
 
     for (let i = 0; i < particles.length; i++) {
       const q = particles[i];
 
-      const nx = p.noise(q.bx * tScale + 10, q.by * tScale, q.bz * tScale + flow) - 0.5;
-      const ny = p.noise(q.bx * tScale, q.by * tScale + 20, q.bz * tScale + flow) - 0.5;
-      const nz = p.noise(q.bx * tScale, q.by * tScale, q.bz * tScale + 30 + flow) - 0.5;
+      const moving = turb > 0 || mode === 'speed';
+      const nx = moving ? p.noise(q.bx * tScale + 10, q.by * tScale, q.bz * tScale + flow) - 0.5 : 0;
+      const ny = moving ? p.noise(q.bx * tScale, q.by * tScale + 20, q.bz * tScale + flow) - 0.5 : 0;
+      const nz = moving ? p.noise(q.bx * tScale, q.by * tScale, q.bz * tScale + 30 + flow) - 0.5 : 0;
 
       const push = explode * 0.5;
-      const jx = (p.noise(q.seed) - 0.5) * jitter;
-      const jy = (p.noise(q.seed + 7) - 0.5) * jitter;
-      const jz = (p.noise(q.seed + 13) - 0.5) * jitter;
+      const jx = q.jitterX * jitter;
+      const jy = q.jitterY * jitter;
+      const jz = q.jitterZ * jitter;
 
       const x = (q.bx + nx * turb + q.nx * push + jx) * scale;
       const y = (q.by + ny * turb + q.ny * push + jy) * scale;
@@ -219,27 +241,39 @@ export default function sketch(p, get) {
       if (mode === 'axis') f = q.bx + 0.5;
       else if (mode === 'speed') f = Math.min(Math.hypot(nx, ny, nz) * 2.2, 1);
       else if (mode === 'solid') f = 0;
-      else f = p.constrain(z / scale + 0.5, 0, 1);
-
-      const cr = p.lerp(ca.r, cb.r, f);
-      const cg = p.lerp(ca.g, cb.g, f);
-      const cbl = p.lerp(ca.b, cb.b, f);
-
-      p.push();
-      p.translate(x, y, z);
-
-      if (glow > 0) {
-        // Two soft outer layers approximate a bloom halo far more cheaply
-        // than a real post-processing pass.
-        p.fill(cr, cg, cbl, alpha * glow * 0.10);
-        p.circle(0, 0, psize * 4.5);
-        p.fill(cr, cg, cbl, alpha * glow * 0.18);
-        p.circle(0, 0, psize * 2.2);
+      else {
+        const depth = view ? view[2] * x + view[6] * y + view[10] * z : z;
+        f = p.constrain(0.5 - depth / (scale * 1.3), 0, 1);
       }
 
-      p.fill(cr, cg, cbl, alpha);
-      p.circle(0, 0, psize);
-      p.pop();
+      const bucket = Math.min(COLOR_BUCKETS - 1, Math.max(0, Math.floor(f * COLOR_BUCKETS)));
+      buckets[bucket].push(x, y, z);
+    }
+
+    for (let b = 0; b < COLOR_BUCKETS; b++) {
+      const arr = buckets[b];
+      if (arr.length === 0) continue;
+      const f = (b + 0.5) / COLOR_BUCKETS;
+      const cr = p.lerp(ca.r, cb.r, f);
+      const cg = p.lerp(ca.g, cb.g, f);
+      const cbv = p.lerp(ca.b, cb.b, f);
+
+      if (glow > 0) {
+        // Sparse halos avoid filling the silhouette into a solid tube.
+        p.stroke(cr, cg, cbv, alpha * glow * 0.25);
+        p.strokeWeight(Math.min(maxPointSize, psize * 2.7));
+        p.beginShape(p.POINTS);
+        for (let j = 0; j < arr.length; j += 12) p.vertex(arr[j], arr[j + 1], arr[j + 2]);
+        p.endShape();
+      }
+
+      // The small luminous core keeps both near and far faces visible.
+      // Opacity still controls the actual alpha of the core and halo.
+      p.stroke(p.lerp(cr, 1, 0.35), p.lerp(cg, 1, 0.35), p.lerp(cbv, 1, 0.35), alpha);
+      p.strokeWeight(Math.min(maxPointSize, Math.max(1.5, psize * 0.75)));
+      p.beginShape(p.POINTS);
+      for (let j = 0; j < arr.length; j += 3) p.vertex(arr[j], arr[j + 1], arr[j + 2]);
+      p.endShape();
     }
 
     p.blendMode(p.BLEND);

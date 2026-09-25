@@ -2,6 +2,7 @@ import type { Asset, CardState } from '@/types/asset';
 import type { AssetRenderer, RenderContext } from '@/renderers/types';
 import { createRenderer } from '@/renderers/registry';
 import { installSoakStats } from '@/lib/debug/soak-stats';
+import { installFrameProfile, beginFrameProfile, recordTileProfile, endFrameProfile } from '@/lib/debug/frame-profile';
 import { peekGLStage } from '@/lib/gl/context-pool';
 import { getModBus } from '@/lib/modulation/bus';
 import { applyModulation, defaultsOf, type ModState, type ParamState, type SoundState } from '@/renderers/control-schema';
@@ -14,7 +15,7 @@ import { STALL_RESUME_THRESHOLD_MS } from '@/lib/sandbox/protocol';
 import type { EffectInstance } from '@/lib/effects/types';
 import { getEffectSchema } from '@/lib/effects/registry';
 import { getGLStage } from '@/lib/gl/context-pool';
-import { compositeEffects, resetEffectHistory, disposeEffectsFor, loadEffectShaderIfNeeded } from '@/lib/gl/effects-compositor';
+import { compositeEffects, resetEffectHistory, disposeEffectsFor, loadEffectShaderIfNeeded, getEffectsMetrics } from '@/lib/gl/effects-compositor';
 
 /**
  * The renderer pool.
@@ -801,6 +802,8 @@ class RendererPool {
 
   private tick = (now: number): void => {
     this.rafId = requestAnimationFrame(this.tick);
+    const profiling = typeof window !== 'undefined' && !!window.__vmlPerf;
+    if (profiling) beginFrameProfile(now);
 
     // Raw, UNclamped gap since the last tick. A single slow frame is
     // normal and dt below already guards against it — but a gap past
@@ -889,6 +892,7 @@ class RendererPool {
         this.warnOnce(entry.cardId, 'modulation', err);
       }
 
+      const renderStart = profiling ? performance.now() : 0;
       try {
         entry.renderer.setEffectsActive?.(entry.effects.some((effect) => effect.enabled));
         entry.renderer.render(ctx);
@@ -898,6 +902,10 @@ class RendererPool {
         this.demote(entry.cardId);
         continue;
       }
+      const renderMs = profiling ? performance.now() - renderStart : 0;
+      const effectsStart = profiling ? performance.now() : 0;
+      let effectPixels = 0;
+      let effectPasses = 0;
 
       // Contained separately from render() above: a VFX fault (bad shader,
       // resized-away canvas, GL hiccup) used to fall into the same catch and
@@ -909,6 +917,7 @@ class RendererPool {
         if (entry.effects.some((effect) => effect.enabled && effect.mix > 0)) {
           const surface = entry.renderer.getCanvas?.();
           if (surface instanceof HTMLCanvasElement) {
+            effectPixels = surface.width * surface.height;
             const stage = getGLStage();
             if (stage) {
               compositeEffects(stage, surface, {
@@ -920,13 +929,21 @@ class RendererPool {
                 time: entry.lastTime,
                 delta: ctx.delta,
               });
+              effectPasses = getEffectsMetrics(entry.cardId)?.passes ?? 0;
             }
           }
         }
       } catch (err) {
         this.warnOnce(entry.cardId, 'effects', err);
       }
+      if (profiling) recordTileProfile({
+        type: entry.renderer.type, renderMs, effectsMs: performance.now() - effectsStart,
+        passes: effectPasses, pixels: effectPixels,
+        p5Fps: entry.renderer.type === 'p5' && 'currentFps' in entry.renderer
+          ? Number(entry.renderer.currentFps) : null,
+      });
     }
+    if (profiling) endFrameProfile();
   };
 }
 
@@ -938,6 +955,9 @@ export function getPool(): RendererPool {
 }
 
 // The soak test's read-only stats hook. A no-op unless the page URL has ?soak.
-if (typeof window !== 'undefined') installSoakStats(() => getPool().stats(), () => peekGLStage());
+if (typeof window !== 'undefined') {
+  installSoakStats(() => getPool().stats(), () => peekGLStage());
+  installFrameProfile(window);
+}
 
 export type { RendererPool };

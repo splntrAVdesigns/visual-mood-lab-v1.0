@@ -23,6 +23,7 @@ vm.createContext(sandbox);vm.runInContext(built.outputFiles[0].text,sandbox);
 const api=sandbox.api;
 const drawn=[];const canvases=[];
 const stage={canvas:new Canvas(),compile:(key)=>({ok:key!=='fx:crt',program:{key}}),
+ ensureCapacity:(w,h)=>({width:Math.min(1280,w),height:Math.min(1280,h)}),
  uploadTexture:(_key,canvas)=>{canvases.push(canvas);return {content:canvas.content};},
  draw:(program,w,h,apply)=>{const values={};apply((key,value)=>values[key]=value);drawn.push({key:program.key,values});stage.canvas.content=`${values.u_fxSource.content}>${program.key}`;return {sx:0,sy:0,sw:w,sh:h};}};
 const effect=(type,mix=1)=>({id:type,effectType:type,enabled:true,mix,params:{},mod:{}});
@@ -57,4 +58,10 @@ check('schema defaults bound when absent in saved params',()=>{run([effect('grai
 await api.loadEffectShaderIfNeeded('math-warp');
 check('select parameter reaches uniform as number',()=>{run([{...effect('math-warp'),params:{mode:'1'}}]);assert.equal(drawn[0].values.u_warpMode,1);});
 check('uniform mix matches resolved modulated value',()=>{run([effect('grain',0.37)]);assert.equal(drawn[0].values.u_fxMix,0.37);});
+check('large source uses bounded aspect-preserving shader viewport without resizing output',()=>{
+  const dest=new Canvas();dest.width=2048;dest.height=1024;
+  api.compositeEffects(stage,dest,{source:dest,cardId:'large',effects:[effect('grain')],width:2048,height:1024,time:1});
+  assert.equal(dest.width,2048);assert.equal(dest.height,1024);
+  assert.deepEqual(Array.from(drawn.at(-1).values.u_resolution),[1280,640]);
+});
 console.log(`${tests} compositor control-flow checks passed (no GPU).`);

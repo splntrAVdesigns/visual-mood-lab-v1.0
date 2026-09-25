@@ -97,12 +97,23 @@ try {
     check('GPU path removes intermediate texture uploads',gpuMetrics?.gpuIntermediate === true && gpuMetrics.uploads === 1 && gpuMetrics.relayCopies === 0);
     // Share the REAL drawing methods but conceal GL target allocation so the
     // compositor takes its original CPU relay path for identical inputs.
-    const relayStage={canvas:stage.canvas,compile:stage.compile.bind(stage),uploadTexture:stage.uploadTexture.bind(stage),draw:stage.draw.bind(stage)};
+    const relayStage={canvas:stage.canvas,compile:stage.compile.bind(stage),uploadTexture:stage.uploadTexture.bind(stage),draw:stage.draw.bind(stage),ensureCapacity:stage.ensureCapacity.bind(stage)};
     const relayCard=`relay-${serial++}`;
     const relayPixels=pixels(render(chain,{cardId:relayCard,renderStage:relayStage}));
     const relayMetrics=api.getEffectsMetrics(relayCard);
     check('CPU fallback retains three-pass behavior',relayMetrics?.gpuIntermediate === false && relayMetrics.relayCopies === 2);
     check('GPU and relay output have identical orientation/color',equal(gpuPixels,relayPixels));
+    const wide=fixture(1600,800);
+    const wideGpu=render([instance('grain',{intensity:0})],{w:1600,h:800,source:wide});
+    check('focused output keeps backing dimensions above shared stage cap',wideGpu.width===1600 && wideGpu.height===800);
+    const widePixels=pixels(wideGpu);
+    const sample=(x,y)=>widePixels.slice((y*1600+x)*4,(y*1600+x)*4+3);
+    check('oversized effect keeps all four upright quadrants',sample(100,100)[0]>sample(100,100)[2] && sample(1500,100)[1]>sample(1500,100)[0] && sample(100,700)[2]>sample(100,700)[0] && sample(1500,700)[0]>sample(1500,700)[2]);
+    const wideChainId=`wide-chain-${serial++}`;
+    const wideChain=render(Array.from({length:3},(_,i)=>({...instance('grain',{intensity:0}),id:`neutral-${i}`})),{w:1600,h:800,source:fixture(1600,800),cardId:wideChainId});
+    const wc=pixels(wideChain);
+    const wcAt=(x,y)=>wc.slice((y*1600+x)*4,(y*1600+x)*4+3);
+    check('oversized three-pass GPU chain retains lower quadrants',api.getEffectsMetrics(wideChainId)?.gpuIntermediate === true && wcAt(100,700)[2]>wcAt(100,700)[0] && wcAt(1500,700)[0]>wcAt(1500,700)[2]);
     const unknown=instance('retired-effect');
     for (const chain of [[grade,unknown],[unknown,grade],[grade,unknown,instance('grain',{intensity:0})]])
       check('unknown pass preserves valid chain',equal(graded,pixels(render(chain))));

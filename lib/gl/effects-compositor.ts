@@ -1,4 +1,5 @@
 import { getEffectTargets, releaseEffectTargets } from './effect-targets';
+import { fitEffectToStage } from './effect-size';
 import { feedbackWeights } from '@/lib/effects/feedback';
 /**
  * VFX consumes the already-presented tile canvas. uploadTexture flips DOM
@@ -200,8 +201,8 @@ function compositeEffectsUnsafe(
   input: CompositeInput,
   active: EffectInstance[],
 ): void {
-  const w = Math.max(1, Math.round(input.width));
-  const h = Math.max(1, Math.round(input.height));
+  const capacity = stage.ensureCapacity(input.width, input.height);
+  const [w, h] = fitEffectToStage(input.width, input.height, capacity.width, capacity.height);
 
   // Resolve the runnable chain first. The final *successful* program owns
   // output, even when a later configured entry is loading or fails compile.
@@ -281,12 +282,15 @@ function compositeEffectsUnsafe(
       ? { canvas: dest, ctx: dest.getContext('2d', { alpha: false }) }
       : getRelay(relayKey, w, h);
     if (!target.ctx) return;
-    if (target.canvas.width !== w || target.canvas.height !== h) {
+    // The visible canvas remains at its renderer-owned size. Resizing it here
+    // causes media renderers to reallocate it on the next frame and would
+    // change the backing size when a focused view exceeds stage capacity.
+    if (!isLast && (target.canvas.width !== w || target.canvas.height !== h)) {
       target.canvas.width = w; target.canvas.height = h;
     }
     target.ctx.save();
     target.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    target.ctx.drawImage(stage.canvas, region.sx, region.sy, region.sw, region.sh, 0, 0, w, h);
+    target.ctx.drawImage(stage.canvas, region.sx, region.sy, region.sw, region.sh, 0, 0, target.canvas.width, target.canvas.height);
     target.ctx.restore();
     if (!isLast) {
       stats.uploads++;stats.relayCopies++;
