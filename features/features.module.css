@@ -713,6 +713,16 @@
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.6), transparent);
 }
 
+/* Shape Source can render a white or pastel canvas: the shared dark overlay
+   becomes a visible strip in the artwork. Keep this tile's controls in a
+   separate, opaque chrome row so no CSS layer alters its output. */
+.focusPanel[data-shape-source='true'] .focusHeader {
+  position: relative;
+  flex: none;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+}
+
 .focusTitle {
   flex: 1;
   /* Header-button-overflow fix (2026-09): without this, the ellipsis
@@ -1507,6 +1517,58 @@
 .rateStripKey:disabled {
   color: var(--text-mute);
   cursor: not-allowed;
+}
+
+/* Shape Source's ten curated vectors need a thumbnail rather than ten tiny
+   labels crammed into a single strip. The selected legacy item appears only
+   on cards that already used it. */
+.shapeLibraryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.shapeLibraryItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  cursor: pointer;
+}
+
+.shapeLibraryItem:hover,
+.shapeLibraryItem:focus-visible {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.shapeLibraryItem:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.shapeLibraryItem[data-selected='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-faint);
+}
+
+.shapeLibraryThumb {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  background-color: #292929;
+  background-size: 75% 75%;
+  background-position: center;
+  background-repeat: no-repeat;
+  border-radius: 3px;
 }
 
 /* Small mono readout under the Hz slider — the strip's buttons already

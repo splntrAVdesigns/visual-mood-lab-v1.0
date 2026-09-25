@@ -19,6 +19,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildSdfRGBA, signedDistance, FINE_SPREAD, COARSE_SPREAD } from '../lib/shape-source/sdf';
 import { keyCoverage } from '../lib/shape-source/raster';
+import { LIBRARY_SHAPES, VISIBLE_LIBRARY_IDS } from '../lib/shape-source/library';
 import { parseUniforms } from '../lib/gl/parse-uniforms';
 import { defaultsOf, isVisible } from '../renderers/control-schema';
 
@@ -112,6 +113,18 @@ console.log('\nShapeshift schema');
     const r = byId.get(id)?.roll; return typeof r === 'object' && r !== null;
   }));
   check('depth stack defaults to 4', state.u_stack === 4);
+  check('Cut line width is a conditional pixel slider',
+    byId.get('u_cutWidth')?.kind === 'slider'
+    && isVisible(byId.get('u_cutWidth')!, { ...state, u_cutLines: true })
+    && !isVisible(byId.get('u_cutWidth')!, { ...state, u_cutLines: false }));
+  const libraryControl = byId.get('shapeLibrary');
+  check('ten distinct current library options', VISIBLE_LIBRARY_IDS.length === 10
+    && new Set(VISIBLE_LIBRARY_IDS).size === 10
+    && libraryControl?.kind === 'select'
+    && libraryControl.options.length === 10);
+  check('old shapes remain addressable for saved cards',
+    ['vessel', 'arch', 'burst'].every((id) => Boolean(LIBRARY_SHAPES[id]?.svg))
+    && ['vessel', 'arch', 'burst'].every((id) => !VISIBLE_LIBRARY_IDS.some((newId) => newId === id)));
 
   // Fill-scoped controls (100.3): each fill shows only the controls it reads.
   const fillIs = (label: string) => {
@@ -206,13 +219,23 @@ console.log('\nUpload keying');
   const auto = cover(keyCoverage(two, R, rect, 'auto', 0.5, false));
   const alpha = cover(keyCoverage(two, R, rect, 'alpha', 0.5, false));
   check('Auto on a transparent image = Alpha, whole silhouette at the centre', Math.abs(auto - alpha) < 1e-9 && Math.abs(alpha - full) < 0.01, { auto, alpha, full });
-  const trimLight = cover(keyCoverage(two, R, rect, 'alpha', 0.2, false));
-  const trimDark = cover(keyCoverage(two, R, rect, 'alpha', 0.8, false));
-  check('Alpha threshold left of centre trims the light half', trimLight < alpha * 0.65 && trimLight > alpha * 0.35, { trimLight, alpha });
-  check('Alpha threshold right of centre trims the dark half', trimDark < alpha * 0.65 && trimDark > alpha * 0.35, { trimDark, alpha });
-  check('Alpha threshold is continuous through the centre (pure white kept at 0.49 / 0.51)',
-    cover(keyCoverage(img(1, 1, null), R, rect, 'alpha', 0.49, false)) > full * 0.98
-    && cover(keyCoverage(img(0, 0, null), R, rect, 'alpha', 0.51, false)) > full * 0.98);
+  const dark47 = cover(keyCoverage(img(0.02, 0.02, null), R, rect, 'alpha', 0.47, false));
+  const dark59 = cover(keyCoverage(img(0.02, 0.02, null), R, rect, 'alpha', 0.59, false));
+  check('opaque dark logo stays visible in Alpha across 0.5', dark47 > 0.2 && Math.abs(dark47 - dark59) < 0.01, { dark47, dark59 });
+  check('Alpha threshold ignores colour of opaque pixels',
+    Math.abs(cover(keyCoverage(two, R, rect, 'alpha', 0.8, false)) - full) < 0.01);
+
+  const soft = img(0.2, 0.85, null);
+  for (let y = 0; y < R; y++) for (let x = 0; x < R / 2; x++) {
+    const j = (y * R + x) * 4;
+    if (soft[j + 3]) soft[j + 3] = 110;
+  }
+  const lowAlpha = cover(keyCoverage(soft, R, rect, 'alpha', 0.2, false));
+  const highAlpha = cover(keyCoverage(soft, R, rect, 'alpha', 0.8, false));
+  check('Alpha threshold trims semitransparent pixels', lowAlpha > highAlpha * 1.5, { lowAlpha, highAlpha });
+  const lumaDark = cover(keyCoverage(two, R, rect, 'luma', 0.5, false));
+  check('Luminance keys brightness, producing a different silhouette on two-tone art',
+    lumaDark > 0 && lumaDark < alpha * 0.75, { lumaDark, alpha });
 
   const lightLogo = cover(keyCoverage(img(0.85, 0.85, null), R, rect, 'luma', 0.5, false));
   const midLogo = cover(keyCoverage(img(0.55, 0.55, null), R, rect, 'luma', 0.5, false));

@@ -550,6 +550,7 @@ export function FocusedAssetOverlay() {
       <div
         ref={panelRef}
         className={s.focusPanel}
+        data-shape-source={schema?.controls.some((c) => c.binding?.target === 'host' && c.binding.property === 'shape:u_shape') ? 'true' : undefined}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

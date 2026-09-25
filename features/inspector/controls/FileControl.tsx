@@ -1,9 +1,11 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef, useState, useSyncExternalStore } from 'react';
 import { Button, Field } from '@/components/ui';
 import type { FileControl as FileControlType, ParamValue } from '@/renderers/control-schema';
 import { uploadShapeFile } from '@/lib/shape-source/upload';
+import { getResolvedShapeKey, getShapeError, getShapeStatus, subscribeShapeStatus, type ShapeKey, type ShapeSpec } from '@/lib/shape-source';
+import { useInspectorStore } from '@/stores';
 import s from '../../features.module.css';
 
 interface Props {
@@ -34,6 +36,21 @@ export function FileControlRow({ control, value, dirty, onChange, onReset }: Pro
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const url = typeof value === 'string' && value ? value : null;
+  const key = useInspectorStore((st) => st.params.shapeKey);
+  const threshold = useInspectorStore((st) => st.params.shapeThreshold);
+  const invert = useInspectorStore((st) => st.params.shapeKeyInvert);
+  const spec: ShapeSpec | null = url ? {
+    kind: 'file',
+    url,
+    key: key === 'alpha' || key === 'luma' ? key as ShapeKey : 'auto',
+    threshold: typeof threshold === 'number' ? threshold : 0.5,
+    invert: invert === true,
+  } : null;
+  const status = useSyncExternalStore(
+    subscribeShapeStatus,
+    () => spec ? getShapeStatus(spec) : 'idle',
+    () => 'idle',
+  );
 
   const pick = async (file: File | undefined) => {
     if (!file) return;
@@ -71,6 +88,11 @@ export function FileControlRow({ control, value, dirty, onChange, onReset }: Pro
         />
       </div>
       {error && <p className={s.textureEmpty} role="alert">{error}</p>}
+      {status === 'ready' && key === 'auto' && spec && (
+        <p className={s.textureEmpty} role="status">Auto chose {getResolvedShapeKey(spec) === 'alpha' ? 'Alpha (transparency)' : 'Luminance (brightness)'}.</p>
+      )}
+      {status === 'empty' && <p className={s.textureEmpty} role="status">No pixels match this key and threshold. Adjust Threshold or switch Key.</p>}
+      {status === 'failed' && spec && <p className={s.textureEmpty} role="alert">{getShapeError(spec) ?? 'Could not read this shape.'}</p>}
     </Field>
   );
 }

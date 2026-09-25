@@ -4,6 +4,26 @@
 **Roadmap slot:** Phase 4.99 — lands **after 4.97 MIDI** (mostly shipped; gamepad QA this week) and **before 4.95 Media Library**, 5 Playground, and 5.5 Blend & Mask.
 **Companion artifact:** `shapeshift-mockup.html` — interactive WebGL2 prototype of the full pipeline, used to tune motion feel before any GLSL enters `seed/`.
 
+## 100.4 — Keying, canvas and shape library (2026-09-25)
+
+- Focused Shapeshift previews place the header on its own opaque row. The shared
+  dark gradient no longer overlays white or gray artwork; the actual canvas and
+  exports remain driven by the shader's Background colour.
+- Upload keying has one meaning per mode: Alpha thresholds transparency;
+  Luminance thresholds brightness relative to the inferred background; Auto
+  chooses and reports one of those modes. A flat opaque silhouette will not
+  visually change when Alpha threshold moves, because its alpha is uniform.
+  A truly empty key displays a status in the file control.
+- Cut lines have a conditional Line width control in output pixels (0.5–12).
+- The visible vector library has ten designs: Vessel, Orbit, Bolt, Arch, Burst,
+  Fold, Notch, Ribbon, Split Disc and Rail. Its selector uses thumbnails.
+  Redesigned Vessel, Arch and Burst have new ids; the original ids stay
+  renderable for saved cards and appear in the selector only when an existing
+  card has one selected. The new default id is `vessel_v2`.
+- The shape-source verifier checks dark logos across the 50% Alpha boundary,
+  semitransparent Alpha, Luminance contrast, ten current library options, legacy
+  ids, and conditional Cut line width.
+
 ---
 
 ## 0. Decisions locked (2026-09-22)

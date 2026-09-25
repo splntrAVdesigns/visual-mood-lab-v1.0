@@ -169,11 +169,11 @@ function ramp(v: number, t: number): number {
   return Math.max(0, Math.min(1, (v - (t - w)) / (2 * w)));
 }
 
-async function rasterFile(spec: Extract<ShapeSpec, { kind: 'file' }>): Promise<Uint8ClampedArray> {
+async function rasterFile(spec: Extract<ShapeSpec, { kind: 'file' }>, onKey?: (key: 'alpha' | 'luma') => void): Promise<Uint8ClampedArray> {
   const { ctx } = makeCanvas();
   const rect = drawContain(ctx, await loadImage(spec.url, !spec.url.startsWith('blob:') && !spec.url.startsWith('data:')));
   const px = ctx.getImageData(0, 0, SHAPE_RES, SHAPE_RES).data;
-  return keyCoverage(px, SHAPE_RES, rect, spec.key, spec.threshold, spec.invert);
+  return keyCoverage(px, SHAPE_RES, rect, spec.key, spec.threshold, spec.invert, onKey);
 }
 
 /**
@@ -185,12 +185,9 @@ async function rasterFile(spec: Extract<ShapeSpec, { kind: 'file' }>): Promise<U
  * Luminance (100.0 scanned the whole raster, whose transparent fit margin
  * made every opaque JPG/PNG look transparent).
  *
- * ALPHA (100.3): the silhouette is the alpha channel, and Threshold trims it
- * BY BRIGHTNESS. A clean cutout's alpha is 0 or 1 everywhere except its 1-2
- * px antialiased edge, so the 100.0 alpha ramp moved coverage by ~1.4 % across
- * the whole slider — Threshold read as dead, and Alpha looked identical to
- * Auto. Now the centre (0.5) keeps the whole silhouette, left of centre trims
- * the lighter parts of the image away, right of centre trims the darker parts.
+ * ALPHA (100.4): Threshold applies only to the alpha channel. Opaque artwork
+ * stays opaque at every threshold below 1; the slider refines soft or
+ * semitransparent edges. Colour never changes the silhouette in this mode.
  *
  * LUMINANCE: ink is whatever contrasts with the ground; Threshold is the
  * brightness cut. The ground is read from the image border — and, 100.3, when
@@ -206,6 +203,7 @@ export function keyCoverage(
   keyMode: ShapeKey,
   threshold: number,
   invert: boolean,
+  onKey?: (key: 'alpha' | 'luma') => void,
 ): Uint8ClampedArray {
   const n = res * res;
   const lumAt = (j: number) => (0.299 * px[j] + 0.587 * px[j + 1] + 0.114 * px[j + 2]) / 255;
@@ -220,6 +218,7 @@ export function keyCoverage(
   }
   const hasAlpha = transparent > (transparent + opaque) * 0.005;
   const key = keyMode === 'auto' ? (hasAlpha ? 'alpha' : 'luma') : keyMode;
+  onKey?.(key);
 
   // Ground brightness from the frame border; transparent border samples are
   // counted separately and, if they dominate, the ground is inferred from the
@@ -236,20 +235,12 @@ export function keyCoverage(
     ? inkMean < 0.5
     : borderN === 0 || borderSum / borderN >= 0.5;
 
-  // Alpha-mode brightness trim. The 1.12 / 0.12 stretch puts the cut just
-  // outside 0..1 at the centre, so 0.5 keeps even pure white / pure black
-  // whole and the slider is continuous through it.
-  const trimLight = threshold < 0.5;
-  const cut = trimLight ? (threshold / 0.5) * 1.12 : ((threshold - 0.5) / 0.5) * 1.12 - 0.12;
-
   const out = new Uint8ClampedArray(n);
   for (let i = 0, j = 0; i < n; i++, j += 4) {
     const a = px[j + 3] / 255;
     let c: number;
     if (key === 'alpha') {
-      const lum = lumAt(j);
-      const keep = trimLight ? ramp(1 - lum, 1 - cut) : ramp(lum, cut);
-      c = ramp(a, 0.5) * keep;
+      c = ramp(a, threshold);
     } else {
       // Ink = whatever contrasts with the ground. Threshold is the brightness
       // cut: pixels darker (light ground) or brighter (dark ground) than it.
@@ -268,14 +259,14 @@ export function keyCoverage(
   return out;
 }
 
-export async function rasterizeCoverage(spec: ShapeSpec): Promise<Uint8ClampedArray> {
+export async function rasterizeCoverage(spec: ShapeSpec, onKey?: (key: 'alpha' | 'luma') => void): Promise<Uint8ClampedArray> {
   switch (spec.kind) {
     case 'text':
       return rasterText(spec);
     case 'library':
       return rasterSvgText((LIBRARY_SHAPES[spec.id] ?? LIBRARY_SHAPES[DEFAULT_LIBRARY_ID]).svg);
     case 'file':
-      return rasterFile(spec);
+      return rasterFile(spec, onKey);
     case 'empty':
       return new Uint8ClampedArray(SHAPE_RES * SHAPE_RES);
   }

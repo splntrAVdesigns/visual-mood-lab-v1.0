@@ -24,10 +24,12 @@ export { FINE_SPREAD, COARSE_SPREAD } from './sdf';
 
 type Entry =
   | { state: 'loading' }
-  | { state: 'ready'; canvas: HTMLCanvasElement; usedAt: number }
+  | { state: 'ready'; canvas: HTMLCanvasElement; hasShape: boolean; keyMode?: 'alpha' | 'luma'; usedAt: number }
   | { state: 'failed'; error: string; at: number };
 
 const cache = new Map<string, Entry>();
+const listeners = new Set<() => void>();
+function notify(): void { for (const listener of listeners) listener(); }
 /** Deepest inside distance per finished canvas, in shape space (s ∈ [-1, 1]). */
 const depthOf = new WeakMap<HTMLCanvasElement, number>();
 const MAX_READY = 8;
@@ -94,7 +96,8 @@ function evict(): void {
 
 async function build(key: string, spec: ShapeSpec): Promise<void> {
   try {
-    const coverage = await rasterizeCoverage(spec);
+    let keyMode: 'alpha' | 'luma' | undefined;
+    const coverage = await rasterizeCoverage(spec, (resolved) => { keyMode = resolved; });
     const sdf = await computeSdf(coverage);
     const canvas = document.createElement('canvas');
     canvas.width = sdf.width;
@@ -103,14 +106,16 @@ async function build(key: string, spec: ShapeSpec): Promise<void> {
     if (!ctx) throw new Error('2D canvas unavailable');
     ctx.putImageData(new ImageData(new Uint8ClampedArray(sdf.rgba), sdf.width, sdf.height), 0, 0);
     depthOf.set(canvas, (sdf.maxDepth * 2) / sdf.width);
-    cache.set(key, { state: 'ready', canvas, usedAt: performance.now() });
+    cache.set(key, { state: 'ready', canvas, hasShape: sdf.hasShape, keyMode, usedAt: performance.now() });
     evict();
+    notify();
   } catch (err) {
     cache.set(key, {
       state: 'failed',
       error: err instanceof Error ? err.message : 'Could not build the shape',
       at: performance.now(),
     });
+    notify();
   }
 }
 
@@ -129,6 +134,7 @@ export function getShapeCanvas(spec: ShapeSpec): HTMLCanvasElement | null {
   if (hit?.state === 'failed' && performance.now() - hit.at < RETRY_MS) return null;
 
   cache.set(key, { state: 'loading' });
+  notify();
   void build(key, spec);
   return null;
 }
@@ -146,6 +152,25 @@ export function getShapeError(spec: ShapeSpec): string | null {
   return hit?.state === 'failed' ? hit.error : null;
 }
 
+/** A lightweight, reactive status for the upload inspector. Empty coverage
+ * is a valid key result and should be explained rather than looking crashed. */
+export function getShapeStatus(spec: ShapeSpec): 'idle' | 'loading' | 'ready' | 'empty' | 'failed' {
+  const entry = cache.get(specKey(spec));
+  if (!entry) return 'idle';
+  return entry.state === 'ready' ? (entry.hasShape ? 'ready' : 'empty') : entry.state;
+}
+
+export function getResolvedShapeKey(spec: ShapeSpec): 'alpha' | 'luma' | null {
+  const entry = cache.get(specKey(spec));
+  return entry?.state === 'ready' ? entry.keyMode ?? null : null;
+}
+
+export function subscribeShapeStatus(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => { listeners.delete(listener); };
+}
+
 export function clearShapeCache(): void {
   cache.clear();
+  notify();
 }

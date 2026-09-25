@@ -12,6 +12,7 @@ import { StepperControlRow } from './controls/StepperControl';
 import { ToggleControlRow } from './controls/ToggleControl';
 import { SelectControlRow } from './controls/SelectControl';
 import { ButtonStripControlRow } from './controls/ButtonStripControl';
+import { ShapeLibraryControlRow } from './controls/ShapeLibraryControl';
 import { ColorControlRow } from './controls/ColorControl';
 import { XYControlRow } from './controls/XYControl';
 import { Vec3ControlRow } from './controls/Vec3Control';
@@ -90,7 +91,9 @@ function ControlBody({
     case 'toggle':
       return <ToggleControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />;
     case 'select':
-      return control.displayStyle === 'strip'
+      return control.id === 'shapeLibrary'
+        ? <ShapeLibraryControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />
+        : control.displayStyle === 'strip'
         ? <ButtonStripControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />
         : <SelectControlRow control={control} value={value} dirty={dirty} onChange={onChange} onReset={onReset} />;
     case 'color':

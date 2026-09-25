@@ -61,7 +61,7 @@
  */
 
 import { sanitizeSchema } from '@/lib/schema/sanitize';
-import { LIBRARY_SHAPES, DEFAULT_LIBRARY_ID } from '@/lib/shape-source/library';
+import { LIBRARY_SHAPES, VISIBLE_LIBRARY_IDS, DEFAULT_LIBRARY_ID } from '@/lib/shape-source/library';
 import {
   type Control,
   type ControlPredicate,
@@ -875,6 +875,7 @@ function shapeSourceControls(u: ParsedUniform, defaultGroup: string): Control[] 
     },
     {
       ...base, id: 'shapeKey', kind: 'select', label: 'Key', default: 'auto', displayStyle: 'strip',
+      hint: 'Auto uses Alpha for transparent artwork and Luminance for opaque images. Alpha keys transparency; Luminance keys brightness.',
       options: [
         { value: 'auto', label: 'Auto' },
         { value: 'alpha', label: 'Alpha' },
@@ -885,13 +886,13 @@ function shapeSourceControls(u: ParsedUniform, defaultGroup: string): Control[] 
     {
       ...base, id: 'shapeThreshold', kind: 'slider', label: 'Threshold', default: 0.5,
       min: 0.05, max: 0.95, step: 0.01, modulatable: false, showIf: isFile,
-      hint: 'Trims by brightness. With Alpha, the centre keeps the whole shape.',
+      hint: 'Alpha refines transparent edges (opaque pixels stay). Luminance cuts by brightness.',
     },
     { ...base, id: 'shapeKeyInvert', kind: 'toggle', label: 'Invert key', default: false, showIf: isFile },
     {
       ...base, id: 'shapeLibrary', kind: 'select', label: 'Shape', default: DEFAULT_LIBRARY_ID,
       displayStyle: 'strip',
-      options: Object.entries(LIBRARY_SHAPES).map(([value, v]) => ({ value, label: v.label })),
+      options: VISIBLE_LIBRARY_IDS.map((value) => ({ value, label: LIBRARY_SHAPES[value].label })),
       showIf: isLibrary,
     },
   ];

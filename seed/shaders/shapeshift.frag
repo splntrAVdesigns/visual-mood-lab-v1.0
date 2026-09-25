@@ -92,6 +92,7 @@ uniform float u_frequency;     // @label(Frequency) @range(0, 8) @default(1.5) @
 uniform float u_softness;      // @label(Softness) @range(0, 1) @default(1) @group(Motion) @hint(Hard strips at 0, a continuous smear at 1.)
 uniform float u_audioDrive;    // @label(Audio drive) @range(0, 2) @default(1) @group(Motion) @hint(How strongly bass, mid and high push the motion.)
 uniform bool  u_cutLines;      // @label(Cut lines) @default(false) @group(Motion)
+uniform float u_cutWidth;      // @label(Line width) @range(0.5, 12) @default(1) @step(0.1) @unit(px) @group(Motion) @showIf(u_cutLines)
 uniform vec2  u_recut;         // @label(Re-cut) @trigger(u_beatCut) @group(Motion)
 uniform bool  u_beatCut;       // @label(Re-cut on beat) @default(false) @group(Motion)
 
@@ -454,7 +455,8 @@ void main() {
   if (u_cutLines) {
     float bgL = dot(u_bg, vec3(0.299, 0.587, 0.114));
     vec3 lc = bgL > 0.5 ? vec3(0.15) : vec3(0.55);
-    col = mix(col, lc, smoothstep(PX * 0.9, 0.0, cutDist(p)) * 0.8);
+    float halfWidth = u_cutWidth * PX;
+    col = mix(col, lc, (1.0 - smoothstep(halfWidth - PX, halfWidth + PX, cutDist(p))) * 0.8);
   }
 
   fragColor = vec4(col, 1.0);
