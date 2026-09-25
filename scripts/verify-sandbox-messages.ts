@@ -48,6 +48,7 @@ function verifyRealMessages(): void {
   check('error', p({ type: 'error', message: 'boom', stack: 'at x' })?.message === 'boom');
   check('hover true', p({ type: 'hover', hovering: true })?.hovering === true);
   check('hover false', p({ type: 'hover', hovering: false })?.hovering === false);
+  check('pointer', p({ type: 'pointer', x: 0.25, y: 0.75, down: true })?.y === 0.75);
   check('pluck', p({ type: 'pluck', x: 0.37 })?.x === 0.37);
   check('energy', p({ type: 'energy', energy: 0.5 })?.energy === 0.5);
   for (const key of ['f', 'F', 'Escape']) check(`key ${key}`, p({ type: 'key', key })?.key === key);
@@ -69,7 +70,7 @@ function verifyRealMessages(): void {
 
   // Every message type the sandbox posts must be one the gate knows.
   const posted = [...html.matchAll(/post\(\{\s*type:\s*'(\w+)'/g)].map((m) => m[1]);
-  const known = new Set(['ready', 'schema', 'error', 'heartbeat', 'captured', 'key', 'hover', 'pluck', 'energy']);
+  const known = new Set(['ready', 'schema', 'error', 'heartbeat', 'captured', 'key', 'hover', 'pluck', 'energy', 'pointer']);
   check('the sandbox posts at least the documented types', posted.length >= 9, posted);
   check('the gate handles EVERY type the sandbox posts', posted.every((t) => known.has(t)), posted.filter((t) => !known.has(t)));
 }
@@ -117,6 +118,12 @@ function verifyAbuse(): void {
 
   // numbers
   check('pluck NaN', p({ type: 'pluck', x: NaN }) === null);
+  check('pointer refuses invalid coordinates and press state',
+    p({ type: 'pointer', x: NaN, y: 0.5, down: false }) === null &&
+    p({ type: 'pointer', x: 0.5, y: Infinity, down: false }) === null &&
+    p({ type: 'pointer', x: 0.5, y: 0.5, down: 'yes' }) === null);
+  check('pointer is bounded', p({ type: 'pointer', x: -5, y: 5, down: false })?.x === 0 &&
+    p({ type: 'pointer', x: -5, y: 5, down: false })?.y === 1);
   check('pluck Infinity', p({ type: 'pluck', x: Infinity }) === null);
   check('pluck string', p({ type: 'pluck', x: '0.5' }) === null);
   check('pluck 1e308 is clamped to 1', p({ type: 'pluck', x: 1e308 })?.x === 1);

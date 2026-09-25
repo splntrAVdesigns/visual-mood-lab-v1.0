@@ -1,8 +1,4 @@
-/** ink-trail — a fluid ink trail that follows the pointer, rebuilt as p5
-    after the shader version's u_pointer turned out to never actually be
-    bound by the renderer (only u_mouse is). Moving to p5 sidesteps that
-    entirely — mouseX/mouseY are bulletproof here, proven by cursor-ripple
-    and follow-cursor. */
+/** ink-trail — a fluid ink trail that follows the canvas-local pointer. */
 
 export const params = {
   decay:       { kind: 'slider', label: 'Decay', min: 0.85, max: 0.995, step: 0.001, default: 0.965, hint: 'How much of the last frame survives.' },
@@ -18,13 +14,8 @@ export default function sketch(p, get) {
   let lastX = null, lastY = null;
   let curlPhase = 0;
 
-  // Native DOM events on the canvas element rather than polling p.mouseX/
-  // p.mouseY boundary checks every frame — reliable regardless of exactly
-  // how the pointer leaves the canvas (e.g. moving straight into the
-  // Inspector drawer sitting right next to it), which is what caused the
-  // ink to visibly stick at the last real cursor position instead of
-  // handing off to the idle drift.
-  let overCanvas = false;
+  // The sandbox pointer bridge tracks both coordinates and presence, even
+  // when a finger is used or the pointer leaves for the Inspector drawer.
   let driftBlend = 0; // 0 = following the real cursor, 1 = fully on the idle path
 
   function dab(x, y, size, dispersion, color) {
@@ -42,10 +33,9 @@ export default function sketch(p, get) {
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
+    p.canvas.style.touchAction = 'none';
     p.noStroke();
     p.background(0);
-    p.canvas.addEventListener('pointerenter', () => { overCanvas = true; });
-    p.canvas.addEventListener('pointerleave', () => { overCanvas = false; });
   };
 
   p.windowResized = () => {
@@ -67,18 +57,20 @@ export default function sketch(p, get) {
     p.rect(0, 0, p.width, p.height);
 
     const t = p.millis() * 0.001;
+    const pointer = p.getCanvasPointer();
+    const overCanvas = pointer.active;
 
     const idleX = p.width / 2 + Math.cos(t * 0.3) * p.width * 0.22;
     const idleY = p.height / 2 + Math.sin(t * 0.42) * p.height * 0.2;
 
     let tx, ty;
     if (!autoDrift) {
-      tx = overCanvas ? p.mouseX : p.width / 2;
-      ty = overCanvas ? p.mouseY : p.height / 2;
+      tx = overCanvas ? pointer.x : p.width / 2;
+      ty = overCanvas ? pointer.y : p.height / 2;
       driftBlend = 0;
     } else if (overCanvas) {
-      tx = p.mouseX;
-      ty = p.mouseY;
+      tx = pointer.x;
+      ty = pointer.y;
       driftBlend = 0;
     } else {
       // Ramp smoothly onto the idle path over ~0.8s instead of snapping —

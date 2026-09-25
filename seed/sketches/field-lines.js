@@ -19,10 +19,6 @@ export const params = {
 };
 
 export default function sketch(p, get) {
-  function inside() {
-    return p.mouseX > 0 && p.mouseX < p.width && p.mouseY > 0 && p.mouseY < p.height;
-  }
-
   // Graze-to-pluck: each cell remembers whether the field was "near" it
   // last frame. A false→true transition is the graze — the moment the
   // cursor actually crosses that line — and fires exactly one pluck, not
@@ -36,6 +32,7 @@ export default function sketch(p, get) {
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
+    p.canvas.style.touchAction = 'none';
   };
 
   p.windowResized = () => {
@@ -58,9 +55,10 @@ export default function sketch(p, get) {
 
     // Idle: the field's focal point drifts gently so the piece isn't
     // static before anyone touches it, same idea as follow-cursor.js.
-    const pointerActive = inside();
-    const px = pointerActive ? p.mouseX : p.width / 2 + Math.cos(t * 0.35) * p.width * 0.25;
-    const py = pointerActive ? p.mouseY : p.height / 2 + Math.sin(t * 0.28) * p.height * 0.25;
+    const pointer = p.getCanvasPointer();
+    const pointerActive = pointer.active;
+    const px = pointerActive ? pointer.x : p.width / 2 + Math.cos(t * 0.35) * p.width * 0.25;
+    const py = pointerActive ? pointer.y : p.height / 2 + Math.sin(t * 0.28) * p.height * 0.25;
 
     const cellW = p.width / density;
     const cellH = p.height / density;

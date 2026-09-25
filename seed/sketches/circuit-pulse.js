@@ -788,6 +788,10 @@ export default function sketch(p, get) {
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
+    p.canvas.addEventListener('pointerdown', () => {
+      const pointer = p.getCanvasPointer();
+      handlePointer(pointer.x, pointer.y);
+    });
     p.colorMode(p.RGB, 1, 1, 1, 1);
     p.noStroke();
     p.cursor(p.HAND);
@@ -801,12 +805,6 @@ export default function sketch(p, get) {
     p.resizeCanvas(p.windowWidth, p.windowHeight);
     build();
     builtFor = `${get('nodeCount')}|${get('eraMode')}|${get('layoutMode')}`;
-  };
-
-  p.mousePressed = () => handlePointer(p.mouseX, p.mouseY);
-  p.touchStarted = () => {
-    if (p.touches.length) handlePointer(p.touches[0].x, p.touches[0].y);
-    return false;
   };
 
   p.onEvent = (name) => {

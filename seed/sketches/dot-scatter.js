@@ -127,6 +127,7 @@ export default function sketch(p, get) {
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
+    p.canvas.style.touchAction = 'none';
     p.colorMode(p.RGB, 1, 1, 1, 1);
     p.noStroke();
     build();
@@ -144,7 +145,8 @@ export default function sketch(p, get) {
 
     const col = get('color');
     const mode = get('mode');
-    const inside = p.mouseX > 0 && p.mouseX < p.width && p.mouseY > 0 && p.mouseY < p.height;
+    const pointer = p.getCanvasPointer();
+    const inside = pointer.active;
     const radius = get('radius');
     const spread = get('scatterSpread');
     const stiff = get('stiffness');
@@ -158,14 +160,14 @@ export default function sketch(p, get) {
       if (mode === 'radius') {
         const r2 = radius * radius;
         for (let i = 0; i < targets.length; i++) {
-          const dx = targets[i].x - p.mouseX, dy = targets[i].y - p.mouseY;
+          const dx = targets[i].x - pointer.x, dy = targets[i].y - pointer.y;
           if (dx * dx + dy * dy <= r2) hit.add(i);
         }
       } else {
         // Whole-word: nearest letter index to the pointer, by target centre x.
         let nearestLetter = -1, best = Infinity;
         for (const t of targets) {
-          const d = Math.abs(t.x - p.mouseX);
+          const d = Math.abs(t.x - pointer.x);
           if (d < best) { best = d; nearestLetter = t.letter; }
         }
         for (let i = 0; i < targets.length; i++) if (targets[i].letter === nearestLetter) hit.add(i);

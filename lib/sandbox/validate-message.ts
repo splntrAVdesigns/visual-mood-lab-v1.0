@@ -131,6 +131,11 @@ function parse(raw: unknown): SandboxToHost | null {
     case 'hover':
       return { type: 'hover', hovering: raw.hovering === true };
 
+    case 'pointer':
+      return finite(raw.x) && finite(raw.y) && typeof raw.down === 'boolean'
+        ? { type: 'pointer', x: clamp(raw.x, 0, 1), y: clamp(raw.y, 0, 1), down: raw.down }
+        : null;
+
     case 'pluck':
       return finite(raw.x) ? { type: 'pluck', x: clamp(raw.x, 0, 1) } : null;
 

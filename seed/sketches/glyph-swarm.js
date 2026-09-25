@@ -196,6 +196,7 @@ export default function sketch(p, get) {
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
+    p.canvas.style.touchAction = 'none';
     p.noStroke();
     p.textAlign(p.CENTER, p.CENTER);
     currentWord = (String(get('text') || 'BLOOM').trim().slice(0, 12) || 'BLOOM').toUpperCase();
@@ -211,13 +212,6 @@ export default function sketch(p, get) {
   p.windowResized = () => {
     p.resizeCanvas(p.windowWidth, p.windowHeight);
   };
-
-  p.mousePressed = () => { dragging = true; };
-  p.mouseReleased = () => { dragging = false; };
-  p.mouseDragged = () => { lastDisturbTime = p.millis() / 1000; };
-  p.touchStarted = () => { dragging = true; lastDisturbTime = p.millis() / 1000; return false; };
-  p.touchEnded = () => { dragging = false; return false; };
-  p.touchMoved = () => { lastDisturbTime = p.millis() / 1000; return false; };
 
   p.draw = () => {
     // p.windowResized only fires on a genuine browser `window resize`
@@ -298,10 +292,13 @@ export default function sketch(p, get) {
     p.background(0);
 
     const nowSec = p.millis() / 1000;
+    const pointer = p.getCanvasPointer();
+    dragging = pointer.active && pointer.down;
+    if (dragging) lastDisturbTime = nowSec;
     const disturbedRecently = dragging || (nowSec - lastDisturbTime < reformDelay);
 
-    const px = p.touches.length ? p.touches[0].x : p.mouseX;
-    const py = p.touches.length ? p.touches[0].y : p.mouseY;
+    const px = pointer.x;
+    const py = pointer.y;
 
     p.fill(c);
 

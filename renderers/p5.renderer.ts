@@ -21,6 +21,7 @@ import { getWaveform } from '@/lib/sound/meter';
 import { hasTrack, getTrackWaveform, getTrackBand, getTrackFrequencyData } from '@/lib/sound/track';
 import { isMicEnabled, getMicWaveform, getMicFrequencyData } from '@/lib/sound/mic';
 import { getAudioContext } from '@/lib/sound/context';
+import { getModBus } from '@/lib/modulation/bus';
 
 /**
  * Fetches a same-origin static asset (this runs on the real page, not
@@ -284,6 +285,10 @@ export class P5Renderer implements AssetRenderer {
         // active preset isn't an ArpEngine, or that has no sound engine
         // running at all.
         setTileHovering(this.cardId, !!msg.hovering);
+        break;
+
+      case 'pointer':
+        if (typeof msg.x === 'number' && typeof msg.y === 'number') getModBus().setPointer(msg.x, msg.y);
         break;
 
       case 'pluck':

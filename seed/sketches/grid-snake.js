@@ -228,6 +228,10 @@ export default function sketch(p, get) {
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
+    p.canvas.addEventListener('pointerdown', () => {
+      const pointer = p.getCanvasPointer();
+      placeFoodAt(pointer.x, pointer.y);
+    });
     p.colorMode(p.RGB, 1, 1, 1, 1);
     p.noStroke();
     p.cursor(p.HAND);
@@ -236,18 +240,6 @@ export default function sketch(p, get) {
   };
 
   p.windowResized = () => { p.resizeCanvas(p.windowWidth, p.windowHeight); build(); builtFor = `${get('cellSize')}:${get('gap')}`; };
-
-  // p.mousePressed covers mouse input; p5 doesn't reliably also fire it
-  // for touch once a sketch defines its own touchStarted, so both are
-  // defined explicitly rather than assuming one covers both input types.
-  // Returning false from touchStarted is the standard p5 way to suppress
-  // the browser's own default touch behavior (scrolling, zoom) on the
-  // canvas.
-  p.mousePressed = () => placeFoodAt(p.mouseX, p.mouseY);
-  p.touchStarted = () => {
-    if (p.touches.length) placeFoodAt(p.touches[0].x, p.touches[0].y);
-    return false;
-  };
 
   p.draw = () => {
     const key = `${get('cellSize')}:${get('gap')}`;

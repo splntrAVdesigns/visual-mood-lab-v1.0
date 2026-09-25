@@ -250,8 +250,10 @@ export default function sketch(p, get) {
 
   function parallaxOffset() {
     if (!get('pointerParallax')) return { x: 0, y: 0 };
-    const nx = (p.mouseX / Math.max(1, p.width)) * 2 - 1;
-    const ny = (p.mouseY / Math.max(1, p.height)) * 2 - 1;
+    const pointer = p.getCanvasPointer();
+    if (!pointer.active) return { x: 0, y: 0 };
+    const nx = (pointer.x / Math.max(1, p.width)) * 2 - 1;
+    const ny = (pointer.y / Math.max(1, p.height)) * 2 - 1;
     return { x: nx * 10, y: ny * 10 };
   }
 
@@ -1057,6 +1059,7 @@ export default function sketch(p, get) {
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
+    p.canvas.style.touchAction = 'none';
     p.colorMode(p.RGB, 1, 1, 1, 1);
     p.textFont('monospace');
     layout();

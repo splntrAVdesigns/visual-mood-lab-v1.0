@@ -30,6 +30,25 @@ export default function sketch(p, get) {
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
+    p.canvas.style.touchAction = 'none';
+    p.canvas.addEventListener('pointerdown', (event) => {
+      const pointer = p.getCanvasPointer();
+      for (let i = 0; i < pts.length; i++) {
+        if (p.dist(pointer.x, pointer.y, pts[i].x, pts[i].y) < 22) {
+          dragging = i;
+          p.canvas.setPointerCapture(event.pointerId);
+          break;
+        }
+      }
+    });
+    p.canvas.addEventListener('pointermove', () => {
+      if (dragging < 0) return;
+      const pointer = p.getCanvasPointer();
+      pts[dragging].x = pointer.x;
+      pts[dragging].y = pointer.y;
+    });
+    p.canvas.addEventListener('pointerup', () => { dragging = -1; });
+    p.canvas.addEventListener('pointercancel', () => { dragging = -1; });
     p.colorMode(p.RGB, 1, 1, 1, 1);
     pts = defaults();
   };
@@ -42,24 +61,6 @@ export default function sketch(p, get) {
   p.onEvent = (name) => {
     if (name === 'reset') pts = defaults();
   };
-
-  p.mousePressed = () => {
-    for (let i = 0; i < pts.length; i++) {
-      if (p.dist(p.mouseX, p.mouseY, pts[i].x, pts[i].y) < 14) {
-        dragging = i;
-        return;
-      }
-    }
-  };
-
-  p.mouseDragged = () => {
-    if (dragging >= 0) {
-      pts[dragging].x = p.mouseX;
-      pts[dragging].y = p.mouseY;
-    }
-  };
-
-  p.mouseReleased = () => { dragging = -1; };
 
   p.draw = () => {
     p.background(0);

@@ -20,48 +20,32 @@ export default function sketch(p, get) {
     // Each ripple is a discrete, water-drop-like event — the same shape
     // graze-to-pluck was built for in field-lines.js, just triggered by a
     // spawn instead of a line crossing. Wired here rather than in each
-    // caller (mouseMoved/mousePressed/touchMoved/touchStarted) since every
-    // one of them already funnels through this single function.
+    // caller so both mouse and touch share the same effect and sound path.
     if (typeof p.pluck === 'function') p.pluck(x / p.width);
   }
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
+    p.canvas.style.touchAction = 'none';
+    p.canvas.addEventListener('pointermove', () => {
+      const now = p.millis();
+      if (now - lastSpawn > minSpawnGap) {
+        const pointer = p.getCanvasPointer();
+        spawn(pointer.x, pointer.y);
+        lastSpawn = now;
+      }
+      lastMoveTime = now;
+    });
+    p.canvas.addEventListener('pointerdown', () => {
+      const pointer = p.getCanvasPointer();
+      spawn(pointer.x, pointer.y);
+      lastSpawn = lastMoveTime = p.millis();
+    });
     p.noFill();
   };
 
   p.windowResized = () => {
     p.resizeCanvas(p.windowWidth, p.windowHeight);
-  };
-
-  p.mouseMoved = () => {
-    const now = p.millis();
-    if (now - lastSpawn > minSpawnGap) {
-      spawn(p.mouseX, p.mouseY);
-      lastSpawn = now;
-    }
-    lastMoveTime = now;
-  };
-
-  p.mousePressed = () => {
-    spawn(p.mouseX, p.mouseY);
-    lastMoveTime = p.millis();
-  };
-
-  p.touchMoved = () => {
-    const now = p.millis();
-    if (p.touches.length && now - lastSpawn > minSpawnGap) {
-      spawn(p.touches[0].x, p.touches[0].y);
-      lastSpawn = now;
-    }
-    lastMoveTime = now;
-    return false;
-  };
-
-  p.touchStarted = () => {
-    if (p.touches.length) spawn(p.touches[0].x, p.touches[0].y);
-    lastMoveTime = p.millis();
-    return false;
   };
 
   p.draw = () => {

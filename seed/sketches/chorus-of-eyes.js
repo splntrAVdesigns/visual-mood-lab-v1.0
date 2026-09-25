@@ -38,6 +38,7 @@ export default function sketch(p, get) {
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
+    p.canvas.style.touchAction = 'none';
     p.noStroke();
     lastW = p.width;
     lastH = p.height;
@@ -70,8 +71,9 @@ export default function sketch(p, get) {
 
     p.background(8);
 
-    const targetX = p.touches.length ? p.touches[0].x : p.mouseX;
-    const targetY = p.touches.length ? p.touches[0].y : p.mouseY;
+    const pointer = p.getCanvasPointer();
+    const targetX = pointer.active ? pointer.x : p.width / 2;
+    const targetY = pointer.active ? pointer.y : p.height / 2;
 
     for (const eye of eyes) {
       let dx = 0;

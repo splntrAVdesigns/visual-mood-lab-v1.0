@@ -8,6 +8,7 @@ import { carryParams } from '@/lib/schema/carry';
 import { getGLStage, glUnavailableReason, peekGLStage, type CompiledProgram, type UniformSetter } from '@/lib/gl/context-pool';
 import { getTextureImage } from '@/lib/gl/texture-source';
 import { getShapeCanvas, getShapeDepth, specKey, type ShapeSpec, type ShapeKey } from '@/lib/shape-source';
+import { getModBus } from '@/lib/modulation/bus';
 import type { AssetRenderer, CaptureOpts, Quality, RenderContext } from './types';
 
 /**
@@ -24,6 +25,8 @@ export class ShaderRenderer implements AssetRenderer {
   error: string | null = null;
 
   private canvas: HTMLCanvasElement | null = null;
+  /** Pointer position is local to this canvas, never shared across cards. */
+  private pointer = { x: 0.5, y: 0.5, down: false };
   private cardId: string | null = null;
   private ctx2d: CanvasRenderingContext2D | null = null;
   private compiled: CompiledProgram | null = null;
@@ -103,6 +106,29 @@ export class ShaderRenderer implements AssetRenderer {
     canvas.style.cssText = 'width:100%;height:100%;display:block';
     this.canvas = canvas;
     this.ctx2d = canvas.getContext('2d', { alpha: false });
+    if (/\bu_mouse\b|\biMouse\b/.test(asset.source)) canvas.style.touchAction = 'none';
+    const track = (event: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      this.pointer.x = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+      this.pointer.y = Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height));
+      this.pointer.down = event.buttons > 0;
+      getModBus().setPointer(this.pointer.x, this.pointer.y);
+    };
+    canvas.addEventListener('pointerenter', track);
+    canvas.addEventListener('pointermove', track);
+    canvas.addEventListener('pointerdown', track);
+    canvas.addEventListener('pointerup', (event) => {
+      track(event);
+      this.pointer.down = false;
+      if (event.pointerType !== 'mouse') {
+        this.pointer.x = 0.5;
+        this.pointer.y = 0.5;
+        getModBus().setPointer(0.5, 0.5);
+      }
+    });
+    canvas.addEventListener('pointerleave', () => { this.pointer.down = false; getModBus().setPointer(0.5, 0.5); });
+    canvas.addEventListener('pointercancel', () => { this.pointer.down = false; getModBus().setPointer(0.5, 0.5); });
 
     if (signal.aborted) return;
     el.appendChild(canvas);
@@ -270,8 +296,10 @@ export class ShaderRenderer implements AssetRenderer {
     set('iFrame', ctx.frame);
     set('u_resolution', [w, h]);
     set('iResolution', [w, h, 1]);
-    set('u_mouse', [ctx.pointer.x * w, ctx.pointer.y * h]);
-    set('iMouse', [ctx.pointer.x * w, ctx.pointer.y * h, ctx.pointer.down ? 1 : 0, 0]);
+    // WebGL fragment coordinates start at the bottom; DOM pointers start at
+    // the top. Preserve the last local position when the pointer exits.
+    set('u_mouse', [this.pointer.x * w, (1 - this.pointer.y) * h]);
+    set('iMouse', [this.pointer.x * w, (1 - this.pointer.y) * h, this.pointer.down ? 1 : 0, 0]);
     set('u_pixelRatio', ctx.pixelRatio);
     set('u_aspect', w / Math.max(h, 1));
     set('u_seed', this.seed);

@@ -68,9 +68,10 @@ export default function sketch(p, get) {
       x1 = Math.random() * p.width; x2 = Math.random() * p.width;
       y1 = 0; y2 = p.height;
     } else {
-      const inside = mode === 'pointer' && p.mouseX > 0 && p.mouseX < p.width && p.mouseY > 0 && p.mouseY < p.height;
-      x1 = inside ? p.mouseX : p.width / 2;
-      y1 = inside ? p.mouseY : p.height / 2;
+      const pointer = p.getCanvasPointer();
+      const inside = mode === 'pointer' && pointer.active;
+      x1 = inside ? pointer.x : p.width / 2;
+      y1 = inside ? pointer.y : p.height / 2;
       const a = Math.random() * Math.PI * 2;
       const r = Math.max(p.width, p.height) * (0.35 + Math.random() * 0.35);
       x2 = x1 + Math.cos(a) * r;
@@ -100,6 +101,7 @@ export default function sketch(p, get) {
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
+    p.canvas.style.touchAction = 'none';
     p.colorMode(p.RGB, 1, 1, 1, 1);
     p.noFill();
   };

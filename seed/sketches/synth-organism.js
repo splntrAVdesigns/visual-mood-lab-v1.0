@@ -79,16 +79,6 @@ function lerpColor(a, b, t) {
 }
 
 export default function sketch(p, get) {
-  // Read canvas-local pointer events directly. p.mouseX is not reliable for
-  // touch and may retain its last value after the pointer leaves the canvas.
-  const pointer = { x: 0, y: 0, active: false };
-  function trackPointer(event) {
-    const rect = p.canvas.getBoundingClientRect();
-    pointer.x = (event.clientX - rect.left) * p.width / rect.width;
-    pointer.y = (event.clientY - rect.top) * p.height / rect.height;
-    pointer.active = true;
-  }
-
   function createOrganism(wanderSeed) {
     const org = { head: { x: 0, y: 0, angle: 0 }, segments: [], builtFor: '', wanderSeed,
       cruiseHeading: 0, cruiseTimer: 0, progressTimer: 0, originX: 0, originY: 0 };
@@ -118,6 +108,7 @@ export default function sketch(p, get) {
 
       const avoid = get('pointerAvoid');
       let pointerTurn = 0;
+      const pointer = p.getCanvasPointer();
       if (avoid > 0 && pointer.active) {
         const dx = head.x - pointer.x, dy = head.y - pointer.y;
         const dist = Math.hypot(dx, dy);
@@ -208,14 +199,6 @@ export default function sketch(p, get) {
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
     p.canvas.style.touchAction = 'none';
-    p.canvas.addEventListener('pointerenter', trackPointer);
-    p.canvas.addEventListener('pointermove', trackPointer);
-    p.canvas.addEventListener('pointerdown', trackPointer);
-    p.canvas.addEventListener('pointerleave', () => { pointer.active = false; });
-    p.canvas.addEventListener('pointerup', (event) => {
-      if (event.pointerType !== 'mouse') pointer.active = false;
-    });
-    p.canvas.addEventListener('pointercancel', () => { pointer.active = false; });
     p.colorMode(p.RGB, 1, 1, 1, 1);
     orgA.build();
     orgB.build();

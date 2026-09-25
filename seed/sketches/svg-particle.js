@@ -117,6 +117,7 @@ export default function sketch(p, get) {
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
+    p.canvas.style.touchAction = 'none';
     p.colorMode(p.RGB, 1, 1, 1, 1);
     p.noStroke();
     build();
@@ -153,7 +154,8 @@ export default function sketch(p, get) {
     const cB = get('colorB');
     const alpha = get('alpha');
 
-    const inside2 = p.mouseX > 0 && p.mouseX < p.width && p.mouseY > 0 && p.mouseY < p.height;
+    const pointer = p.getCanvasPointer();
+    const inside2 = pointer.active;
     const repelR2 = repelR * repelR;
     const cx = p.width / 2, cy = p.height / 2;
 
@@ -175,7 +177,7 @@ export default function sketch(p, get) {
       }
 
       if (inside2 && repelF > 0) {
-        const dx = q.x - p.mouseX, dy = q.y - p.mouseY;
+        const dx = q.x - pointer.x, dy = q.y - pointer.y;
         const d2 = dx * dx + dy * dy;
         if (d2 < repelR2 && d2 > 1e-4) {
           const d = Math.sqrt(d2);
@@ -195,7 +197,7 @@ export default function sketch(p, get) {
       // block above computes when it runs, but needs its own
       // (cheap) distance check when repelF is 0 and that block is
       // skipped entirely.
-      const ddx = q.x - p.mouseX, ddy = q.y - p.mouseY;
+      const ddx = q.x - pointer.x, ddy = q.y - pointer.y;
       const isNear = inside2 && ddx * ddx + ddy * ddy < repelR2;
       if (isNear && !q.wasNear && typeof p.pluck === 'function') {
         p.pluck(q.x / p.width);

@@ -396,6 +396,25 @@
 
     try {
       instance = new p5(function (p) {
+        // Canvas-local state for pointer-aware sketches. The live iframe
+        // receives the events itself; p5's last mouseX/mouseY may persist
+        // after exit and its mouse fields do not consistently track touch.
+        var canvasPointer = { x: 0, y: 0, active: false, down: false };
+        var pressedPointerId = null;
+        p.getCanvasPointer = function () { return canvasPointer; };
+        p.setCanvasPointer = function (event, active, down) {
+          if (event.type === 'pointerdown') pressedPointerId = event.pointerId;
+          if (event.type === 'pointerup' || event.type === 'pointercancel') pressedPointerId = null;
+          var rect = p.canvas.getBoundingClientRect();
+          if (rect.width && rect.height) {
+            canvasPointer.x = (event.clientX - rect.left) * p.width / rect.width;
+            canvasPointer.y = (event.clientY - rect.top) * p.height / rect.height;
+          }
+          canvasPointer.active = active;
+          canvasPointer.down = active && down && pressedPointerId === event.pointerId;
+          post({ type: 'pointer', x: active ? canvasPointer.x / p.width : 0.5,
+            y: active ? canvasPointer.y / p.height : 0.5, down: canvasPointer.down });
+        };
         // Discrete trigger events a sketch fires itself, as opposed to the
         // continuous per-frame state (params, pointer position) it reads
         // via get(). Field Lines' graze-to-pluck is the first user: the
@@ -838,6 +857,26 @@
       });
       canvas.addEventListener('pointerleave', function () {
         post({ type: 'hover', hovering: false });
+      });
+      canvas.addEventListener('pointerenter', function (event) {
+        instance.setCanvasPointer(event, true, event.buttons > 0);
+      }, true);
+      canvas.addEventListener('pointermove', function (event) {
+        instance.setCanvasPointer(event, true, event.buttons > 0);
+      }, true);
+      canvas.addEventListener('pointerdown', function (event) {
+        instance.setCanvasPointer(event, true, true);
+      }, true);
+      canvas.addEventListener('pointerup', function (event) {
+        instance.setCanvasPointer(event, event.pointerType === 'mouse', false);
+      }, true);
+      canvas.addEventListener('pointerleave', function () {
+        instance.getCanvasPointer().active = false;
+        instance.getCanvasPointer().down = false;
+        post({ type: 'pointer', x: 0.5, y: 0.5, down: false });
+      });
+      canvas.addEventListener('pointercancel', function (event) {
+        instance.setCanvasPointer(event, false, false);
       });
     }
 

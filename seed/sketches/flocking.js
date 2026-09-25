@@ -51,6 +51,7 @@ export default function sketch(p, get) {
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
+    p.canvas.style.touchAction = 'none';
     p.colorMode(p.RGB, 1, 1, 1, 1);
     p.background(0);
     spawn(Math.floor(get('count')));
@@ -101,7 +102,8 @@ export default function sketch(p, get) {
       bucket.push(i);
     }
 
-    const pointerInside = p.mouseX > 0 && p.mouseX < p.width && p.mouseY > 0 && p.mouseY < p.height;
+    const pointer = p.getCanvasPointer();
+    const pointerInside = pointer.active;
     const p2 = perception * perception;
 
     for (let i = 0; i < boids.length; i++) {
@@ -162,7 +164,7 @@ export default function sketch(p, get) {
       }
 
       if (pointerInside && avoid > 0) {
-        const dx = b.x - p.mouseX, dy = b.y - p.mouseY;
+        const dx = b.x - pointer.x, dy = b.y - pointer.y;
         const d = Math.hypot(dx, dy);
         if (d < perception * 1.6 && d > 1e-4) {
           const f = (1 - d / (perception * 1.6)) * avoid * 0.5;

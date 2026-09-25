@@ -189,6 +189,7 @@ export default function sketch(p, get) {
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
+    p.canvas.style.touchAction = 'none';
     p.noFill();
     currentShape = get('shape');
     currentCount = Math.round(get('pointCount'));
@@ -235,20 +236,11 @@ export default function sketch(p, get) {
 
     p.background(0);
 
-    // p.mouseIsPressed is a document-GLOBAL flag in p5 (any mousedown
-    // anywhere in the page, not just on this canvas), not scoped to this
-    // sketch at all — dragging a slider in the Sound panel, or anything
-    // else on the page, reads as "the user is pushing the thread" without
-    // this bounds check, which is exactly what made the physics (and, via
-    // the energy signal below, the sound) engage while the actual cursor
-    // was nowhere near this tile. Requiring the pointer to genuinely be
-    // over the canvas is the fix; p.touches already reports actual touch
-    // points on this canvas specifically, so it doesn't need the same
-    // check.
-    const overCanvas = p.mouseX >= 0 && p.mouseX <= p.width && p.mouseY >= 0 && p.mouseY <= p.height;
-    const dragging = (p.mouseIsPressed && overCanvas) || p.touches.length > 0;
-    const px = p.touches.length ? p.touches[0].x : p.mouseX;
-    const py = p.touches.length ? p.touches[0].y : p.mouseY;
+    // Down must be on this canvas; sliders and other tiles cannot disturb it.
+    const pointer = p.getCanvasPointer();
+    const dragging = pointer.active && pointer.down;
+    const px = pointer.x;
+    const py = pointer.y;
 
     // Physics pass.
     for (let i = 0; i < points.length; i++) {

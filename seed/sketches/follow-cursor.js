@@ -32,6 +32,7 @@ export default function sketch(p, get) {
 
   p.setup = () => {
     p.createCanvas(p.windowWidth, p.windowHeight);
+    p.canvas.style.touchAction = 'none';
     p.colorMode(p.RGB, 1, 1, 1, 1);
     p.background(0);
     p.noStroke();
@@ -48,13 +49,14 @@ export default function sketch(p, get) {
     if (agents.length !== Math.floor(get('count'))) spawn();
 
     const t = p.millis() * 0.001;
-    const inside = p.mouseX > 0 && p.mouseX < p.width && p.mouseY > 0 && p.mouseY < p.height;
+    const pointer = p.getCanvasPointer();
+    const inside = pointer.active;
 
     // With no pointer the target orbits on its own, so the sketch is never
     // dead when it is only a thumbnail nobody is hovering.
     const idle = get('idleOrbit');
-    const tx = inside ? p.mouseX : p.width / 2 + Math.cos(t * idle) * p.width * 0.25;
-    const ty = inside ? p.mouseY : p.height / 2 + Math.sin(t * idle * 1.3) * p.height * 0.25;
+    const tx = inside ? pointer.x : p.width / 2 + Math.cos(t * idle) * p.width * 0.25;
+    const ty = inside ? pointer.y : p.height / 2 + Math.sin(t * idle * 1.3) * p.height * 0.25;
 
     const attraction = get('attraction');
     const orbit = get('orbit');

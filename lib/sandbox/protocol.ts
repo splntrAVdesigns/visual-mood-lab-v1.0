@@ -121,7 +121,7 @@ export interface HostToSandbox {
 export interface SandboxToHost {
   /** Transferable frame, accepted only for an outstanding bounded request. */
   bitmap?: ImageBitmap;
-  type: 'ready' | 'schema' | 'error' | 'heartbeat' | 'captured' | 'key' | 'hover' | 'pluck' | 'energy' | 'vfx-frame';
+  type: 'ready' | 'schema' | 'error' | 'heartbeat' | 'captured' | 'key' | 'hover' | 'pluck' | 'energy' | 'pointer' | 'vfx-frame';
   params?: unknown;
   message?: string;
   stack?: string;
@@ -151,6 +151,9 @@ export interface SandboxToHost {
    * lib/sound/engine.ts's setTileHovering().
    */
   hovering?: boolean;
+  /** Canvas-local normalized pointer, forwarded from the sandbox to modulation. */
+  y?: number;
+  down?: boolean;
   /**
    * Normalized 0..1 position along the tile's x-axis, sent with a `pluck`
    * message. Graze-to-pluck's payload: the sketch fires one of these per
@@ -215,7 +218,7 @@ export const STALL_RESUME_THRESHOLD_MS = 1200;
  * itself changes, so the browser can't keep serving a stale cached copy
  * that's missing whatever bridge function or protocol change just shipped.
  */
-export const SANDBOX_RUNTIME_VERSION = '2026-09-25-p5-profile-status';
+export const SANDBOX_RUNTIME_VERSION = '2026-09-25-canvas-pointer';
 
 /**
  * How long to wait after sending `init` before declaring the sketch dead.
