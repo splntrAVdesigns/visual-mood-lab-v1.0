@@ -120,6 +120,27 @@ export async function ingestAsset(input: IngestInput): Promise<IngestResult> {
   const prior = existing[0];
 
   if (prior && prior.contentHash === contentHash) {
+    // @shape adds host controls that are generated from application code. The
+    // built-in library can change without changing the shader source hash, so
+    // refresh its persisted schema when those controls change. Retain all
+    // saved values, including selections of retired but still renderable IDs.
+    if (input.seedSlug && input.type === 'shader' && input.source?.includes('@shape')) {
+      const parsed = parseUniforms(input.source, { schemaId: `shader:${prior.id}` });
+      const current = parsed.schema;
+      if (JSON.stringify(prior.schema) !== JSON.stringify(current)) {
+        const boardId = await getOrCreateDefaultBoard(input.ownerId);
+        await db.update(schema.assets).set({
+          schema: current,
+          params: { ...defaultsOf(current), ...prior.params },
+          updatedAt: new Date(),
+        }).where(eq(schema.assets.id, prior.id));
+        await ensureCanonicalBoardItem(boardId, prior.id, input.boardOrder ?? 0);
+        for (const warning of parsed.warnings) {
+          if (warning.level === 'warn') warnings.push(`${prior.id}: ${warning.message}`);
+        }
+        return { id: prior.id, created: false, unchanged: false, schema: current, warnings };
+      }
+    }
     /*
      * The asset row is untouched, but the BOARD ITEM may still be missing —
      * and that is a different thing entirely. This early return used to skip
