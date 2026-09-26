@@ -171,9 +171,9 @@ export function Hero() {
           <span className={s.heroVersion}>v1.0</span>
         </h1>
         <p className={s.heroSub}>
-          A board for shaders, sketches, and motion — not a gallery. Every asset here exposes
-          real parameters you can tune, save as a new look, and come back to. Open anything below
-          to start.
+          A board of shaders, sketches, and motion graphics — not a gallery but a playground.
+          Every asset here exposes real parameters you can tune, control, save as a new look, and
+          come back to. Open anything below to start.
         </p>
       </div>
     </section>
