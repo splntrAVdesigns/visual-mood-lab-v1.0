@@ -1,17 +1,5 @@
-/**
- * Shape Source — built-in shape library.
- *
- * Original vector shapes (drawn for Shapeshift, not taken from any pack) so
- * the "Library" source works on day one. When the Phase 4.95 Media Library
- * ships, its pack plugs in beside these; the ids here stay stable because
- * they are saved in tile params.
- *
- * The 100.4 designs use new ids. Old vessel/arch/burst ids remain renderable
- * for saved cards and exports, but are absent from the new ten-shape picker.
- * Every shape is filled white on transparent — only coverage matters.
- *
- * Location: lib/shape-source/library.ts
- */
+/** Built-in Shapeshift shapes. Retired IDs remain renderable for saved tiles. */
+import { APPROVED_SHAPES } from './approved-shapes';
 
 function burst(points: number, outer: number, inner: number): string {
   const pts: string[] = [];
@@ -74,11 +62,18 @@ export const LIBRARY_SHAPES: Record<string, { label: string; svg: string }> = {
     label: 'Rail',
     svg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260" width="260" height="260"><path fill="#fff" d="M24 24H178V66H24ZM82 89H236V131H82ZM24 154H178V196H24ZM82 219H236V255H82Z"/></svg>',
   },
+  ...APPROVED_SHAPES,
 };
 
 export const VISIBLE_LIBRARY_IDS = [
-  'vessel_v2', 'orbit', 'bolt', 'arch_v2', 'burst_v2',
-  'fold', 'notch', 'ribbon', 'split_disc', 'rail',
+  'vessel_v2', 'orbit', 'bolt',
+  'approved_aperture',
+  'approved_arrows',
+  'approved_blockswirl',
+  'approved_cells',
+  'approved_clamp',
+  'approved_eye_open',
+  'approved_vortex',
 ] as const;
 export const LIBRARY_IDS = [...VISIBLE_LIBRARY_IDS];
 export const DEFAULT_LIBRARY_ID = 'vessel_v2';
