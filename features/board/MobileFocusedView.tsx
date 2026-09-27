@@ -19,6 +19,7 @@ import { VfxPanel } from '@/features/inspector/VfxPanel';
 import { getCompatiblePresets } from '@/lib/sound/presets';
 import { RendererStage } from './RendererStage';
 import { CodePanel } from './CodePanel';
+import { CODE_VIEW_ENABLED, CODE_VIEW_GATED_HINT } from '@/lib/launch/config';
 import { CapturePanel } from './CapturePanel';
 import { RecordButton } from './RecordButton';
 import { closeAsset } from './openAsset';
@@ -238,10 +239,14 @@ export function MobileFocusedView() {
 
         {hasSource && (
           <IconButton
-            label="Code"
+            label={CODE_VIEW_ENABLED ? 'Code' : `Code — ${CODE_VIEW_GATED_HINT.toLowerCase()}`}
             icon={<CodeIcon />}
-            active={showCode}
-            onClick={() => setShowCode((v) => !v)}
+            active={CODE_VIEW_ENABLED && showCode}
+            disabled={!CODE_VIEW_ENABLED}
+            onClick={() => {
+              if (!CODE_VIEW_ENABLED) return;
+              setShowCode((v) => !v);
+            }}
           />
         )}
 
@@ -463,7 +468,7 @@ export function MobileFocusedView() {
         )}
       </div>
 
-      {showCode && hasSource && <CodePanel asset={asset} onClose={() => setShowCode(false)} />}
+      {CODE_VIEW_ENABLED && showCode && hasSource && <CodePanel asset={asset} onClose={() => setShowCode(false)} />}
     </div>
   );
 }

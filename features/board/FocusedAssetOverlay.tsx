@@ -24,6 +24,7 @@ import {
 import { ASSET_TYPE_BADGE } from '@/types/asset';
 import { RendererStage } from './RendererStage';
 import { CodePanel } from './CodePanel';
+import { CODE_VIEW_ENABLED, CODE_VIEW_GATED_HINT } from '@/lib/launch/config';
 import { CapturePanel } from './CapturePanel';
 import { RecordButton } from './RecordButton';
 import { HeaderOverflowMenu, type OverflowMenuItem } from './HeaderOverflowMenu';
@@ -588,8 +589,11 @@ export function FocusedAssetOverlay() {
               {hasSource && (
                 <Button
                   variant="ghost"
-                  active={showCode}
+                  active={CODE_VIEW_ENABLED && showCode}
+                  disabled={!CODE_VIEW_ENABLED}
+                  title={CODE_VIEW_ENABLED ? undefined : CODE_VIEW_GATED_HINT}
                   onClick={() => {
+                    if (!CODE_VIEW_ENABLED) return;
                     setShowCode((v) => !v);
                     setShowMod(false);
                     setShowSound(false);
@@ -761,7 +765,7 @@ export function FocusedAssetOverlay() {
           See .sidecarSpacer's CSS doc. */}
       {anyStacked && <div className={s.sidecarSpacer} aria-hidden="true" />}
 
-      {showCode && hasSource && <CodePanel asset={asset} onClose={() => setShowCode(false)} />}
+      {CODE_VIEW_ENABLED && showCode && hasSource && <CodePanel asset={asset} onClose={() => setShowCode(false)} />}
     </div>
   );
 }
