@@ -9,6 +9,7 @@ import { getLiveControlSurfaceRuntime, type LiveControlSurfaceRuntime } from './
 import { resolveTargetCardId } from './targets';
 import type {
   ControllerBinding,
+  GestureCommand,
   ControllerDispatchOutcome,
   ControlSignal,
   ControlSurfaceRuntimeAdapter,
@@ -67,6 +68,12 @@ interface SlewState {
  * action routes remain immediate so response-critical controls gain no delay.
  */
 export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
+  private activeGamepadGestures = new Set<string>();
+  private gamepadCards = new Map<string, string>();
+  private gamepadBindings = new Map<string, ControllerBinding>();
+  private targetPositions = new Map<string, { value: number; shown: number }>();
+  private committing = false;
+  get isCommitting(): boolean { return this.committing; }
   private gestures = new Map<string, DirectGestureState>();
   private writeTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private pendingWrites = new Map<string, PendingWrite>();
@@ -75,6 +82,84 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
   private slewRaf: number | null = null;
 
   constructor(private readonly inner: LiveControlSurfaceRuntime = getLiveControlSurfaceRuntime()) {}
+
+  applyGesture(binding: ControllerBinding, command: GestureCommand): ControllerDispatchOutcome {
+    this.gamepadBindings.set(binding.id, binding);
+    const gestureCard = resolveTargetCardId(binding.target, useBoardStore.getState().selectedId);
+    if (gestureCard) this.gamepadCards.set(binding.id, gestureCard);
+    if (command.kind === 'begin') {
+      // Finish the preceding gesture before a paired input starts its own edit.
+      this.flushGestureWrites(true);
+      this.lastApplied.delete(binding.id);
+      this.activeGamepadGestures.add(binding.id);
+      return { status: 'applied' };
+    }
+    if (command.kind === 'end') {
+      this.activeGamepadGestures.delete(binding.id);
+      if (command.held) this.cancelSlew(binding.id);
+      const value = this.lastApplied.get(binding.id);
+      const cardId = resolveTargetCardId(binding.target, useBoardStore.getState().selectedId);
+      if (value !== undefined && cardId && binding.writeMode === 'write') this.scheduleWrite(binding, cardId, value);
+      return { status: 'applied' };
+    }
+    const target = binding.target;
+    if (target.domain === 'action') return { status: 'ignored' };
+    const cardId = resolveTargetCardId(target, useBoardStore.getState().selectedId);
+    if (!cardId) return { status: 'unavailable' };
+    const prepared = target.domain === 'parameter' ? this.parameterValue(target, cardId, 0) : this.effectValue(target, cardId, 0);
+    const control = prepared?.control;
+    if (!control || (control.kind !== 'slider' && control.kind !== 'stepper')) return { status: 'unavailable' };
+    const registry = getControllerPresentationRegistry();
+    const displayed = target.domain === 'parameter'
+      ? registry.sampleParameter(cardId, target.controlId)
+      : registry.sampleEffect(cardId, target.effectInstanceId, target.controlId);
+    const current = mapControlValueToUnit(control, displayed ?? undefined) ?? this.readTargetUnit(binding) ?? 0;
+    const step = Math.max(0.005, Math.min(1, (control.step || 0) / Math.max(0.000001, control.max - control.min)));
+    let next = current;
+    if (command.kind === 'reset') next = mapControlValueToUnit(control, Math.max(control.min, Math.min(control.max, 0))) ?? 0;
+    if (command.kind === 'boost') next += 0.2;
+    if (command.kind === 'step') next += command.direction * step;
+    if (command.kind === 'delta') next += command.delta;
+    const signal: ControlSignal = { kind: 'relative', delta: next - current };
+    if (command.kind === 'delta') {
+      this.cancelSlew(binding.id);
+      // Accumulate sub-step increments in normalized space, while publishing
+      // the schema-quantized value. This keeps integer/stepped holds moving.
+      const key = JSON.stringify({ ...target, cardId });
+      const prior = this.targetPositions.get(key);
+      if (prior && Math.abs(prior.shown - current) < 0.000001) next = prior.value + command.delta;
+      return this.applyDirectNow(binding, clamp01(next), signal);
+    }
+    return this.queueSlew(binding, clamp01(next), signal);
+  }
+
+  stopGestures(): void {
+    this.activeGamepadGestures.clear();
+    for (const id of this.gamepadBindings.keys()) this.cancelSlew(id);
+    this.flushGestureWrites();
+  }
+
+  clearGamepadOverrides(cardId?: string): void {
+    for (const id of this.gamepadBindings.keys()) this.cancelWrite(id);
+    this.stopGestures();
+    this.targetPositions.clear();
+    for (const [id, binding] of this.gamepadBindings) {
+      const resolved = this.gamepadCards.get(id) ?? resolveTargetCardId(binding.target, useBoardStore.getState().selectedId);
+      if (cardId && resolved !== cardId) continue;
+      this.clearBinding(id);
+      if (resolved && binding.target.domain === 'parameter') getControllerPresentationRegistry().clearParameter(resolved, binding.target.controlId);
+      if (resolved && binding.target.domain === 'effect') getControllerPresentationRegistry().clearEffect(resolved, binding.target.effectInstanceId, binding.target.controlId);
+    }
+  }
+
+  private flushGestureWrites(onlyInactive = false): void {
+    for (const id of [...this.pendingWrites.keys()]) {
+      if (!this.gamepadBindings.has(id) || (onlyInactive && this.activeGamepadGestures.has(id))) continue;
+      const timer = this.writeTimers.get(id);
+      if (timer) clearTimeout(timer);
+      this.commitWrite(id);
+    }
+  }
 
   applyDirect(
     binding: ControllerBinding,
@@ -107,6 +192,9 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
   }
 
   clearBinding(bindingId: string): void {
+    this.activeGamepadGestures.delete(bindingId);
+    this.gamepadCards.delete(bindingId);
+    this.gamepadBindings.delete(bindingId);
     this.cancelWrite(bindingId);
     this.cancelSlew(bindingId);
     this.lastApplied.delete(bindingId);
@@ -115,6 +203,10 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
   }
 
   panic(): void {
+    this.activeGamepadGestures.clear();
+    this.gamepadBindings.clear();
+    this.gamepadCards.clear();
+    this.targetPositions.clear();
     for (const timer of this.writeTimers.values()) clearTimeout(timer);
     this.writeTimers.clear();
     this.pendingWrites.clear();
@@ -138,6 +230,11 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
     if (outcome.status === 'applied') {
       this.lastApplied.set(binding.id, value01);
       this.publishAppliedValue(binding, value01);
+      if (binding.gesture) {
+        const cardId = resolveTargetCardId(binding.target, useBoardStore.getState().selectedId);
+        const shown = this.readTargetUnit(binding);
+        if (cardId && shown !== null) this.targetPositions.set(JSON.stringify({ ...binding.target, cardId }), { value: value01, shown });
+      }
       if ((binding.writeMode ?? 'live') === 'write') {
         const cardId = resolveTargetCardId(binding.target, useBoardStore.getState().selectedId);
         if (cardId) this.scheduleWrite(binding, cardId, value01);
@@ -179,6 +276,7 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
     target01: number,
     signal: ControlSignal,
   ): ControllerDispatchOutcome {
+    if (typeof requestAnimationFrame !== 'function') return this.applyDirectNow(binding, target01, signal);
     const now = this.now();
     const existing = this.slews.get(binding.id);
     const from = existing
@@ -323,7 +421,7 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
   private scheduleWrite(binding: ControllerBinding, cardId: string, value01: number): void {
     this.cancelWrite(binding.id);
     this.pendingWrites.set(binding.id, { binding: { ...binding }, cardId, value01 });
-    this.writeTimers.set(binding.id, setTimeout(() => this.commitWrite(binding.id), WRITE_SETTLE_MS));
+    if (!this.activeGamepadGestures.has(binding.id)) this.writeTimers.set(binding.id, setTimeout(() => this.commitWrite(binding.id), WRITE_SETTLE_MS));
   }
 
   private cancelWrite(bindingId: string): void {
@@ -351,16 +449,24 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
     if (binding.target.domain === 'parameter') {
       const prepared = this.parameterValue(binding.target, cardId, value01);
       if (!prepared) return;
-      inspector.setParam(binding.target.controlId, prepared.value);
+      this.committing = true;
+      try {
+        if (binding.gesture) inspector.commitControllerValue(binding.target.controlId, prepared.value);
+        else inspector.setParam(binding.target.controlId, prepared.value);
+      } finally { this.committing = false; }
       getControllerPresentationRegistry().clearParameter(cardId, binding.target.controlId);
     } else if (binding.target.domain === 'effect') {
       const prepared = this.effectValue(binding.target, cardId, value01);
       if (!prepared) return;
-      if (binding.target.controlId === 'mix' && typeof prepared.value === 'number') {
+      this.committing = true;
+      try {
+      if (binding.gesture) inspector.commitControllerValue(binding.target.controlId, prepared.value, binding.target.effectInstanceId);
+      else if (binding.target.controlId === 'mix' && typeof prepared.value === 'number') {
         inspector.setEffectMix(binding.target.effectInstanceId, prepared.value);
       } else {
         inspector.setEffectParam(binding.target.effectInstanceId, binding.target.controlId, prepared.value);
       }
+      } finally { this.committing = false; }
       getControllerPresentationRegistry().clearEffect(
         cardId,
         binding.target.effectInstanceId,
@@ -377,6 +483,16 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
     this.cancelSlew(binding.id);
     this.lastApplied.delete(binding.id);
     this.inner.clearBinding(binding.id);
+    if (binding.gesture) {
+      for (const [id, other] of this.gamepadBindings) {
+        if (id === binding.id || this.gamepadCards.get(id) !== cardId) continue;
+        if (other.target.domain === binding.target.domain &&
+            other.target.controlId === binding.target.controlId &&
+            (other.target.domain !== 'effect' || (binding.target.domain === 'effect' && other.target.effectInstanceId === binding.target.effectInstanceId))) {
+          this.cancelWrite(id); this.cancelSlew(id); this.lastApplied.delete(id); this.inner.clearBinding(id);
+        }
+      }
+    }
     this.gestures.delete(binding.id);
   }
 
@@ -397,8 +513,8 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
     if (!schema || !control) return null;
 
     const inspector = useInspectorStore.getState();
-    let value: ParamValue | undefined;
-    if (inspector.itemId === cardId) value = inspector.params[target.controlId];
+    let value: ParamValue | undefined = getControllerPresentationRegistry().sampleParameter(cardId, target.controlId) ?? undefined;
+    if (value === undefined && inspector.itemId === cardId) value = inspector.params[target.controlId];
     if (value === undefined) {
       const asset = useBoardStore.getState().assets.find((candidate) => candidate.itemId === cardId);
       value = asset ? hydrate(schema, asset.params)[target.controlId] : control.default;
@@ -416,7 +532,7 @@ export class DirectControlRuntime implements ControlSurfaceRuntimeAdapter {
 
     const control = getEffectSchema(instance.effectType)?.controls.find((candidate) => candidate.id === target.controlId);
     if (!control) return null;
-    const value = target.controlId === 'mix' ? instance.mix : instance.params[target.controlId];
+    const value = getControllerPresentationRegistry().sampleEffect(cardId, target.effectInstanceId, target.controlId) ?? (target.controlId === 'mix' ? instance.mix : instance.params[target.controlId]);
     return mapControlValueToUnit(control, value);
   }
 

@@ -1,3 +1,4 @@
+import { controllersAreActive } from './session';
 import { ControlSurfaceBindingEngine } from './binding-engine';
 import { applyResponseCurve, clampBipolar, clamp01 } from './normalize';
 import { PolledTransportScheduler } from './scheduler';
@@ -54,6 +55,12 @@ interface LastControlState {
  * changes into the transport-independent binding engine.
  */
 export class GamepadRuntime {
+  private needsNeutral = true;
+  private actionEdges = new Set<string>();
+  private contextToken: unknown;
+  private onAction?: (action: string) => void;
+  private context?: () => unknown;
+  private lastEmit = 0;
   private profiles = new Map<string, DeviceProfile>();
   private mappings: Array<{ profileId: string; activeBankId: string; bindings: ControllerBinding[] }> = [];
   private activeBanksByProfile = new Map<string, Set<string>>();
@@ -69,13 +76,16 @@ export class GamepadRuntime {
 
   constructor(
     private readonly engine: ControlSurfaceBindingEngine,
-    options: { getGamepads?: GamepadGetter | null; now?: () => number } = {},
+    options: { getGamepads?: GamepadGetter | null; now?: () => number; onAction?: (action: string) => void; context?: () => unknown } = {},
   ) {
+    this.onAction = options.onAction;
+    this.context = options.context;
     this.getter = options.getGamepads === undefined ? browserGamepadGetter() : options.getGamepads;
     this.now = options.now ?? (() => Date.now());
   }
 
   configure(document: ControlSurfaceDocument): void {
+    this.stopGestures();
     this.profiles.clear();
     for (const profile of document.profiles) {
       if (profile.transport === 'gamepad') this.profiles.set(profile.id, profile);
@@ -131,6 +141,7 @@ export class GamepadRuntime {
   }
 
   disable(): void {
+    this.stopGestures();
     this.scheduler.stop();
     this.learnSession = null;
     this.lastControl.clear();
@@ -143,6 +154,7 @@ export class GamepadRuntime {
     handler: (candidate: GamepadLearnCandidate) => void,
   ): () => void {
     this.enable();
+    this.stopGestures();
     this.learnSession = {
       options: { ...options },
       baseline: this.captureBaselines(),
@@ -158,7 +170,15 @@ export class GamepadRuntime {
     this.emit();
   }
 
+  stopGestures(): void {
+    this.needsNeutral = true;
+    this.actionEdges.clear();
+    this.lastControl.clear();
+    this.engine.stopGestures();
+  }
+
   panic(): void {
+    this.stopGestures();
     this.engine.panic();
     this.lastControl.clear();
   }
@@ -194,16 +214,64 @@ export class GamepadRuntime {
 
     try {
       const pads = connectedPads(this.getter());
+      const lostDevice = [...this.diagnostics.values()].some(d => d.connected && !pads.some(p => inputIdFor(p) === d.inputId));
+      if (lostDevice) this.stopGestures();
       this.syncDiagnostics(pads);
-      this.captureLearnCandidate(pads);
-      for (const pad of pads) this.routePad(pad, pads);
+      const token = this.context?.();
+      if (token !== this.contextToken) { this.stopGestures(); this.contextToken = token; }
+      if (this.learnSession) { this.captureLearnCandidate(pads); this.needsNeutral = true; this.emit(); return; }
+      if (!controllersAreActive() || (typeof document !== 'undefined' && document.hidden)) { this.stopGestures(); return; }
+      if (this.needsNeutral) {
+        if (pads.every(p => this.padIsNeutral(p))) {
+          this.needsNeutral = false;
+        }
+        return;
+      }
+      for (const pad of pads) {
+        if (this.routeDefaultActions(pad, pads)) break;
+        this.routePad(pad, pads);
+      }
       this.status = 'active';
       this.error = null;
     } catch (error) {
+      this.stopGestures();
       this.status = 'error';
       this.error = error instanceof Error ? error.message : 'Gamepad polling failed.';
     }
     this.emit();
+  }
+
+  private padIsNeutral(pad: GamepadLike): boolean {
+    if (pad.buttons.some(b => b.pressed || b.value >= 0.15)) return false;
+    const profiles = [...this.profiles.values()].filter(p => p.fingerprint.name === pad.id);
+    const axes = profiles.flatMap(p => p.banks.flatMap(b => b.controls)).filter(c => c.matcher.transport === 'gamepad' && c.matcher.input === 'axis');
+    if (pad.mapping === 'standard' && pad.axes.slice(0, 4).some(v => Math.abs(v) >= 0.18)) return false;
+    return axes.every(c => c.matcher.transport === 'gamepad' && Math.abs((pad.axes[c.matcher.index] ?? 0) - (c.calibration?.center ?? 0)) < Math.max(0.18, c.calibration?.deadzone ?? 0));
+  }
+
+  private routeDefaultActions(pad: GamepadLike, pads: GamepadLike[]): boolean {
+    if (pad.mapping !== 'standard') return false;
+    const actions: Record<number, string> = { 4: 'undo', 5: 'redo', 6: 'roll', 7: 'mutate', 8: 'panel', 9: 'stop' };
+    const match = matchGamepadProfile(pad, pads, [...this.profiles.values()]);
+    const profile = this.profiles.get(match.profileId ?? '');
+    const controls = profile ? this.activeControls(profile) : [];
+    for (const [raw, action] of Object.entries(actions)) {
+      const index = Number(raw);
+      const overridden = controls.some(c => c.matcher.transport === 'gamepad' && c.matcher.input === 'button' && c.matcher.index === index &&
+        this.mappings.some(m => m.bindings.some(b => b.virtualControlId === c.id && b.enabled !== false)));
+      if (overridden) continue;
+      const key = `${inputIdFor(pad)}:${index}`;
+      const button = pad.buttons[index];
+      const was = this.actionEdges.has(key);
+      const pressed = (button?.value ?? 0) > (was ? 0.15 : 0.55);
+      if (!pressed) { this.actionEdges.delete(key); continue; }
+      if (was) continue;
+      this.actionEdges.add(key);
+      if (action === 'stop') { this.stopGestures(); return true; }
+      this.onAction?.(action);
+      if (this.needsNeutral) return true;
+    }
+    return false;
   }
 
   private routePad(pad: GamepadLike, pads: GamepadLike[]): void {
@@ -221,6 +289,18 @@ export class GamepadRuntime {
     if (controls.length === 0) return;
 
     const axes = resolvedAxes(pad, controls);
+    const allBindings = this.mappings.flatMap(m => m.bindings);
+    const cancelled = new Set<string>();
+    const groups = new Map<string, VirtualControl[]>();
+    for (const control of controls) for (const b of allBindings) {
+      if (b.enabled === false || b.virtualControlId !== control.id || !b.pairId) continue;
+      groups.set(b.pairId, [...(groups.get(b.pairId) ?? []), control]);
+    }
+    for (const members of groups.values()) {
+      if (members.length > 1 && members.every(c => c.matcher.transport === 'gamepad' && c.matcher.input === 'button' && (pad.buttons[c.matcher.index]?.value ?? 0) > 0.15)) {
+        for (const c of members) cancelled.add(c.id);
+      }
+    }
 
     for (const control of controls) {
       if (control.matcher.transport !== 'gamepad') continue;
@@ -229,6 +309,7 @@ export class GamepadRuntime {
       if (control.matcher.input === 'axis') {
         const value = axes.get(control.matcher.index);
         if (value === undefined) continue;
+        this.engine.dispatchGamepadGesture(control.id, value, this.now());
         const previous = this.lastControl.get(key)?.value;
         if (previous !== undefined && Math.abs(value - previous) < AXIS_CHANGE_EPSILON) continue;
 
@@ -242,6 +323,7 @@ export class GamepadRuntime {
       const button = pad.buttons[control.matcher.index];
       if (!button) continue;
       const value = clamp01(finite(button.value, button.pressed ? 1 : 0));
+      this.engine.dispatchGamepadGesture(control.id, cancelled.has(control.id) ? 0 : value, this.now());
       const pressed = Boolean(button.pressed || value > 0.02);
       const previous = this.lastControl.get(key);
       if (
@@ -265,7 +347,7 @@ export class GamepadRuntime {
     const out: VirtualControl[] = [];
     const seen = new Set<string>();
     for (const bank of profile.banks) {
-      if (!active.has(bank.id)) continue;
+      // Gamepad banks organize the UI; every learned physical input stays live.
       for (const control of bank.controls) {
         if (seen.has(control.id)) continue;
         seen.add(control.id);
@@ -424,6 +506,10 @@ export class GamepadRuntime {
   }
 
   private emit(): void {
+    if (!this.listeners.size) return;
+    const now = this.now();
+    if (now - this.lastEmit < 80) return;
+    this.lastEmit = now;
     const snapshot = this.snapshot();
     for (const listener of this.listeners) listener(snapshot);
   }
@@ -548,7 +634,7 @@ function matchGamepadProfile(
 ): GamepadProfileMatch {
   const gamepadProfiles = profiles.filter((profile) => profile.transport === 'gamepad');
   const inputId = inputIdFor(pad);
-  const exact = gamepadProfiles.filter((profile) => profile.fingerprint.portId === inputId);
+  const exact = gamepadProfiles.filter((profile) => profile.fingerprint.portId === inputId && normalized(profile.fingerprint.name) === normalized(pad.id) && normalized(profile.fingerprint.mapping) === normalized(pad.mapping));
   if (exact.length === 1) return { status: 'matched', profileId: exact[0]!.id, basis: 'session-index' };
   if (exact.length > 1) {
     return { status: 'ambiguous', ambiguousProfileIds: exact.map((profile) => profile.id) };

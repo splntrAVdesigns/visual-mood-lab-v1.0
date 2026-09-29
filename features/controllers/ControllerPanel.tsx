@@ -195,7 +195,7 @@ export function ControllerPanel({ itemId }: ControllerPanelProps) {
 
             <div className={s.bankToolbar}>
               <label>
-                <span>Bank</span>
+                <span>{profile.transport === 'gamepad' ? 'View bank (all inputs active)' : 'Bank'}</span>
                 <select
                   value={activeBank.id}
                   onChange={(event) => applyMutation(

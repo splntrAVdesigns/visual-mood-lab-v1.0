@@ -6,7 +6,7 @@
  * stable VML targets rather than browser-specific event shapes.
  */
 
-export const CONTROL_SURFACE_SCHEMA_VERSION = 1 as const;
+export const CONTROL_SURFACE_SCHEMA_VERSION = 2 as const;
 export const CONTROLS_PER_BANK = 8 as const;
 
 export type ControllerTransport = 'midi' | 'gamepad';
@@ -135,12 +135,25 @@ export interface ActionTargetRef {
 
 export type TargetRef = ParameterTargetRef | EffectTargetRef | ActionTargetRef;
 
+export interface GamepadGesture {
+  mode: 'relative' | 'increase' | 'decrease' | 'boost' | 'reset';
+  /** Normalized slider travel per second. */
+  speed?: number;
+  doubleTap?: boolean;
+}
+export type GestureCommand =
+  | { kind: 'begin' } | { kind: 'end'; held: boolean }
+  | { kind: 'step'; direction: number } | { kind: 'delta'; delta: number }
+  | { kind: 'reset' } | { kind: 'boost' };
+
 export interface ControllerBinding {
   id: string;
   virtualControlId: string;
   path: ControllerPath;
   target: TargetRef;
   enabled?: boolean;
+  gesture?: GamepadGesture;
+  pairId?: string;
 
   /** Direct path policy. Pickup is the product default; Phase 4.97C wires UX. */
   takeover?: TakeoverMode;
@@ -184,6 +197,8 @@ export interface ControllerDispatchOutcome {
  * can implement the same contract with no browser or renderer dependency.
  */
 export interface ControlSurfaceRuntimeAdapter {
+  applyGesture?(binding: ControllerBinding, command: GestureCommand): ControllerDispatchOutcome;
+  stopGestures?(): void;
   applyDirect(
     binding: ControllerBinding,
     value01: number,

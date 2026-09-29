@@ -34,7 +34,8 @@
     "verify:backdrop-dismiss": "tsx scripts/verify-backdrop-dismiss.ts",
     "verify:update-ticker": "tsx scripts/verify-update-ticker.ts",
     "verify:shape-source": "tsx scripts/verify-shape-source.ts",
-    "verify:capture": "tsx scripts/verify-capture.ts"
+    "verify:capture": "tsx scripts/verify-capture.ts",
+    "verify:gamepad": "node --import tsx scripts/verify-gamepad-gestures.ts && node --import tsx scripts/verify-gamepad-direct.ts"
   },
   "dependencies": {
     "@auth/drizzle-adapter": "^1.11.3",

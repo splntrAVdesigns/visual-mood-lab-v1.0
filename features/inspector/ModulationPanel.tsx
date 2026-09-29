@@ -24,6 +24,7 @@ interface ModulationPanelProps {
   itemId: string;
   onClose: () => void;
   embedded?: boolean;
+  initialControllers?: boolean;
 }
 
 type ModulationView = 'signals' | 'controllers';
@@ -31,7 +32,7 @@ type ModulationView = 'signals' | 'controllers';
 const DEFAULT_MOD_BASE: Omit<Modulation, 'amount'> = { source: 'lfo.sine', rate: 0.4, smoothing: 0 };
 const SIGNAL_SOURCES = MOD_SOURCES.filter((source) => source.value !== 'midi.cc');
 
-export function ModulationPanel({ controls, itemId, onClose, embedded = false }: ModulationPanelProps) {
+export function ModulationPanel({ controls, itemId, onClose, embedded = false, initialControllers = false }: ModulationPanelProps) {
   const mod = useInspectorStore((st) => st.mod);
   const setModulation = useInspectorStore((st) => st.setModulation);
   const trackLoaded = useTrackLoaded(itemId);
@@ -39,7 +40,7 @@ export function ModulationPanel({ controls, itemId, onClose, embedded = false }:
   const controllerDocument = useControllerDocument();
   const [expanded, setExpanded] = useState<string | null>(controls[0]?.id ?? null);
   const [collapsed, toggleCollapsed] = usePanelCollapsed('mod');
-  const [view, setView] = useState<ModulationView>('signals');
+  const [view, setView] = useState<ModulationView>(initialControllers ? 'controllers' : 'signals');
 
   const controllerById = useMemo(() => {
     const map = new Map<string, ControllerTargetState>();

@@ -16,6 +16,9 @@ import {
   reloadGamepadControlSurfaceConfiguration,
   reloadMidiControlSurfaceConfiguration,
   removeControllerBinding,
+  unlinkControllerPair,
+  type GamepadGesture,
+  type GamepadLearnCandidate,
   requestMidiControlSurfaceAccess,
   saveControlSurfaceDocument,
   updateControllerBinding,
@@ -69,6 +72,9 @@ export function ControllerBindButton({
   const [invert, setInvert] = useState(false);
   const [midiInputId, setMidiInputId] = useState('');
   const [gamepadIndex, setGamepadIndex] = useState('');
+  const [gestureMode, setGestureMode] = useState<GamepadGesture['mode'] | 'auto' | 'absolute'>('auto');
+  const [replaceExisting, setReplaceExisting] = useState(false);
+  const [genericRole, setGenericRole] = useState<'' | 'A' | 'B' | 'X' | 'Y'>('');
   const [axisDeadzone, setAxisDeadzone] = useState(0.08);
   const [axisInvert, setAxisInvert] = useState(false);
   const [axisCurve, setAxisCurve] = useState<ResponseCurve>('linear');
@@ -232,22 +238,30 @@ export function ControllerBindButton({
         allowButtons: true,
       },
       (candidate) => {
-        const result = applyGamepadLearnBinding(loadControlSurfaceDocument().document, candidate, {
-          target,
-          targetLabel: label,
-          path: selectedPath,
-          writeMode: selectedPath === 'direct' ? writeMode : 'live',
-          takeover: selectedPath === 'direct' ? takeover : 'jump',
-          amount: selectedPath === 'modulation' ? amount : undefined,
-          smoothing: selectedPath === 'modulation' ? smoothing : undefined,
-          invert: selectedPath === 'modulation' ? invert : undefined,
-          calibration: candidate.matcher.input === 'axis'
-            ? { deadzone: axisDeadzone, invert: axisInvert, curve: axisCurve }
-            : undefined,
-        });
-        persist(result.document, 'gamepad');
-        cancelLearnRef.current = null;
-        setNotice(`${result.virtualControl.label} → ${displayLabel} · ${behaviorLabel(selectedPath)}`);
+        const finish = (partner?: GamepadLearnCandidate) => {
+          try {
+            const result = applyGamepadLearnBinding(loadControlSurfaceDocument().document, candidate, {
+              target, targetLabel: label, path: selectedPath,
+              writeMode: selectedPath === 'direct' ? writeMode : 'live',
+              takeover: selectedPath === 'direct' ? takeover : 'jump',
+              amount: selectedPath === 'modulation' ? amount : undefined,
+              smoothing: selectedPath === 'modulation' ? smoothing : undefined,
+              invert: selectedPath === 'modulation' ? invert : undefined,
+              sliderGesture: control.kind === 'slider' || control.kind === 'stepper',
+              gestureMode, replaceExisting, partner,
+              genericRole: genericRole || undefined,
+              calibration: candidate.matcher.input === 'axis'
+                ? { deadzone: axisDeadzone, invert: axisInvert, curve: axisCurve } : undefined,
+            });
+            persist(result.document, 'gamepad');
+            cancelLearnRef.current = null;
+            setNotice(`${result.binding.pairId ? 'Pair assigned' : result.virtualControl.label} → ${displayLabel}. Release controls to begin.`);
+          } catch (error) { setNotice(error instanceof Error ? error.message : 'Unable to assign this control.'); }
+        };
+        if (genericRole && candidate.fingerprint.mapping !== 'standard' && candidate.matcher.input === 'button') {
+          setNotice(`Captured ${genericRole}. Release it, then press ${({ A: 'B', B: 'A', X: 'Y', Y: 'X' } as const)[genericRole]}.`);
+          cancelLearnRef.current = getGamepadControlSurface().startLearn({ gamepadIndex: candidate.gamepadIndex, allowAxes: false }, partner => finish(partner));
+        } else finish();
       },
     );
   };
@@ -357,6 +371,29 @@ export function ControllerBindButton({
               )}
             </div>
 
+            {transport === 'gamepad' && path === 'direct' && (control.kind === 'slider' || control.kind === 'stepper') && (
+              <div className={s.calibrationBlock}>
+                <label className={s.field}><span>Slider gesture</span>
+                  <select value={gestureMode} onChange={e => setGestureMode(e.target.value as typeof gestureMode)}>
+                    <option value="auto">Automatic — paired buttons / relative stick</option>
+                    <option value="increase">Increase — tap / hold</option>
+                    <option value="decrease">Decrease — tap / hold</option>
+                    <option value="boost">+20% per press</option>
+                    <option value="reset">Reset to zero</option>
+                    <option value="absolute">Absolute position (legacy)</option>
+                  </select>
+                </label>
+                <p className={s.notice}>A/B and X/Y each share a slider. Learn either member to assign both. A/X decrease; B/Y increase. Double-tap either face button to reset to 0.</p>
+                <label className={s.field}><span>Nonstandard controller identification</span>
+                  <select value={genericRole} onChange={e => setGenericRole(e.target.value as typeof genericRole)}>
+                    <option value="">Use reported mapping / individual input</option>
+                    {(['A', 'B', 'X', 'Y'] as const).map(role => <option key={role} value={role}>Identify {role}, then its partner</option>)}
+                  </select>
+                </label>
+                <Toggle checked={replaceExisting} label="Replace existing pair assignment" onChange={setReplaceExisting} />
+              </div>
+            )}
+
             {!isTrigger && path === 'direct' && (
               <div className={s.twoCol}>
                 <label className={s.field}>
@@ -367,7 +404,7 @@ export function ControllerBindButton({
                   </select>
                 </label>
                 <label className={s.field}>
-                  <span>Takeover</span>
+                  <span>{transport === 'gamepad' ? 'Absolute takeover only' : 'Takeover'}</span>
                   <select value={takeover} onChange={(event) => setTakeover(event.target.value as TakeoverMode)}>
                     <option value="pickup">Pickup</option>
                     <option value="jump">Jump</option>
@@ -455,9 +492,19 @@ export function ControllerBindButton({
                           <strong>{virtualControl?.label ?? 'Controller input'}</strong>
                           <span>{profile.alias} · {behaviorLabel(binding.path)} · {binding.target.scope === 'pinned' ? 'Pinned' : 'Focused'}</span>
                         </div>
-                        <button type="button" className={s.removeButton} onClick={() => removeBinding(binding.id)}>Remove</button>
+                        <button type="button" className={s.removeButton} onClick={() => removeBinding(binding.id)}>{binding.pairId ? 'Remove pair' : 'Remove'}</button>
+                        {binding.pairId && <button type="button" className={s.removeButton} onClick={() => persist(unlinkControllerPair(document, binding.id), transport)}>Unlink pair</button>}
                       </div>
 
+                      {binding.gesture && (
+                        <div className={s.calibrationBlock}>
+                          <span>{binding.gesture.mode} · {binding.pairId ? 'linked pair' : 'individual'} · tap / hold{binding.gesture.doubleTap ? ' / double-tap zero' : ''}</span>
+                          <Field label="Glide speed" value={`${Math.round((binding.gesture.speed ?? 0.25) * 100)}% / sec`}>
+                            <Slider label="Gamepad glide speed" min={0.025} max={1} step={0.025} value={binding.gesture.speed ?? 0.25} onChange={speed => patchBinding(binding.id, { gesture: { ...binding.gesture!, speed } })} />
+                          </Field>
+                        </div>
+                      )}
+                      {profile.transport === 'gamepad' && !binding.gesture && binding.path === 'direct' && <p className={s.notice}>Existing absolute assignment. Learn this input again with Automatic to enable smooth gestures and pairing.</p>}
                       {binding.path === 'direct' && (
                         <div className={s.bindingSettings}>
                           <select value={binding.takeover ?? 'pickup'} aria-label="Takeover mode" onChange={(event) => patchBinding(binding.id, { takeover: event.target.value as TakeoverMode })}>

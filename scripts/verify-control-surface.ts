@@ -104,7 +104,7 @@ assert(profile.banks.every((bank) => bank.controls.length === 8), 'mock MIDI pro
 assert(gamepadProfile.banks.every((bank) => bank.controls.length === 8), 'mock Gamepad profile must enforce eight controls per bank.');
 
 const document: ControlSurfaceDocument = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   profiles: [profile, gamepadProfile],
   mappings: [{ id: 'verify-map', profileId: profile.id, activeBankId: profile.banks[0]!.id, writeMode: 'live', bindings }],
 };

@@ -170,7 +170,8 @@ export function removeControllerBinding(
 ): ControlSurfaceDocument {
   const document = cloneDocument(source);
   for (const mapping of document.mappings) {
-    mapping.bindings = mapping.bindings.filter((binding) => binding.id !== bindingId);
+    const pair = mapping.bindings.find(b => b.id === bindingId)?.pairId;
+    mapping.bindings = mapping.bindings.filter((binding) => binding.id !== bindingId && (!pair || binding.pairId !== pair));
   }
   return document;
 }
@@ -178,7 +179,7 @@ export function removeControllerBinding(
 export type ControllerBindingPatch = Partial<
   Pick<
     ControllerBinding,
-    'takeover' | 'writeMode' | 'amount' | 'smoothing' | 'invert' | 'curve' | 'enabled'
+    'takeover' | 'writeMode' | 'amount' | 'smoothing' | 'invert' | 'curve' | 'enabled' | 'gesture'
   >
 >;
 
@@ -191,6 +192,14 @@ export function updateControllerBinding(
   for (const mapping of document.mappings) {
     const binding = mapping.bindings.find((item) => item.id === bindingId);
     if (!binding) continue;
+    if (binding.pairId) {
+      for (const member of mapping.bindings.filter(b => b.pairId === binding.pairId)) {
+        if (patch.writeMode !== undefined) member.writeMode = patch.writeMode;
+        if (patch.enabled !== undefined) member.enabled = patch.enabled;
+        if (patch.gesture && member.gesture) member.gesture = { ...patch.gesture, mode: member.gesture.mode };
+      }
+    }
+    if (patch.gesture !== undefined) binding.gesture = patch.gesture;
     if (patch.takeover !== undefined) binding.takeover = patch.takeover;
     if (patch.writeMode !== undefined) binding.writeMode = patch.writeMode;
     if (patch.amount !== undefined) binding.amount = clampAmount(patch.amount);
@@ -295,4 +304,13 @@ function createId(prefix: string): string {
     ? crypto.randomUUID()
     : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   return `${prefix}-${id}`;
+}
+
+export function unlinkControllerPair(source: ControlSurfaceDocument, bindingId: string): ControlSurfaceDocument {
+  const document = cloneDocument(source);
+  for (const mapping of document.mappings) {
+    const pair = mapping.bindings.find(b => b.id === bindingId)?.pairId;
+    if (pair) for (const binding of mapping.bindings) if (binding.pairId === pair) delete binding.pairId;
+  }
+  return document;
 }

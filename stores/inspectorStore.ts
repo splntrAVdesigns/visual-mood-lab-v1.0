@@ -113,6 +113,7 @@ interface InspectorState {
   toggleNav: () => void;
   setNavOpen: (open: boolean) => void;
   toggleAdvanced: () => void;
+  commitControllerValue: (id: string, value: ParamValue, effectInstanceId?: string) => void;
   setParam: (id: string, value: ParamValue) => void;
   resetParam: (id: string) => void;
   resetAll: () => void;
@@ -496,6 +497,20 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
   setNavOpen: (navOpen) => set({ navOpen }),
   toggleAdvanced: () => set((s) => ({ showAdvanced: !s.showAdvanced })),
 
+  commitControllerValue: (id, value, effectInstanceId) => {
+    const state = get();
+    const before = effectInstanceId
+      ? (id === 'mix' ? state.effects.find(e => e.id === effectInstanceId)?.mix : state.effects.find(e => e.id === effectInstanceId)?.params[id])
+      : state.params[id];
+    if (before === value) return;
+    const entry = { ...entryOf(state.params, state.dirty), effects: JSON.parse(JSON.stringify(state.effects)) };
+    set({ history: recordHistory(state.history, entry) });
+    if (effectInstanceId) {
+      if (id === 'mix' && typeof value === 'number') get().setEffectMix(effectInstanceId, value);
+      else get().setEffectParam(effectInstanceId, id, value);
+    } else get().setParam(id, value);
+  },
+
   setParam: (id, value) => {
     const { schema, params, dirty, itemId, assetId, isSnapshot, isOwned } = get();
     const control = schema?.controls.find((c) => c.id === id);
@@ -636,19 +651,29 @@ export const useInspectorStore = create<InspectorState>()((set, get) => ({
 
   undoParams: () => {
     const { params, dirty, history } = get();
-    const step = undoHistory(history, entryOf(params, dirty));
+    const step = undoHistory(history, { ...entryOf(params, dirty), effects: JSON.parse(JSON.stringify(get().effects)) });
     if (!step) return false;
     set({ history: step.history });
     commitBatch({ get, set }, step.entry.params, new Set(step.entry.dirty));
+    if (step.entry.effects) {
+      const st = get();
+      set({ effects: step.entry.effects });
+      if (st.itemId && st.assetId) applyEffects(st.itemId, st.assetId, st.isSnapshot, st.isOwned, step.entry.effects);
+    }
     return true;
   },
 
   redoParams: () => {
     const { params, dirty, history } = get();
-    const step = redoHistory(history, entryOf(params, dirty));
+    const step = redoHistory(history, { ...entryOf(params, dirty), effects: JSON.parse(JSON.stringify(get().effects)) });
     if (!step) return false;
     set({ history: step.history });
     commitBatch({ get, set }, step.entry.params, new Set(step.entry.dirty));
+    if (step.entry.effects) {
+      const st = get();
+      set({ effects: step.entry.effects });
+      if (st.itemId && st.assetId) applyEffects(st.itemId, st.assetId, st.isSnapshot, st.isOwned, step.entry.effects);
+    }
     return true;
   },
 }));

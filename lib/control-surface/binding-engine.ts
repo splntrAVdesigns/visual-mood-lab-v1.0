@@ -1,3 +1,4 @@
+import { GamepadGestureState } from './gamepad-gestures';
 import { applyResponseCurve, clamp01, sanitizeSignal, signalToUnit } from './normalize';
 import { ControllerSourceRegistry, getControllerSourceRegistry } from './source-registry';
 import { controllersAreActive } from './session';
@@ -25,6 +26,7 @@ export interface BindingDispatchRecord {
  * enabled again.
  */
 export class ControlSurfaceBindingEngine {
+  private gestureStates = new Map<string, GamepadGestureState>();
   private bindings = new Map<string, ControllerBinding>();
   private byVirtualControl = new Map<string, Set<string>>();
   private position = new Map<string, number>();
@@ -66,6 +68,7 @@ export class ControlSurfaceBindingEngine {
     const bucket = this.byVirtualControl.get(previous.virtualControlId);
     bucket?.delete(bindingId);
     if (bucket?.size === 0) this.byVirtualControl.delete(previous.virtualControlId);
+    this.gestureStates.delete(bindingId);
     this.position.delete(bindingId);
     this.smoothed.delete(bindingId);
     this.gateState.delete(bindingId);
@@ -107,6 +110,7 @@ export class ControlSurfaceBindingEngine {
   }
 
   private dispatchBinding(binding: ControllerBinding, signal: ControlSignal): ControllerDispatchOutcome {
+    if (binding.gesture && binding.path === 'direct') return { status: 'ignored', detail: 'Handled by gamepad gesture clock.' };
     if (binding.path === 'action') {
       if (!this.shouldDispatchAction(binding, signal)) {
         return { status: 'ignored', detail: 'Action edge not active.' };
@@ -157,7 +161,27 @@ export class ControlSurfaceBindingEngine {
     return pressed && !wasPressed;
   }
 
+  dispatchGamepadGesture(virtualControlId: string, value: number, now: number): void {
+    if (!controllersAreActive()) return;
+    for (const id of this.byVirtualControl.get(virtualControlId) ?? []) {
+      const binding = this.bindings.get(id);
+      if (!binding?.gesture || binding.path !== 'direct' || binding.enabled === false) continue;
+      let state = this.gestureStates.get(id);
+      if (!state) { state = new GamepadGestureState(); this.gestureStates.set(id, state); }
+      try {
+        for (const command of state.sample(value, binding.gesture, now)) this.runtime.applyGesture?.(binding, command);
+      } catch { this.gestureStates.delete(id); }
+    }
+  }
+
+  stopGestures(): void {
+    this.gestureStates.clear();
+    this.gateState.clear();
+    this.runtime.stopGestures?.();
+  }
+
   panic(): void {
+    this.gestureStates.clear();
     this.runtime.panic();
     this.sources.reset();
     this.position.clear();

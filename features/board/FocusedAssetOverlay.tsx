@@ -91,6 +91,12 @@ export function FocusedAssetOverlay() {
 
   const [showCode, setShowCode] = useState(false);
   const [showMod, setShowMod] = useState(false);
+  const [controllerView, setControllerView] = useState(false);
+  useEffect(() => {
+    const toggle = () => { setControllerView(true); setShowMod(open => !open); };
+    window.addEventListener('vml:gamepad-panel', toggle);
+    return () => window.removeEventListener('vml:gamepad-panel', toggle);
+  }, []);
   const [showSound, setShowSound] = useState(false);
   const [showVfx, setShowVfx] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
@@ -552,7 +558,7 @@ export function FocusedAssetOverlay() {
           )}
           {modOpen && (
             <FloatablePanel id="mod">
-              <ModulationPanel controls={modulatableControls} itemId={asset.itemId} onClose={() => setShowMod(false)} />
+              <ModulationPanel initialControllers={controllerView} controls={modulatableControls} itemId={asset.itemId} onClose={() => setShowMod(false)} />
             </FloatablePanel>
           )}
         </div>

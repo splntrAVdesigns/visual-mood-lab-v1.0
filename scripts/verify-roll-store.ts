@@ -28,7 +28,7 @@ import { pathToFileURL } from 'node:url';
 const g = globalThis as any;
 g.requestAnimationFrame = () => 1;
 g.cancelAnimationFrame = () => undefined;
-g.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} };
+g.window = { location: { search: '' }, devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} };
 g.document = { addEventListener() {}, removeEventListener() {}, visibilityState: 'visible' };
 
 const storage = new Map<string, string>();

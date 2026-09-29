@@ -7,6 +7,7 @@ import {
   type ControlSurfaceDocument,
   type DeviceProfile,
   type GamepadCalibration,
+  type GamepadGesture,
   type PhysicalControlMatcher,
   type TargetRef,
   type VirtualControl,
@@ -57,7 +58,7 @@ export function parseControlSurfaceDocument(raw: string | unknown): ParsedContro
   }
 
   const version = input.schemaVersion;
-  if (version !== CONTROL_SURFACE_SCHEMA_VERSION) {
+  if (version !== 1 && version !== CONTROL_SURFACE_SCHEMA_VERSION) {
     return {
       document: createEmptyControlSurfaceDocument(),
       warnings: [`Unsupported controller schemaVersion ${String(version)}; expected ${CONTROL_SURFACE_SCHEMA_VERSION}.`],
@@ -255,6 +256,8 @@ function parseBinding(value: unknown): ControllerBinding | null {
     path: value.path,
     target,
     enabled: value.enabled === undefined ? undefined : Boolean(value.enabled),
+    gesture: parseGesture(value.gesture),
+    pairId: optionalString(value.pairId),
     takeover: value.takeover === 'jump' || value.takeover === 'scaled' ? value.takeover : 'pickup',
     writeMode: value.writeMode === 'write' ? 'write' : 'live',
     smoothing: finiteOptional(value.smoothing),
@@ -321,4 +324,11 @@ function validMidiData(value: unknown): value is number {
 
 function isRelativeMode(value: unknown): value is 'absolute' | 'twos-complement' | 'binary-offset' | 'signed-bit' {
   return value === 'absolute' || value === 'twos-complement' || value === 'binary-offset' || value === 'signed-bit';
+}
+
+function parseGesture(value: unknown): GamepadGesture | undefined {
+  if (!isRecord(value) || !['relative', 'increase', 'decrease', 'boost', 'reset'].includes(String(value.mode))) return undefined;
+  return { mode: value.mode as GamepadGesture['mode'],
+    speed: Math.max(0.01, Math.min(2, finiteOptional(value.speed) ?? 0.25)),
+    doubleTap: value.doubleTap !== false };
 }

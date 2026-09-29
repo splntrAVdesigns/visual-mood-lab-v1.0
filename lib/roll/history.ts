@@ -12,6 +12,7 @@
 // the live state can reach back into history. JSON rather than structuredClone
 // because older Safari (pre-15.4) doesn't have the latter.
 
+import type { EffectInstance } from '@/lib/effects/types';
 import type { ParamState } from '@/renderers/control-schema';
 
 export const HISTORY_LIMIT = 20;
@@ -20,6 +21,7 @@ export interface HistoryEntry {
   params: ParamState;
   /** Control ids showing the "modified" dot. */
   dirty: string[];
+  effects?: EffectInstance[];
 }
 
 export interface History {
@@ -30,7 +32,7 @@ export interface History {
 export const EMPTY_HISTORY: History = { past: [], future: [] };
 
 export function cloneEntry(entry: HistoryEntry): HistoryEntry {
-  return { params: JSON.parse(JSON.stringify(entry.params)) as ParamState, dirty: [...entry.dirty] };
+  return { params: JSON.parse(JSON.stringify(entry.params)) as ParamState, dirty: [...entry.dirty], ...(entry.effects ? { effects: JSON.parse(JSON.stringify(entry.effects)) } : {}) };
 }
 
 /** Record the state as it was BEFORE a batch operation. Clears redo. */
