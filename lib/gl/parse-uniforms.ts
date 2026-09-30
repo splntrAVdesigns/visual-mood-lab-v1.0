@@ -158,7 +158,7 @@ export interface ParseOptions {
 export const DEFAULT_RESERVED = new Set([
   'u_time', 'u_delta', 'u_frame', 'u_resolution', 'u_mouse', 'u_pointer',
   'u_seed', 'u_pixelRatio', 'u_aspect', 'u_hasSource', 'u_prevFrame', 'u_backbuffer',
-  'u_audio', 'u_audioTexture', 'u_bass', 'u_mid', 'u_high', 'u_rms', 'u_fft',
+  'u_trackTone', 'u_audio', 'u_audioTexture', 'u_bass', 'u_mid', 'u_high', 'u_rms', 'u_fft',
   'iTime', 'iTimeDelta', 'iFrame', 'iResolution', 'iMouse', 'iDate',
   'iChannel0', 'iChannel1', 'iChannel2', 'iChannel3', 'iChannelTime',
   'time', 'resolution', 'mouse',
@@ -954,3 +954,4 @@ export function humanise(name: string): string {
 function titleCase(s: string): string {
   return s.replace(/[_-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
+

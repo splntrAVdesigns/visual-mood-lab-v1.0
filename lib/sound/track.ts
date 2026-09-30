@@ -1,3 +1,4 @@
+import { dominantTone } from './tone-analysis';
 /**
  * Visual Mood Lab — per-card uploaded audio tracks.
  *
@@ -123,6 +124,8 @@ export interface TrackMeta {
 }
 
 interface TrackHandle {
+  /** Optional high-resolution analysis, allocated only for tone-aware shaders. */
+  toneAnalysis?: { analyser: AnalyserNode; data: Float32Array<ArrayBuffer>; lastAt: number; frequency: number; energy: number };
   buffer: AudioBuffer;
   title: string;
   gain: GainNode;
@@ -449,6 +452,7 @@ export function unloadTrack(cardId: string): boolean {
     // already disconnected
   }
 
+  clearToneAnalysis(handle);
   tracks.delete(cardId);
   emit(cardId);
   return handle.previousSoundEnabled;
@@ -498,6 +502,7 @@ export function getTrackMeta(cardId: string): TrackMeta | null {
     path keeps its own inline construction, so an ordinary fresh upload
     is untouched by this. */
 function rewireTrackGraph(ctx: AudioContext, handle: TrackHandle): void {
+  clearToneAnalysis(handle);
   const gain = ctx.createGain();
   gain.gain.value = handle.mutedPlayback ? 0 : handle.volume;
   gain.connect(getMasterGain());
@@ -917,4 +922,50 @@ function readTrackPeak(handle: TrackHandle): number {
     if (abs > peak) peak = abs;
   }
   return peak;
+}
+
+
+/** Detach only our optional analysis branch, leaving playback and the two
+ * existing analysers intact. Also used on unload and AudioContext recovery. */
+function clearToneAnalysis(handle: TrackHandle): void {
+  const tone = handle.toneAnalysis;
+  if (!tone) return;
+  try { handle.tapGain.disconnect(tone.analyser); } catch { /* context already gone */ }
+  try { tone.analyser.disconnect(); } catch { /* context already gone */ }
+  handle.toneAnalysis = undefined;
+}
+export function releaseTrackTone(cardId: string): void {
+  const handle = tracks.get(cardId);
+  if (handle) clearToneAnalysis(handle);
+}
+/** [playing, dominant Hz, energy]. Silence during a playing track holds its
+ * resonance; removing/pausing the track returns to autonomous shader motion.
+ * This getter never creates an AudioContext or starts playback. */
+export function getTrackTone(cardId: string): [number, number, number] {
+  const handle = tracks.get(cardId);
+  if (!handle || !handle.playing) return [0, 180, 0];
+  const ctx = handle.tapGain.context;
+  if (ctx.state !== 'running') return [0, 180, 0];
+  if (!handle.toneAnalysis) {
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 4096;
+    analyser.smoothingTimeConstant = 0.65;
+    handle.tapGain.connect(analyser);
+    handle.toneAnalysis = {
+      analyser, data: new Float32Array(analyser.frequencyBinCount),
+      lastAt: -1, frequency: 180, energy: 0,
+    };
+  }
+  const tone = handle.toneAnalysis;
+  const now = ctx.currentTime;
+  if (now - tone.lastAt >= 0.05) {
+    tone.analyser.getFloatFrequencyData(tone.data);
+    const sample = dominantTone(tone.data, ctx.sampleRate, tone.analyser.fftSize);
+    const dt = tone.lastAt < 0 ? 0.05 : Math.min(0.25, now - tone.lastAt);
+    if (sample) tone.frequency = Math.exp(Math.log(tone.frequency) +
+      (Math.log(sample.frequency) - Math.log(tone.frequency)) * (1 - Math.exp(-dt * 3)));
+    tone.energy += ((sample?.energy ?? 0) - tone.energy) * (1 - Math.exp(-dt * 8));
+    tone.lastAt = now;
+  }
+  return [1, tone.frequency, tone.energy];
 }

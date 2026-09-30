@@ -1156,6 +1156,54 @@
         "audio-reactive",
         "generative"
       ]
+    },
+    {
+      "slug": "spatial-hud",
+      "type": "shader",
+      "file": "shaders/spatial-hud.frag",
+      "title": "Spatial HUD",
+      "tags": [
+        "hud",
+        "3d",
+        "geometric",
+        "reactive"
+      ]
+    },
+    {
+      "slug": "symmetry-shapes",
+      "type": "shader",
+      "file": "shaders/symmetry-shapes.frag",
+      "title": "Symmetry Shapes",
+      "tags": [
+        "symmetry",
+        "geometric",
+        "3d",
+        "kinetic"
+      ]
+    },
+    {
+      "slug": "folded-fields",
+      "type": "shader",
+      "file": "shaders/folded-fields.frag",
+      "title": "Folded Fields",
+      "tags": [
+        "folds",
+        "3d",
+        "contours",
+        "kinetic"
+      ]
+    },
+    {
+      "slug": "nodal-matter",
+      "type": "shader",
+      "file": "shaders/nodal-matter.frag",
+      "title": "Nodal Matter",
+      "tags": [
+        "cymatic",
+        "particles",
+        "reactive",
+        "geometric"
+      ]
     }
   ]
 }

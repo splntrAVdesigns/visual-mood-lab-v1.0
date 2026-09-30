@@ -1,3 +1,4 @@
+import { getTrackTone, releaseTrackTone } from '@/lib/sound/track';
 import type { Asset } from '@/types/asset';
 import { resetEffectHistory } from '@/lib/gl/effects-compositor';
 import type { ControlSchema, ParamState, ParamValue, RGBA } from './control-schema';
@@ -53,6 +54,7 @@ export class ShaderRenderer implements AssetRenderer {
   private backbuffer: HTMLCanvasElement | null = null;
   private backCtx: CanvasRenderingContext2D | null = null;
   private usesBackbuffer = false;
+  private usesTrackTone = false;
 
   /**
    * assetId -> poster URL, for resolving texture controls.
@@ -111,6 +113,7 @@ export class ShaderRenderer implements AssetRenderer {
     this.compileKey = asset.id + ':' + (asset.updatedAt ?? '');
     this.compileFromSource(stage);
 
+    this.usesTrackTone = /\buniform\s+vec3\s+u_trackTone\b/.test(asset.source);
     this.usesBackbuffer = /\bu_prevFrame\b|\bu_backbuffer\b/.test(asset.source);
     this.schema = asset.schema ?? null;
     this.params = this.schema ? { ...defaultsOf(this.schema), ...(asset.params ?? {}) } : {};
@@ -162,6 +165,8 @@ export class ShaderRenderer implements AssetRenderer {
     this.compiledGeneration = stage.generation;
     this.liveKey = key;
     this.error = null;
+    if (this.usesTrackTone && this.cardId) releaseTrackTone(this.cardId);
+    this.usesTrackTone = /\buniform\s+vec3\s+u_trackTone\b/.test(source);
     this.usesBackbuffer = /\bu_prevFrame\b|\bu_backbuffer\b/.test(source);
     this.params = carryParams(this.schema, parsed.schema, this.params);
     this.schema = parsed.schema;
@@ -287,6 +292,13 @@ export class ShaderRenderer implements AssetRenderer {
       set('u_high', avg(ctx.audio, 32, 64));
       set('u_rms', avg(ctx.audio, 0, 64));
       this.detectBeat(avg(ctx.audio, 0, 8));
+    } else {
+      set('u_bass', 0); set('u_mid', 0); set('u_high', 0); set('u_rms', 0);
+    }
+    if (this.usesTrackTone) {
+      // An analysis failure must never demote a healthy visual tile.
+      try { set('u_trackTone', this.cardId ? getTrackTone(this.cardId) : [0, 180, 0]); }
+      catch { set('u_trackTone', [0, 180, 0]); }
     }
 
     const back = this.backbuffer
@@ -535,6 +547,7 @@ export class ShaderRenderer implements AssetRenderer {
   }
 
   dispose(): void {
+    if (this.usesTrackTone && this.cardId) releaseTrackTone(this.cardId);
     this.disposed = true;
     // Free this asset's cached GL textures — the feedback backbuffer
     // (`<assetId>:back`) and any texture-linked control's image
@@ -570,3 +583,4 @@ function hashSource(source: string): string {
   for (let i = 0; i < source.length; i++) h = Math.imul(h ^ source.charCodeAt(i), 16777619);
   return (h >>> 0).toString(36);
 }
+
