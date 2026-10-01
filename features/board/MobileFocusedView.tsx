@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useMediaDownload } from '@/lib/capture/use-media-download';
 import { Button, CameraIcon, CloseIcon, CodeIcon, DownloadIcon, FullscreenIcon, IconButton, ResetIcon, Toast, Tooltip } from '@/components/ui';
 import {
   selectSelectedAsset,
@@ -74,7 +75,8 @@ export function MobileFocusedView() {
   const [saving, setSaving] = useState(false);
   const [downloadingSnapshot, setDownloadingSnapshot] = useState(false);
   const [savedNote, setSavedNote] = useState<string | null>(null);
-  const [downloadingUpload, setDownloadingUpload] = useState(false);
+  const { download: downloadUpload, busy: downloadingUpload, label: downloadLabel } = useMediaDownload(asset, open, setSavedNote);
+
   const [captureFormat, setCaptureFormat] = useState<CaptureFormat>('mp4');
   const [captureDuration, setCaptureDuration] = useState(CAPTURE_DEFAULT_DURATION_SEC);
   const [captureLoop, setCaptureLoop] = useState<CaptureLoopMode>('off');
@@ -196,23 +198,7 @@ export function MobileFocusedView() {
   const isDeletableUpload =
     !asset.isSnapshot && (asset.type === 'image' || asset.type === 'svg' || asset.type === 'video');
 
-  const downloadUpload = async () => {
-    if (!isDeletableUpload || !asset.srcUrl || downloadingUpload) return;
-    setDownloadingUpload(true);
-    setSavedNote(null);
-    try {
-      const res = await fetch(asset.srcUrl);
-      if (!res.ok) throw new Error(String(res.status));
-      const blob = await res.blob();
-      const ext = asset.srcUrl.split('.').pop()?.split(/[?#]/)[0] || 'bin';
-      const safeName = asset.title.replace(/[<>:"/\\|?*]/g, '_');
-      downloadBlob(blob, `${safeName}.${ext}`);
-    } catch {
-      setSavedNote('Download failed');
-    } finally {
-      setDownloadingUpload(false);
-    }
-  };
+
 
   // Mirrors FocusedAssetOverlay's identical removeUpload — this was the
   // actual gap the earlier download-only pass flagged and deliberately
@@ -296,11 +282,12 @@ export function MobileFocusedView() {
           </Tooltip>
         )}
         {isDeletableUpload && (
-          <Tooltip content={downloadingUpload ? 'Downloading…' : 'Download this file'}>
+          <Tooltip content={downloadingUpload ? downloadLabel : 'Download this file'}>
             <IconButton
-              label="Download"
+              label={downloadLabel}
               icon={<DownloadIcon />}
               onClick={() => void downloadUpload()}
+              aria-busy={downloadingUpload}
               disabled={downloadingUpload}
             />
           </Tooltip>

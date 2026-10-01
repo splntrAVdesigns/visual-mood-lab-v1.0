@@ -107,8 +107,8 @@ function TrimEditor({ asset }: { asset: Asset }) {
     <div className={s.times}><span>{trimTime(current.startSec)}</span><span className={s.end}>{trimTime(current.endSec)}</span><span>{trimTime(duration)} total</span></div>
     <div className={s.summary}><span>{trimTime(current.endSec - current.startSec)} selected</span><span role="status">{status}</span></div>
     {status.startsWith('Save failed') && <button className={s.retry} type="button" onClick={commit}>Retry save</button>}
-    <p className={s.note}>Preview trim. Downloads use the full original clip until trimmed export is added.</p>
-    {range && asset.capture?.loopMode === 'smooth' && <p className={s.note}>A shortened range changes the Smooth join and may show a cut when looping.</p>}
+    <p className={s.note}>Download exports the selected range. Reset restores the full original clip.</p>
+    {range && asset.capture?.loopMode === 'smooth' && <p className={s.note}>A shortened range changes the Smooth join and may show a cut when looping. Export adds no new crossfade.</p>}
     {!writable && <p className={s.note}>Only the capture owner can edit this range.</p>}
   </section>;
 }

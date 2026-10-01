@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useMediaDownload } from '@/lib/capture/use-media-download';
 import {
   Badge,
   Button,
@@ -113,8 +114,9 @@ export function FocusedAssetOverlay() {
   const [captureBusy, setCaptureBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [downloadingSnapshot, setDownloadingSnapshot] = useState(false);
-  const [downloadingUpload, setDownloadingUpload] = useState(false);
+
   const [savedNote, setSavedNote] = useState<string | null>(null);
+  const { download: downloadUpload, busy: downloadingUpload, label: downloadLabel } = useMediaDownload(asset, open, setSavedNote);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Phase 4.98 — floating sidecar panels. Modes are read reactively so the
@@ -481,23 +483,7 @@ export function FocusedAssetOverlay() {
    * risk of this offering to download shared library source instead of
    * something the person actually owns.
    */
-  const downloadUpload = async () => {
-    if (!isDeletableUpload || !asset.srcUrl || downloadingUpload) return;
-    setDownloadingUpload(true);
-    setSavedNote(null);
-    try {
-      const res = await fetch(asset.srcUrl);
-      if (!res.ok) throw new Error(String(res.status));
-      const blob = await res.blob();
-      const ext = asset.srcUrl.split('.').pop()?.split(/[?#]/)[0] || 'bin';
-      const safeName = asset.title.replace(/[<>:"/\\|?*]/g, '_');
-      downloadBlob(blob, `${safeName}.${ext}`);
-    } catch {
-      setSavedNote('Download failed');
-    } finally {
-      setDownloadingUpload(false);
-    }
-  };
+
 
   const removeUpload = async () => {
     if (!isDeletableUpload) return;
@@ -727,9 +713,9 @@ export function FocusedAssetOverlay() {
               )}
 
               {isDeletableUpload && (
-                <Tooltip content="Download this file">
+                <Tooltip content={downloadingUpload ? downloadLabel : 'Download this file'}>
                   <IconButton
-                    label={downloadingUpload ? 'Downloading…' : 'Download'}
+                    label={downloadLabel} aria-busy={downloadingUpload}
                     icon={<DownloadIcon />}
                     onClick={() => void downloadUpload()}
                     disabled={downloadingUpload}
@@ -737,7 +723,7 @@ export function FocusedAssetOverlay() {
                 </Tooltip>
               )}
 
-              {savedNote && <span className={s.savedNote}>{savedNote}</span>}
+              {(downloadingUpload || savedNote) && <span role="status" className={s.savedNote}>{downloadingUpload ? downloadLabel : savedNote}</span>}
 
               {asset.isSnapshot && (
                 <Button variant="danger" onClick={removeSnapshot}>
