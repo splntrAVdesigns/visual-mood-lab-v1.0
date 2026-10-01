@@ -4,6 +4,7 @@ import { ingestAsset } from '@/lib/ingest/ingest';
 import { requireUser } from '@/lib/auth';
 import { unauthorizedResponse } from '@/lib/http/api';
 import { sanitizeAssetTags } from '@/lib/validation/asset';
+import { captureMetadataSchema } from '@/lib/capture/metadata';
 import type { AssetType } from '@/types/asset';
 
 export const dynamic = 'force-dynamic';
@@ -22,7 +23,8 @@ function isAllowedSrcUrl(raw: string, requestUrl: string, ownerId: string): bool
   // Local dev: LocalStorage writes to /uploads/<pathname> and returns that
   // as a same-origin relative path (see lib/storage/index.ts).
   if (raw.startsWith('/uploads/')) {
-    return raw.startsWith(`/uploads/${ownerId}/`);
+    const normalized = new URL(raw, requestUrl).pathname;
+    return normalized.startsWith(`/uploads/${ownerId}/`) && !raw.includes('\\');
   }
 
   let parsed: URL;
@@ -119,6 +121,7 @@ export async function POST(req: Request) {
           which also carry a 'capture' tag so Media Library work can
           filter/find them distinctly from a manual file upload later. */
       tags?: unknown;
+      capture?: unknown;
     };
 
     const type = TYPE_FOR[body.contentType ?? ''];
@@ -146,12 +149,23 @@ export async function POST(req: Request) {
     const extraTags = sanitizeAssetTags(body.tags ?? []);
     const tags = extraTags.length > 0 ? Array.from(new Set(['upload', ...extraTags])) : ['upload'];
 
+    const parsed = body.capture === undefined ? null : captureMetadataSchema.safeParse(body.capture);
+    if (parsed && (!parsed.success || type !== 'video' || !tags.includes('capture'))) {
+      return NextResponse.json({ error: 'Invalid capture metadata' }, { status: 400 });
+    }
+    const capture = parsed?.success ? parsed.data : undefined;
+    if (capture?.rawSrcUrl && !isAllowedSrcUrl(capture.rawSrcUrl, req.url, user.id)) {
+      return NextResponse.json({ error: 'Capture source is not owned by this user' }, { status: 400 });
+    }
     const res = await ingestAsset({
       ownerId: user.id,
       type,
       title: body.title?.trim() || 'Untitled',
       tags,
       srcUrl: body.srcUrl,
+      capture,
+      width: capture?.width, height: capture?.height,
+      durationMs: capture ? Math.round(capture.durationSec * 1000) : undefined,
     });
 
     const assets = await listAssets();

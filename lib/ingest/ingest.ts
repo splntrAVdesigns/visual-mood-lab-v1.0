@@ -1,3 +1,4 @@
+import type { CaptureMetadata } from '@/lib/capture/types';
 import { eq, and } from 'drizzle-orm';
 import { getDb, schema } from '@/lib/db/client';
 import { ensureCanonicalBoardItem, getOrCreateDefaultBoard } from '@/lib/data/assets';
@@ -36,6 +37,7 @@ export interface IngestInput {
   width?: number;
   height?: number;
   durationMs?: number;
+  capture?: CaptureMetadata;
   /** Set for seed assets so re-runs upsert instead of duplicating. */
   seedSlug?: string;
   /** Position on the board. Seed script passes the manifest index. */
@@ -241,6 +243,7 @@ export async function ingestAsset(input: IngestInput): Promise<IngestResult> {
     width: clampNonNegative(input.width) ?? null,
     height: clampNonNegative(input.height) ?? null,
     durationMs: clampNonNegative(input.durationMs) ?? null,
+    capture: input.capture ?? null,
     seedSlug: input.seedSlug ?? null,
     contentHash,
     updatedAt: now,

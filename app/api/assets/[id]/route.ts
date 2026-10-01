@@ -245,14 +245,16 @@ export async function DELETE(_req: Request, ctx: { params: Promise<{ id: string 
     if (!owned) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
     const storage = getStorage();
-    const urls = [owned.row.srcUrl, owned.row.posterUrl].filter(
+    const urls = [owned.row.srcUrl, owned.row.posterUrl, owned.row.capture?.rawSrcUrl].filter(
       (u): u is string => typeof u === 'string' && u.length > 0,
     );
 
     await Promise.allSettled(
       urls.map(async (url) => {
         try {
-          const pathname = new URL(url).pathname.replace(/^\//, '');
+          const pathname = url.startsWith('/uploads/')
+            ? url.slice('/uploads/'.length)
+            : new URL(url).pathname.replace(/^\//, '');
           if (pathname) await storage.delete(pathname);
         } catch (err) {
           console.error('[api/assets/:id DELETE] storage cleanup failed for', url, err);

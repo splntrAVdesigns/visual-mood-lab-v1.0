@@ -1,3 +1,4 @@
+import type { CaptureMetadata } from '@/lib/capture/types';
 import type { ControlSchema, ModState, ParamState, SoundState } from '@/renderers/control-schema';
 import type { EffectInstance } from '@/lib/effects/types';
 
@@ -64,6 +65,7 @@ export interface Asset {
   width?: number;
   height?: number;
   durationMs?: number;
+  capture?: CaptureMetadata;
 
   createdAt: string;
   updatedAt: string;

@@ -44,6 +44,7 @@ export function toAsset(row: AssetRow): Omit<Asset, 'itemId' | 'isSnapshot'> {
     width: row.width ?? undefined,
     height: row.height ?? undefined,
     durationMs: row.durationMs ?? undefined,
+    capture: row.capture ?? undefined,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

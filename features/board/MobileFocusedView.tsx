@@ -31,7 +31,7 @@ import {
   storeSnapshotCapture,
 } from '@/lib/persist/client';
 import { getPool } from '@/lib/render/pool';
-import { CAPTURE_DEFAULT_DURATION_SEC, type CaptureFormat } from '@/lib/capture/types';
+import { CAPTURE_DEFAULT_DURATION_SEC, type CaptureFormat, type CaptureLoopMode } from '@/lib/capture/types';
 import s from '../features.module.css';
 
 type Tab = 'controls' | 'vfx' | 'modulate' | 'sound' | 'capture';
@@ -75,6 +75,9 @@ export function MobileFocusedView() {
   const [downloadingUpload, setDownloadingUpload] = useState(false);
   const [captureFormat, setCaptureFormat] = useState<CaptureFormat>('mp4');
   const [captureDuration, setCaptureDuration] = useState(CAPTURE_DEFAULT_DURATION_SEC);
+  const [captureLoop, setCaptureLoop] = useState<CaptureLoopMode>('off');
+  const [captureOverlap, setCaptureOverlap] = useState(400);
+  const [captureBusy, setCaptureBusy] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -262,11 +265,14 @@ export function MobileFocusedView() {
                 VC
               </Button>
             </Tooltip>
-            <RecordButton
+            <RecordButton key={asset.itemId}
               asset={asset}
               canCapture={canCapture}
+                  onBusyChange={setCaptureBusy}
               format={captureFormat}
               durationSec={captureDuration}
+              loopMode={captureLoop}
+              overlapMs={captureOverlap}
               variant="icon"
             />
           </>
@@ -405,8 +411,13 @@ export function MobileFocusedView() {
           <CapturePanel
             format={captureFormat}
             durationSec={captureDuration}
+            loopMode={captureLoop}
+            overlapMs={captureOverlap}
             onFormatChange={setCaptureFormat}
             onDurationChange={setCaptureDuration}
+            onLoopModeChange={setCaptureLoop}
+            onOverlapChange={setCaptureOverlap}
+            busy={captureBusy}
             onClose={() => setTab('controls')}
             embedded
           />

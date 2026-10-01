@@ -579,7 +579,7 @@ export function withBaseControls(
 export function defaultSchemaFor(id: string, type: AssetType): ControlSchema {
   const isMedia = type === 'image' || type === 'svg' || type === 'video';
 
-  return withBaseControls(id, [], {
+  const schema = withBaseControls(id, [], {
     omit: type === 'video' ? [] : ['speed', 'loop', 'paused'],
     // Transform (scale, rotation, offset) is usually the first thing worth
     // touching on a static image or video — unlike a shader's Composition
@@ -588,6 +588,10 @@ export function defaultSchemaFor(id: string, type: AssetType): ControlSchema {
       ? BASE_GROUPS.map((g) => (g.id === 'transform' ? { ...g, collapsed: false } : g))
       : undefined,
   });
+  if (type === 'video') {
+    schema.controls = schema.controls.map((c) => c.id === 'speed' && c.kind === 'slider' ? { ...c, min: 0.0625, step: 0.0625 } : c);
+  }
+  return schema;
 }
 
 /** Initial ParamState for a schema. Triggers are excluded — they hold no value. */

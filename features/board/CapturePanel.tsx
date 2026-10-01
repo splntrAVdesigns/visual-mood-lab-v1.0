@@ -4,7 +4,7 @@ import { ChevronDownIcon, ChevronRightIcon, CloseIcon, Field, IconButton, Slider
 import {
   CAPTURE_MAX_DURATION_SEC,
   CAPTURE_MIN_DURATION_SEC,
-  type CaptureFormat,
+  type CaptureFormat, type CaptureLoopMode,
 } from '@/lib/capture/types';
 import { PanelModeButton } from '@/features/panels/PanelModeButton';
 import { usePanelCollapsed } from '@/features/panels/usePanelCollapsed';
@@ -16,6 +16,11 @@ interface CapturePanelProps {
   onFormatChange: (format: CaptureFormat) => void;
   onDurationChange: (sec: number) => void;
   onClose: () => void;
+  loopMode: CaptureLoopMode;
+  overlapMs: number;
+  onLoopModeChange: (value: CaptureLoopMode) => void;
+  onOverlapChange: (value: number) => void;
+  busy: boolean;
   /** Same purpose as SoundPanel/VfxPanel/ModulationPanel's embedded prop —
       render inline in the mobile sheet's scroll region rather than as a
       fixed sidecar. */
@@ -50,6 +55,7 @@ export function CapturePanel({
   onFormatChange,
   onDurationChange,
   onClose,
+  loopMode, overlapMs, onLoopModeChange, onOverlapChange, busy,
   embedded = false,
 }: CapturePanelProps) {
   const [collapsed, toggleCollapsed] = usePanelCollapsed('capture');
@@ -57,7 +63,7 @@ export function CapturePanel({
   const body = (
     <div className={embedded ? s.modPanelListEmbedded : s.modPanelList}>
       <div className={s.modPanelRow}>
-        <div className={s.modPanelBody}>
+        <fieldset disabled={busy} className={s.modPanelBody} style={{ border: 0, margin: 0, minWidth: 0 }}>
           <Field label="Format">
             <div
               className={s.rateStrip}
@@ -81,8 +87,7 @@ export function CapturePanel({
             </div>
           </Field>
           <p className={s.notice}>
-            MP4 plays everywhere, including straight out of your phone&rsquo;s photo library. WebM is
-            a smaller file if you&rsquo;re staying on desktop.
+            MP4 is recommended for sharing. WebM is available when supported by your browser.
           </p>
 
           <Field label="Duration" value={`${durationSec}s`}>
@@ -95,17 +100,32 @@ export function CapturePanel({
               onChange={onDurationChange}
             />
           </Field>
+          <Field label="Loop export">
+            <div className={s.rateStrip} role="group" aria-label="Loop export" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
+              {(['off', 'smooth'] as const).map((mode) => (
+                <button key={mode} type="button" className={s.rateStripKey}
+                  style={{ minHeight: 44 }} aria-pressed={loopMode === mode}
+                  data-selected={loopMode === mode ? 'true' : undefined}
+                  onClick={() => onLoopModeChange(mode)}>{mode === 'off' ? 'Off' : 'Smooth'}</button>
+              ))}
+            </div>
+          </Field>
+          {loopMode === 'smooth' && <Field label="Transition" value={`${(overlapMs / 1000).toFixed(1)}s`}>
+            <Slider label="Loop transition duration" value={overlapMs} min={100} max={800} step={100} onChange={onOverlapChange} />
+          </Field>}
           <p className={s.notice}>
-            Recording starts and stops with the Record button — this only sets what it will use.
-            Clips loop cleanly when left to finish on their own.
+            {loopMode === 'smooth'
+              ? `Records ${(durationSec + Math.round(overlapMs * 30 / 1000) / 30).toFixed(1)}s for a ${durationSec}s clip, then processes a blended join. The untreated source is kept. Some motion may still show a transition.`
+              : 'Records untreated frames. Loop playback can be toggled separately on the saved video.'}
           </p>
+          <p className={s.notice}>{busy ? 'Capture settings are locked while recording and saving.' : 'Use Record to start. Stopping early saves untreated footage.'}</p>
 
           <p className={s.notice}>
             Need sound?
             <br />
             Use your device&rsquo;s screen capture feature.
           </p>
-        </div>
+        </fieldset>
       </div>
     </div>
   );

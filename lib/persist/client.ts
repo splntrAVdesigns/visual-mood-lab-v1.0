@@ -3,7 +3,7 @@ import type { ParamState } from '@/renderers/control-schema';
 import type { Asset } from '@/types/asset';
 import type { ModState, SoundState } from '@/renderers/control-schema';
 import type { EffectInstance } from '@/lib/effects/types';
-import type { CaptureFormat } from '@/lib/capture/types';
+import type { CaptureFormat, CaptureMetadata } from '@/lib/capture/types';
 
 /**
  * Client-side persistence helpers.
@@ -583,9 +583,20 @@ export interface UploadCapturedClipResult {
  * video itself. Mirrors how a snapshot is "tagged" today — through its
  * title and badge, not pixels drawn into the image.
  */
+async function uploadCaptureSource(blob: Blob, filename: string, contentType: string): Promise<string> {
+  const sign = await fetch('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename, contentType, size: blob.size }) });
+  if (!sign.ok) throw new Error('Could not prepare untreated source upload');
+  const signed = await sign.json() as { uploadUrl: string; publicUrl: string; headers?: Record<string, string> };
+  const put = await fetch(signed.uploadUrl, { method: 'PUT', headers: { 'Content-Type': contentType, ...signed.headers }, body: blob });
+  if (!put.ok) throw new Error('Could not preserve untreated source');
+  const actual = await put.json().catch(() => ({})) as { url?: string };
+  return actual.url ?? signed.publicUrl;
+}
+
 export async function uploadCapturedClip(
   blob: Blob,
-  opts: { sourceTitle: string; format: CaptureFormat },
+  opts: { sourceTitle: string; format: CaptureFormat; metadata?: CaptureMetadata; rawBlob?: Blob },
 ): Promise<UploadCapturedClipResult> {
   const contentType = opts.format === 'mp4' ? 'video/mp4' : 'video/webm';
   const ext = opts.format;
@@ -632,6 +643,9 @@ export async function uploadCapturedClip(
       .then((body: { url?: string }) => body.url)
       .catch(() => undefined);
 
+    const rawSrcUrl = opts.rawBlob
+      ? await uploadCaptureSource(opts.rawBlob, `${title}-source.${ext}`, contentType)
+      : undefined;
     const ingest = await fetch('/api/assets', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -641,6 +655,7 @@ export async function uploadCapturedClip(
         contentType,
         srcUrl: realUrl ?? signed.publicUrl,
         tags: ['capture'],
+        capture: opts.metadata ? { ...opts.metadata, rawSrcUrl } : undefined,
       }),
     });
 

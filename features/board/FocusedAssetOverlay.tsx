@@ -46,7 +46,7 @@ import {
 } from '@/lib/persist/client';
 import { getPool } from '@/lib/render/pool';
 import { isVisible } from '@/renderers/control-schema';
-import { CAPTURE_DEFAULT_DURATION_SEC, type CaptureFormat } from '@/lib/capture/types';
+import { CAPTURE_DEFAULT_DURATION_SEC, type CaptureFormat, type CaptureLoopMode } from '@/lib/capture/types';
 import s from '../features.module.css';
 
 /**
@@ -108,6 +108,9 @@ export function FocusedAssetOverlay() {
   // since a format/duration choice isn't part of the tile's look.
   const [captureFormat, setCaptureFormat] = useState<CaptureFormat>('mp4');
   const [captureDuration, setCaptureDuration] = useState(CAPTURE_DEFAULT_DURATION_SEC);
+  const [captureLoop, setCaptureLoop] = useState<CaptureLoopMode>('off');
+  const [captureOverlap, setCaptureOverlap] = useState(400);
+  const [captureBusy, setCaptureBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [downloadingSnapshot, setDownloadingSnapshot] = useState(false);
   const [downloadingUpload, setDownloadingUpload] = useState(false);
@@ -550,8 +553,13 @@ export function FocusedAssetOverlay() {
               <CapturePanel
                 format={captureFormat}
                 durationSec={captureDuration}
+                loopMode={captureLoop}
+                overlapMs={captureOverlap}
                 onFormatChange={setCaptureFormat}
                 onDurationChange={setCaptureDuration}
+                onLoopModeChange={setCaptureLoop}
+                onOverlapChange={setCaptureOverlap}
+                busy={captureBusy}
                 onClose={() => setShowCapture(false)}
               />
             </FloatablePanel>
@@ -692,11 +700,14 @@ export function FocusedAssetOverlay() {
                 this header.
               */}
               {canCapture && (
-                <RecordButton
+                <RecordButton key={asset.itemId}
                   asset={asset}
                   canCapture={canCapture}
+                  onBusyChange={setCaptureBusy}
                   format={captureFormat}
                   durationSec={captureDuration}
+                  loopMode={captureLoop}
+                  overlapMs={captureOverlap}
                 />
               )}
 
