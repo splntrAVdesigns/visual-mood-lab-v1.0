@@ -83,6 +83,7 @@ export interface AssetRenderer {
   play(): void;
   pause(): void;
   seek?(seconds: number): void;
+  setPlaybackRange?(range: { startSec: number; endSec: number } | null): void;
 
   /** Runtime schema. Shaders and media return the one parsed at ingest. */
   getControlSchema(): ControlSchema | null;

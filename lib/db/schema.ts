@@ -1,3 +1,4 @@
+import type { CaptureTrim } from '@/lib/capture/trim';
 import type { CaptureMetadata } from '@/lib/capture/types';
 import { relations, sql } from 'drizzle-orm';
 import {
@@ -73,6 +74,7 @@ export const assets = pgTable(
     height: integer('height'),
     durationMs: integer('duration_ms'),
     capture: jsonb('capture').$type<CaptureMetadata>(),
+    captureTrim: jsonb('capture_trim').$type<CaptureTrim>(),
 
     /** Set for seed assets so re-running the seed script upserts rather than duplicates. */
     seedSlug: text('seed_slug'),

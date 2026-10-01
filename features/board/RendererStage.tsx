@@ -27,6 +27,8 @@ interface RendererStageProps {
  */
 export function RendererStage({ asset, focused = false }: RendererStageProps) {
   const hostRef = useRef<HTMLSpanElement>(null);
+  const assetRef = useRef(asset);
+  useEffect(() => { assetRef.current = asset; }, [asset]);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [state, setState] = useState<CardState>('poster');
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +71,7 @@ export function RendererStage({ asset, focused = false }: RendererStageProps) {
 
           if (entry.isIntersecting && (focused || hovered)) {
             setState(focused ? 'focused' : 'preview');
-            void pool.promote(asset, host, focused ? 'focused' : 'preview').then(() => {
+            void pool.promote(assetRef.current, host, focused ? 'focused' : 'preview').then(() => {
               if (cancelled) return;
               // Replace the generated placeholder with a real frame. Delayed
               // so the capture shows the asset in motion rather than its

@@ -1,3 +1,4 @@
+import type { CaptureTrim } from '@/lib/capture/trim';
 import type { CaptureMetadata } from '@/lib/capture/types';
 import type { ControlSchema, ModState, ParamState, SoundState } from '@/renderers/control-schema';
 import type { EffectInstance } from '@/lib/effects/types';
@@ -66,6 +67,7 @@ export interface Asset {
   height?: number;
   durationMs?: number;
   capture?: CaptureMetadata;
+  captureTrim?: CaptureTrim;
 
   createdAt: string;
   updatedAt: string;

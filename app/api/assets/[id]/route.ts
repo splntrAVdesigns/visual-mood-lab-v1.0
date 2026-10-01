@@ -1,3 +1,5 @@
+import { captureTrimSchema } from '@/lib/capture/trim-validation';
+import { isVideoCapture } from '@/lib/capture/trim';
 import { and, eq, isNull, like, or } from 'drizzle-orm';
 import { NextResponse } from 'next/server';
 import { getDb, schema } from '@/lib/db/client';
@@ -78,6 +80,16 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
     const patch: Record<string, unknown> = { updatedAt: new Date() };
     let sent = 0;
 
+    if (Object.hasOwn(body, 'captureTrim')) {
+      if (!isVideoCapture(owned.row)) return badRequest('Trim is only available for video captures');
+      const v = captureTrimSchema.nullable().safeParse(body.captureTrim);
+      if (!v.success) return badRequest('Invalid capture trim');
+      const duration = owned.row.capture?.durationSec ?? (owned.row.durationMs ? owned.row.durationMs / 1000 : null);
+      if (v.data && duration && Math.abs(v.data.sourceDurationSec - duration) > Math.max(0.1, 1 / (owned.row.capture?.fps ?? 30)))
+        return badRequest('Trim duration does not match the saved clip');
+      patch.captureTrim = v.data;
+      sent++;
+    }
     if (body.params != null) {
       const v = validateParamState(body.params);
       if (!v.ok) return badRequest(`Invalid params: ${v.error}`);
@@ -103,7 +115,7 @@ export async function PATCH(req: Request, ctx: { params: Promise<{ id: string }>
       sent++;
     }
     if (sent === 0) {
-      return badRequest('Expected { params }, { mod }, { sound }, or { effects }');
+      return badRequest('Expected { params }, { mod }, { sound }, { effects }, or { captureTrim }');
     }
 
     await owned.db.update(schema.assets).set(patch).where(eq(schema.assets.id, id));

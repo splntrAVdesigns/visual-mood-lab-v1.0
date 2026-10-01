@@ -14,6 +14,7 @@ import { groupedControls, isVisible, isDisabledByState, type ParamValue } from '
 import { selectSelectedAsset, useBoardStore, useInspectorStore } from '@/stores';
 import { ASSET_TYPE_BADGE } from '@/types/asset';
 import { WAVE_SHAPE_CONTROL_ID, waveShapeValueToLfoShape } from '@/lib/sound/types';
+import { CaptureTrimControl } from './CaptureTrimControl';
 import { ControlRow } from './ControlRow';
 import { RollBar } from './RollBar';
 import { GroupLockButton } from './RollLocks';
@@ -209,6 +210,7 @@ export function InspectorDrawer() {
                           onReset={() => resetParam(c.id)}
                           forceDisabled={isDisabledByState(c, params)}
                         />
+                        {c.id === 'speed' && group.id === 'playback' && asset && <CaptureTrimControl asset={asset} />}
                       </div>
                     );
                   })}

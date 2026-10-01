@@ -1,4 +1,5 @@
 import { effectSize } from '@/lib/effects/surface';
+import { isVideoCapture } from '@/lib/capture/trim';
 import type { Asset, AssetType } from '@/types/asset';
 import type { ControlSchema, ParamState, ParamValue, RGBA } from './control-schema';
 import { defaultSchemaFor, defaultsOf } from './control-schema';
@@ -44,6 +45,36 @@ export class MediaRenderer implements AssetRenderer {
   private cleanCanvas: HTMLCanvasElement | null = null;
   private effectsNotice: string | null = null;
   private readable = false;
+  private playbackRange: { startSec: number; endSec: number } | null = null;
+  private rangeEnded = false;
+  private captureVideo = false;
+
+  setPlaybackRange(range: { startSec: number; endSec: number } | null): void {
+    if (!this.captureVideo || !(this.el instanceof HTMLVideoElement)) return;
+    this.playbackRange = range;
+    this.rangeEnded = false;
+    this.enforcePlaybackRange();
+    this.applyStyle();
+  }
+
+  private enforcePlaybackRange = (): void => {
+    const el = this.el, range = this.playbackRange;
+    if (!(el instanceof HTMLVideoElement) || !range || !Number.isFinite(el.duration)) return;
+    const start = Math.min(range.startSec, Math.max(0, el.duration - 0.001));
+    const end = Math.min(range.endSec, el.duration);
+    if (el.currentTime < start) el.currentTime = start;
+    if (el.currentTime >= end) {
+      if (this.params.loop !== false) {
+        el.currentTime = start;
+        if (!this.paused && this.params.paused !== true) void el.play().catch(() => {});
+      } else if (!this.rangeEnded) {
+        this.rangeEnded = true;
+        el.pause();
+        // Hold the last in-range frame, including when a coarse timeupdate overshot.
+        el.currentTime = Math.max(start, end - 1 / 60);
+      }
+    }
+  };
 
   constructor(assetId: string, type: AssetType) {
     this.assetId = assetId;
@@ -79,6 +110,12 @@ export class MediaRenderer implements AssetRenderer {
     }
 
     this.el = el;
+    this.captureVideo = isVideoCapture(asset);
+    this.playbackRange = this.captureVideo ? asset.captureTrim ?? null : null;
+    if (el instanceof HTMLVideoElement) {
+      el.addEventListener('timeupdate', this.enforcePlaybackRange);
+      el.addEventListener('ended', this.enforcePlaybackRange);
+    }
 
     const wrap = document.createElement('div');
     wrap.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden';
@@ -107,6 +144,7 @@ export class MediaRenderer implements AssetRenderer {
 
     if (signal.aborted || this.disposed) return;
     host.appendChild(wrap);
+    this.enforcePlaybackRange();
     this.applyStyle();
   }
 
@@ -127,6 +165,7 @@ export class MediaRenderer implements AssetRenderer {
   }
 
   render(ctx: RenderContext): void {
+    this.enforcePlaybackRange();
     if (!this.effectsActive || !this.el || !this.wrap || this.effectsNotice?.startsWith('VFX unavailable')) return;
     const el = this.el;
     const sw = el instanceof HTMLVideoElement ? el.videoWidth : el.naturalWidth;
@@ -216,16 +255,21 @@ export class MediaRenderer implements AssetRenderer {
 
     if (el instanceof HTMLVideoElement) {
       el.playbackRate = Math.max(0.0625, num('speed', 1));
-      el.loop = this.params.loop !== false;
+      const requestedLoop = this.params.loop !== false;
+      el.loop = requestedLoop && !this.playbackRange;
 
       const tilePaused = this.params.paused === true;
       const explicitResume = this.lastVideoPaused && !tilePaused;
-      const enableLoop = !this.lastVideoLoop && el.loop;
-      this.lastVideoPaused = tilePaused; this.lastVideoLoop = el.loop;
+      const enableLoop = !this.lastVideoLoop && requestedLoop;
+      this.lastVideoPaused = tilePaused; this.lastVideoLoop = requestedLoop;
+      if ((explicitResume || enableLoop) && (this.rangeEnded || el.ended)) {
+        this.rangeEnded = false;
+        el.currentTime = this.playbackRange?.startSec ?? 0;
+      }
       if (this.paused || tilePaused) {
         if (!el.paused) el.pause();
-      } else if (el.paused && (!el.ended || enableLoop || explicitResume)) {
-        if (el.ended) el.currentTime = 0;
+      } else if (el.paused && !this.rangeEnded && (!el.ended || enableLoop || explicitResume)) {
+        if (el.ended) el.currentTime = this.playbackRange?.startSec ?? 0;
         void el.play().catch(() => {});
       }
     }
@@ -324,6 +368,8 @@ export class MediaRenderer implements AssetRenderer {
   dispose(): void {
     this.disposed = true;
     if (this.el instanceof HTMLVideoElement) {
+      this.el.removeEventListener('timeupdate', this.enforcePlaybackRange);
+      this.el.removeEventListener('ended', this.enforcePlaybackRange);
       this.el.pause();
       this.el.removeAttribute('src');
       this.el.load();

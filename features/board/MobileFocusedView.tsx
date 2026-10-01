@@ -9,6 +9,8 @@ import {
   usePlaybackStore,
 } from '@/stores';
 import { groupedControls, isVisible, isDisabledByState } from '@/renderers/control-schema';
+import { Fragment } from 'react';
+import { CaptureTrimControl } from '@/features/inspector/CaptureTrimControl';
 import { ControlRow } from '@/features/inspector/ControlRow';
 import { RollBar } from '@/features/inspector/RollBar';
 import { GroupLockButton } from '@/features/inspector/RollLocks';
@@ -451,8 +453,8 @@ export function MobileFocusedView() {
                     </div>
                   )}
                   {rows.map((c) => (
+                    <Fragment key={c.id}>
                     <ControlRow
-                      key={c.id}
                       control={c}
                       value={params[c.id] ?? null}
                       dirty={dirty.has(c.id)}
@@ -460,6 +462,8 @@ export function MobileFocusedView() {
                       onReset={() => resetParam(c.id)}
                       forceDisabled={isDisabledByState(c, params)}
                     />
+                    {c.id === 'speed' && group.id === 'playback' && asset && <CaptureTrimControl asset={asset} />}
+                    </Fragment>
                   ))}
                 </section>
               );

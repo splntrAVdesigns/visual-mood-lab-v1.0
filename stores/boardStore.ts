@@ -1,3 +1,4 @@
+import type { CaptureTrim } from '@/lib/capture/trim';
 import { create } from 'zustand';
 import type { ModState, ParamState, SoundState } from '@/renderers/control-schema';
 import type { Asset, AssetType, BoardLayout, SortKey } from '@/types/asset';
@@ -26,6 +27,7 @@ interface BoardState {
   updateAssetSound: (itemId: string, sound: SoundState) => void;
   /** Phase 4.96 — mirrors updateAssetMod/updateAssetSound exactly. */
   updateAssetEffects: (itemId: string, effects: EffectInstance[]) => void;
+  updateCaptureTrim: (assetId: string, trim: CaptureTrim | null) => void;
   select: (id: string | null) => void;
   setLayout: (layout: BoardLayout) => void;
   setQuery: (query: string) => void;
@@ -59,6 +61,9 @@ export const useBoardStore = create<BoardState>()((set) => ({
    * correct after a full page reload, which is the one moment this store gets
    * refilled from the server.
    */
+  updateCaptureTrim: (assetId, trim) => set((s) => ({
+    assets: s.assets.map((a) => a.id === assetId ? { ...a, captureTrim: trim ?? undefined } : a),
+  })),
   updateAssetParams: (itemId, params) =>
     set((s) => ({
       assets: s.assets.map((a) => (a.itemId === itemId ? { ...a, params } : a)),

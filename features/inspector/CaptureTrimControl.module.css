@@ -1,0 +1,18 @@
+.root { padding: 4px 0 12px; min-width: 0; }
+.header { display: flex; align-items: center; justify-content: space-between; color: var(--text-dim); font: 11px var(--font-mono); text-transform: uppercase; }
+.header button, .retry { background: none; color: var(--text-dim); border: none; font: 11px var(--font-mono); min-height: 44px; padding: 0 8px; cursor: pointer; }
+.header button:disabled { opacity: .4; cursor: default; }
+.track { position: relative; height: 16px; margin: 10px 22px 22px; background: var(--border-hi); border-radius: 3px; }
+.selected { position: absolute; height: 100%; background: var(--accent); }
+.handle { position: absolute; top: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); background: transparent; border: 0; padding: 0; touch-action: none; cursor: ew-resize; }
+.handle span { display: block; width: 5px; height: 32px; margin: auto; border-radius: 1px; background: var(--accent); }
+.handle:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; border-radius: 3px; }
+.handle:disabled { cursor: default; }
+.times, .summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; font: 10px var(--font-mono); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.end { color: var(--accent); }
+.summary { margin-top: 10px; flex-wrap: wrap; }
+.note { color: var(--text-dim); font-size: 11px; line-height: 1.5; margin: 8px 0 0; }
+
+@media (max-width: 820px) {
+  .root { padding-inline: var(--space-4, 16px); border-bottom: 1px solid var(--border); }
+}
