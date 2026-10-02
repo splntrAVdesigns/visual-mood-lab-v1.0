@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import Image from 'next/image';
 import { DriftCanvas } from './DriftCanvas';
 import s from './auth.module.css';
 
@@ -13,9 +14,8 @@ export function AuthShell({ title, subtitle, children }: AuthShellProps) {
     <div className={s.shell}>
       <div className={s.formPane}>
         <div className={s.formInner}>
-          <h1 className={s.wordmark}>
-            Visual Mood <span className={s.wordmarkAccent}>Lab</span>{' '}
-            <span className={s.wordmarkVersion}>v1.0</span>
+          <h1 className={s.wordmark} aria-label="Visual Mood Lab version 1.0">
+            <Image src="/branding/vml-logo-main.svg" alt="" width={466} height={185} priority />
           </h1>
 
           <h2 className={s.pageTitle}>{title}</h2>

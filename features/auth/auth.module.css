@@ -43,25 +43,15 @@
   margin: 0 auto;
 }
 
-/* Mirrors features/features.module.css .heroTitle / .wordmarkAccent /
-   .heroVersion exactly — same brand mark, same sizing logic. */
+/* The approved mark stays proportional across the form pane. */
 .wordmark {
-  font-size: clamp(2.5rem, 5.5vw, 3.75rem);
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  color: var(--text);
-  line-height: 1.1;
+  width: min(320px, 100%);
   margin: 0 0 var(--space-6);
 }
 
-.wordmarkAccent {
-  color: var(--accent);
-}
-
-.wordmarkVersion {
-  font-family: var(--font-mono);
-  font-size: 0.5em;
-  color: var(--text-mute);
+.wordmark img {
+  width: 100%;
+  height: auto;
 }
 
 .pageTitle {

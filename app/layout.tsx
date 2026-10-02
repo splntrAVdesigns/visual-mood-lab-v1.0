@@ -8,7 +8,13 @@ export const metadata: Metadata = {
   metadataBase: siteUrl(),
   title: 'Visual Mood Lab',
   description:
-    'A mood board for shaders, sketches, and motion. Every asset exposes parameters you can tune.',
+    'A board of shaders, sketches, and motion graphics. Tune real parameters, create new looks, and explore Visual Mood Lab.',
+  openGraph: {
+    title: 'Visual Mood Lab',
+    description: 'A board of shaders, sketches, and motion graphics — a playground for creating new looks.',
+    type: 'website',
+  },
+  twitter: { card: 'summary_large_image' },
 };
 
 export const viewport: Viewport = {

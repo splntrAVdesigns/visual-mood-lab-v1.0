@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
+import Image from 'next/image';
 import { usePlaybackStore } from '@/stores';
 import s from '../features.module.css';
 
@@ -166,9 +167,8 @@ export function Hero() {
       <HeroCanvas />
       <div className={s.heroFade} />
       <div className={s.heroContent}>
-        <h1 className={s.heroTitle}>
-          Visual Mood <span className={s.wordmarkAccent}>Lab</span>{' '}
-          <span className={s.heroVersion}>v1.0</span>
+        <h1 className={s.heroTitle} aria-label="Visual Mood Lab version 1.0">
+          <Image src="/branding/vml-logo-main.svg" alt="" width={466} height={185} priority />
         </h1>
         <p className={s.heroSub}>
           A board of shaders, sketches, and motion graphics — not a gallery but a playground.

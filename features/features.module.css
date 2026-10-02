@@ -17,27 +17,16 @@
 }
 
 .wordmark {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
+  flex: none;
+  display: block;
+  width: clamp(190px, 19vw, 230px);
   padding: 0 var(--space-2);
-  font-size: var(--step-0);
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  color: var(--text);
   user-select: none;
 }
 
-/* The one place the accent appears in the header chrome. */
-.wordmarkAccent {
-  color: var(--accent);
-}
-
-.wordmarkVersion {
-  font-family: var(--font-mono);
-  font-size: var(--step--2);
-  color: var(--text-mute);
-  letter-spacing: var(--tracking-mono);
+.wordmark img {
+  width: 100%;
+  height: auto;
 }
 
 .headerSpacer {
@@ -1786,26 +1775,12 @@
 }
 
 .heroTitle {
-  /*
-   * Was clamp(1.75rem, 4vw, var(--step-3)) — var(--step-3) is 1.5rem, which
-   * is SMALLER than the 1.75rem minimum. An invalid clamp(min, val, max)
-   * where min > max resolves to min, so this had been silently rendering as
-   * a flat 1.75rem this whole time, completely ignoring the viewport term.
-   * Fixed with a real min < max range, sized roughly 2x the old effective
-   * size at typical widths.
-   */
-  font-size: clamp(2.5rem, 5.5vw, 3.75rem);
-  font-weight: 500;
-  letter-spacing: -0.02em;
-  color: var(--text);
-  line-height: 1.1;
+  width: min(400px, 100%);
 }
 
-.heroVersion {
-  font-family: var(--font-mono);
-  font-size: 0.5em;
-  color: var(--text-mute);
-  vertical-align: super;
+.heroTitle img {
+  width: 100%;
+  height: auto;
 }
 
 .heroSub {
@@ -1817,11 +1792,15 @@
 
 @media (max-width: 600px) {
   .hero {
-    height: 200px;
+    height: auto;
+    min-height: 260px;
     margin-inline: var(--space-3);
   }
   .heroContent {
-    padding: 0 var(--space-4);
+    padding: var(--space-5) var(--space-4);
+  }
+  .heroTitle {
+    width: min(260px, 100%);
   }
 }
 

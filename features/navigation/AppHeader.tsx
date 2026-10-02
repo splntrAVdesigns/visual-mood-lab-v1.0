@@ -1,5 +1,7 @@
 'use client';
 
+import Image from 'next/image';
+
 import {
   Button,
   IconButton,
@@ -50,8 +52,7 @@ export function AppHeader({ onOpenSettings, needsSeed = false }: AppHeaderProps)
       />
 
       <span className={s.wordmark}>
-        Visual Mood <span className={s.wordmarkAccent}>Lab</span>
-        <span className={s.wordmarkVersion}>1.0</span>
+        <Image src="/branding/vml-wordmark.svg" alt="Visual Mood Lab" width={466} height={27} priority />
       </span>
 
       <span className={s.headerSpacer} />
