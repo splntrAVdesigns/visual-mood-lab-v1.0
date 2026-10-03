@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useMediaDownload } from '@/lib/capture/use-media-download';
 import { Button, CameraIcon, CloseIcon, CodeIcon, DownloadIcon, FullscreenIcon, IconButton, ResetIcon, Toast, Tooltip } from '@/components/ui';
 import {
@@ -83,6 +83,49 @@ export function MobileFocusedView() {
   const [captureOverlap, setCaptureOverlap] = useState(400);
   const [captureBusy, setCaptureBusy] = useState(false);
   const sheetRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
+  const fullscreenRatioRef = useRef(1);
+  const [fullscreenSize, setFullscreenSize] = useState<{ width: number; height: number } | null>(null);
+
+  // Preserve the REAL preview ratio: the normal stage's height cap means
+  // it may be wider than square. Keep the same renderer mounted throughout.
+  const toggleFullscreen = () => {
+    if (!pseudoFullscreen) {
+      const box = surfaceRef.current?.getBoundingClientRect();
+      if (!box || box.width <= 0 || box.height <= 0) return;
+      fullscreenRatioRef.current = box.width / box.height;
+    }
+    setPseudoFullscreen((value) => !value);
+  };
+
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    if (!open || !pseudoFullscreen || !stage) {
+      setFullscreenSize(null);
+      return;
+    }
+    const fit = (width: number, height: number) => {
+      if (width <= 0 || height <= 0) return;
+      const ratio = fullscreenRatioRef.current;
+      const fittedWidth = Math.min(width, height * ratio);
+      const fittedHeight = fittedWidth / ratio;
+      setFullscreenSize((previous) =>
+        previous?.width === fittedWidth && previous?.height === fittedHeight
+          ? previous
+          : { width: fittedWidth, height: fittedHeight },
+      );
+    };
+    // Layout effect fits before paint; observe the outer available space,
+    // not the fitted child, to avoid resize feedback. The observer also
+    // handles rotation and dynamic browser toolbar changes.
+    fit(stage.clientWidth, stage.clientHeight);
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) fit(entry.contentRect.width, entry.contentRect.height);
+    });
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [open, pseudoFullscreen, asset?.itemId]);
 
   useEffect(() => {
     setTab('controls');
@@ -300,7 +343,7 @@ export function MobileFocusedView() {
           <IconButton
             label="Toggle fullscreen"
             icon={<FullscreenIcon on={pseudoFullscreen} />}
-            onClick={() => setPseudoFullscreen((v) => !v)}
+            onClick={toggleFullscreen}
           />
         </Tooltip>
         <IconButton label="Close" icon={<CloseIcon />} onClick={() => closeAsset()} />
@@ -308,8 +351,14 @@ export function MobileFocusedView() {
 
       {/* Pinned: never scrolls away, so a control's effect is always visible
           while it is being dragged. */}
-      <div className={s.mobileStage}>
-        <RendererStage asset={asset} focused />
+      <div className={s.mobileStage} ref={stageRef}>
+        <div
+          className={s.mobileRenderSurface}
+          ref={surfaceRef}
+          style={pseudoFullscreen && fullscreenSize ? fullscreenSize : undefined}
+        >
+          <RendererStage asset={asset} focused />
+        </div>
       </div>
 
       {/* Snapshot delete and upload/recording delete share this row —
